@@ -20,7 +20,7 @@ const fileValue = <T>(value: T): Result<T, FileError> => ({ ok: true, value })
 
 const denied = <T = never>(): Result<T, FileError> =>
   fileError<T>(
-    new FileError('permission_denied', 'Path is outside the active workspace.'),
+    new FileError('permission_denied', 'Path is outside the authorized scope.'),
   )
 
 const invalid = <T = never>(message: string): Result<T, FileError> =>
@@ -28,16 +28,34 @@ const invalid = <T = never>(message: string): Result<T, FileError> =>
 
 const isWithin = (root: string, path: string) => {
   const child = relative(root, path)
-  return child === '' || (!child.startsWith('..') && !isAbsolute(child))
+  return (
+    child === '' ||
+    (child !== '..' &&
+      !child.startsWith('../') &&
+      !child.startsWith('..\\') &&
+      !isAbsolute(child))
+  )
 }
 
-/** 将 Pi 文件能力限制在单个注册工作区，且不提供 Shell。 */
+interface FileTarget {
+  path: string
+  scope: 'workspace' | 'external'
+}
+
+/** 默认限制在注册工作区；单次授权环境只允许指定文件，不提供 Shell。 */
 export class WorkspaceExecutionEnv extends NodeExecutionEnv {
   private readonly protectedRoots: string[]
   private readonly workspaceRoot: string
 
-  private constructor(workspaceRoot: string, protectedRoots: string[]) {
+  private readonly target?: FileTarget & { effect: 'read' | 'write' }
+
+  private constructor(
+    workspaceRoot: string,
+    protectedRoots: string[],
+    target?: FileTarget & { effect: 'read' | 'write' },
+  ) {
     super({ cwd: workspaceRoot })
+    this.target = target
     this.workspaceRoot = workspaceRoot
     this.protectedRoots = protectedRoots
   }
@@ -52,6 +70,49 @@ export class WorkspaceExecutionEnv extends NodeExecutionEnv {
       if (canonical.ok) canonicalProtectedRoots.push(canonical.value)
     }
     return new WorkspaceExecutionEnv(root.value, canonicalProtectedRoots)
+  }
+
+  /** 仅解析资源，不授予权限；缺失文件使用最近真实父目录固定目标。 */
+  async resolveToolTarget(path: string): Promise<FileTarget> {
+    if (
+      !path ||
+      path.includes('\0') ||
+      path === '~' ||
+      path.startsWith('~/') ||
+      path.startsWith('file:')
+    ) {
+      throw new FileError('invalid', 'Invalid tool path.')
+    }
+    const addressed = this.addressedPath(path)
+    if (this.isProtected(addressed))
+      throw new FileError('permission_denied', 'Protected tool path.')
+    let existing = addressed
+    while (true) {
+      const canonical = await super.canonicalPath(existing)
+      if (canonical.ok) {
+        const target = resolve(canonical.value, relative(existing, addressed))
+        if (this.isProtected(target))
+          throw new FileError('permission_denied', 'Protected tool path.')
+        return {
+          path: target,
+          scope: isWithin(this.workspaceRoot, target)
+            ? 'workspace'
+            : 'external',
+        }
+      }
+      if (canonical.error.code !== 'not_found') throw canonical.error
+      const parent = dirname(existing)
+      if (parent === existing) throw canonical.error
+      existing = parent
+    }
+  }
+
+  /** 为已获准的一次工具执行创建独立环境，不扩大共享工作区权限。 */
+  forTarget(target: FileTarget, effect: 'read' | 'write') {
+    return new WorkspaceExecutionEnv(this.workspaceRoot, this.protectedRoots, {
+      ...target,
+      effect,
+    })
   }
 
   /** 审批前生成工作区相对资源；执行时文件方法仍会重复校验。 */
@@ -267,7 +328,12 @@ export class WorkspaceExecutionEnv extends NodeExecutionEnv {
   }
 
   private guardSyntactic(path: string): Result<string, FileError> {
-    if (!isWithin(this.workspaceRoot, path) || this.isProtected(path)) {
+    if (
+      (this.target
+        ? path !== this.target.path
+        : !isWithin(this.workspaceRoot, path)) ||
+      this.isProtected(path)
+    ) {
       return denied()
     }
     return fileValue(path)
@@ -285,43 +351,27 @@ export class WorkspaceExecutionEnv extends NodeExecutionEnv {
         ? syntactic
         : canonical
     }
-    if (
-      !isWithin(this.workspaceRoot, canonical.value) ||
-      this.isProtected(canonical.value)
-    ) {
+    if (!this.guardSyntactic(canonical.value).ok) {
       return denied()
     }
     return canonical
   }
 
   private async guardWrite(path: string): Promise<Result<string, FileError>> {
+    if (this.target?.effect === 'read') return denied()
     const syntactic = this.guardSyntactic(this.addressedPath(path))
     if (!syntactic.ok) return syntactic
-    let existing = syntactic.value
-
-    while (isWithin(this.workspaceRoot, existing)) {
-      const found = await super.exists(existing)
-      if (!found.ok) return found as Result<string, FileError>
-      if (found.value) {
-        const canonical = await super.canonicalPath(existing)
-        if (!canonical.ok) return canonical
-        if (
-          !isWithin(this.workspaceRoot, canonical.value) ||
-          this.isProtected(canonical.value)
-        ) {
-          return denied()
-        }
-        const suffix = relative(existing, syntactic.value)
-        const target = suffix
-          ? resolve(canonical.value, suffix)
-          : canonical.value
-        return this.guardSyntactic(target)
-      }
-      const parent = dirname(existing)
-      if (parent === existing) break
-      existing = parent
+    try {
+      return this.guardSyntactic(
+        (await this.resolveToolTarget(syntactic.value)).path,
+      )
+    } catch (error) {
+      return fileError(
+        error instanceof FileError
+          ? error
+          : new FileError('invalid', 'Unable to resolve file target.'),
+      )
     }
-    return denied()
   }
 
   private isProtected(path: string) {

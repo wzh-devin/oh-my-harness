@@ -35,7 +35,7 @@ export function ContextUsageMeter({ usage }: ContextUsageMeterProps) {
     <Popover>
       <Popover.Trigger<'button'>
         aria-label={label}
-        className="flex h-7 shrink-0 items-center gap-1 rounded-full bg-surface-secondary px-2 text-muted outline-none transition hover:bg-surface-tertiary hover:text-foreground focus-visible:ring-2 focus-visible:ring-focus"
+        className="flex h-8 shrink-0 items-center gap-1 rounded-lg bg-transparent px-2 text-muted outline-none transition-colors hover:bg-surface-secondary hover:text-foreground focus-visible:bg-surface-secondary focus-visible:ring-2 focus-visible:ring-focus"
         render={(props) => <button {...props} type="button" />}
         title={label}
       >

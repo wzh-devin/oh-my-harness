@@ -1,9 +1,10 @@
+import type { ToolPermission } from '@oh-my-harness/agent-policy'
 import type { BashOutcome, TodoItem } from '@oh-my-harness/agent-tools'
 
 import type { ContextUsageSnapshot } from './context-usage.ts'
 
 export type AgentRuntimeEvent =
-  | { sessionId: string; type: 'start' }
+  | { permission: ToolPermission; sessionId: string; type: 'start' }
   | { delta: string; type: 'text_delta' }
   | { delta: string; type: 'reasoning_delta' }
   | { todos: TodoItem[]; type: 'todo_updated' }
@@ -15,6 +16,7 @@ export type AgentRuntimeEvent =
     }
   | {
       isError: boolean
+      filePath?: string
       outcome?: BashOutcome
       output: unknown
       toolCallId: string

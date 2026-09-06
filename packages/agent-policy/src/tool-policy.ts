@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto'
 
-export const TOOL_PERMISSIONS = ['read-only', 'workspace-write'] as const
+export const TOOL_PERMISSIONS = [
+  'read-only',
+  'workspace-write',
+  'full-access',
+] as const
 
 export type ToolPermission = (typeof TOOL_PERMISSIONS)[number]
 export type ApprovalDecision = 'approve-once' | 'reject'
@@ -16,6 +20,7 @@ interface ToolAuthorizationBase {
 export interface FileToolAuthorizationRequest extends ToolAuthorizationBase {
   effect: 'read' | 'write'
   path: string
+  scope: 'workspace' | 'external'
   toolName: 'edit' | 'read' | 'write'
 }
 
@@ -74,15 +79,20 @@ export const isToolPermission = (value: unknown): value is ToolPermission =>
 export const evaluateToolPolicy = (
   request: ToolAuthorizationRequest,
 ): 'allow' | 'deny' | 'require-approval' => {
+  if (!isToolPermission(request.permission)) return 'deny'
   if (request.toolName === 'bash' && request.effect === 'execute') {
-    return 'require-approval'
+    return request.permission === 'full-access' ? 'allow' : 'require-approval'
   }
-  if (request.toolName === 'read' && request.effect === 'read') return 'allow'
   if (
-    (request.toolName === 'write' || request.toolName === 'edit') &&
-    request.effect === 'write'
+    (request.toolName === 'read' && request.effect === 'read') ||
+    ((request.toolName === 'write' || request.toolName === 'edit') &&
+      request.effect === 'write')
   ) {
-    return request.permission === 'workspace-write'
+    if (request.scope !== 'workspace' && request.scope !== 'external')
+      return 'deny'
+    if (request.permission === 'full-access') return 'allow'
+    if (request.scope === 'external') return 'require-approval'
+    return request.effect === 'read' || request.permission === 'workspace-write'
       ? 'allow'
       : 'require-approval'
   }

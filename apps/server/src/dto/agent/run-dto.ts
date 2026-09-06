@@ -23,7 +23,7 @@ export interface SendAgentMessageDto {
 }
 
 export type AgentRunEventDto =
-  | { sessionId: string; type: 'start' }
+  | { permission: ToolPermission; sessionId: string; type: 'start' }
   | { delta: string; type: 'text_delta' }
   | { delta: string; type: 'reasoning_delta' }
   | {
@@ -41,6 +41,7 @@ export type AgentRunEventDto =
     }
   | {
       isError: boolean
+      filePath?: string
       outcome?: BashOutcomeDto
       output: unknown
       toolCallId: string

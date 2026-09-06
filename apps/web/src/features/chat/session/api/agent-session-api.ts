@@ -184,8 +184,17 @@ function toRunEvent(value: unknown): AgentRunEventVo {
   const event = value as Record<string, unknown>
   switch (event.type) {
     case 'start':
-      if (typeof event.sessionId === 'string') {
-        return { sessionId: event.sessionId, type: 'start' }
+      if (
+        typeof event.sessionId === 'string' &&
+        (event.permission === 'read-only' ||
+          event.permission === 'workspace-write' ||
+          event.permission === 'full-access')
+      ) {
+        return {
+          permission: event.permission,
+          sessionId: event.sessionId,
+          type: 'start',
+        }
       }
       break
     case 'text_delta':
@@ -220,6 +229,9 @@ function toRunEvent(value: unknown): AgentRunEventVo {
       ) {
         return {
           isError: event.isError,
+          ...(typeof event.filePath === 'string'
+            ? { filePath: event.filePath }
+            : {}),
           ...(event.toolName === 'bash'
             ? { outcome: bashOutcome(event.outcome) }
             : {}),

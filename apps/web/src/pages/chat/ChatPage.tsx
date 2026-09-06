@@ -11,10 +11,15 @@ import {
   type PendingToolApprovalVo,
   ThreadMessage,
 } from '../../features/chat/index.ts'
+import {
+  PERMISSION_OPTIONS,
+  type PermissionId,
+} from '../../features/settings/index.ts'
 import { AgentTraceView } from '../../features/trace/index.ts'
 import { TodoPanel } from './TodoPanel.tsx'
 
 interface ChatPageProps {
+  activePermission?: PermissionId
   error?: string
   isLoading: boolean
   status: ChatStatus
@@ -31,6 +36,7 @@ interface ChatPageProps {
 
 /** 保留完整会话工作台，并消费当前 Session 的真实消息与运行状态。 */
 export function ChatPage({
+  activePermission,
   error,
   isLoading,
   onModelChange,
@@ -165,12 +171,26 @@ export function ChatPage({
               ) : null}
             </div>
           ) : pendingTool ? (
-            <ApprovalPrompt
-              tool={pendingTool}
-              onResolve={(decision) => void onApprovalResolve(decision)}
-            />
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-2 text-xs text-muted">
+                <span>
+                  本轮：
+                  {PERMISSION_OPTIONS.find(
+                    (option) => option.id === activePermission,
+                  )?.label ?? '正在恢复权限…'}
+                </span>
+                <Button size="sm" variant="ghost" onPress={onStop}>
+                  停止本轮
+                </Button>
+              </div>
+              <ApprovalPrompt
+                tool={pendingTool}
+                onResolve={(decision) => void onApprovalResolve(decision)}
+              />
+            </div>
           ) : (
             <ChatComposer
+              activePermission={activePermission}
               contextUsage={thread.contextUsage}
               error={error}
               fixedWorkspaceId={thread.workspaceId ?? undefined}

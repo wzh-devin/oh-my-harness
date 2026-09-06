@@ -1,3 +1,4 @@
+import type { ToolPermission } from '@oh-my-harness/agent-policy'
 import type { TodoItem } from '@oh-my-harness/agent-tools'
 
 import type { LoadedSkill } from '../capability/capability-service.ts'
@@ -56,13 +57,14 @@ When an action fails, inspect the cause and adjust the approach. Do not blindly 
 
 const WORKSPACE_TOOLS_PROMPT = `# Workspace tools
 
-File tools are limited to workspace-relative paths. The bash tool runs a complete Bash command from the workspace only after user approval. Put the full command in command, including pipes or redirections when needed, and inspect its exit marker before continuing.
+File tools accept workspace-relative or absolute paths. Relative paths resolve from the session workspace. The server enforces the active run policy and handles required approvals. The bash tool starts a complete Bash command from the workspace; this working directory is not a sandbox. Put the full command in command, including pipes or redirections when needed, and inspect its exit marker before continuing.
 
 Prefer the most specific available tool that directly matches the task. Treat each tool's description and parameter schema as the authoritative source of its capabilities.
 
 Prefer structured, narrowly scoped tools over general-purpose command execution tools when both can complete the task. Do not use a general-purpose command tool merely to batch operations or reduce tool-call count. Use a command tool only when the task genuinely requires command execution or no dedicated tool can complete it.`
 
 interface SystemPromptContext {
+  permission?: ToolPermission
   currentTodos?: readonly TodoItem[]
   hasWorkspaceTools: boolean
   skills: readonly LoadedSkill[]
@@ -107,7 +109,18 @@ const buildCurrentTodosPrompt = (todos: readonly TodoItem[] | undefined) => {
 export const buildSystemPrompt = (context: SystemPromptContext) =>
   [
     BASE_SYSTEM_PROMPT,
-    context.hasWorkspaceTools ? WORKSPACE_TOOLS_PROMPT : '',
+    context.hasWorkspaceTools
+      ? WORKSPACE_TOOLS_PROMPT +
+        '\n\nActive permission: ' +
+        (context.permission ?? 'read-only') +
+        '. ' +
+        (context.permission === 'full-access'
+          ? 'File and Bash calls do not require per-call approval. This does not authorize actions outside the user request or bypass application protections.'
+          : 'External file access and every Bash call require one-time approval. ' +
+            (context.permission === 'workspace-write'
+              ? 'Workspace file changes are pre-authorized.'
+              : 'Workspace file changes also require one-time approval.'))
+      : '',
     buildAvailableSkillsPrompt(context.skills),
     buildCurrentTodosPrompt(context.currentTodos),
   ]

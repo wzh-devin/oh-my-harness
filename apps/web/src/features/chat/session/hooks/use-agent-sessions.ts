@@ -1,3 +1,4 @@
+import type { PermissionId } from '../../../settings/index.ts'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChatStatus } from '@agile-avocation/ui-pro/prompt-input'
 import type { ChatSubmitPayload } from '../../composer/index.ts'
@@ -239,6 +240,9 @@ export const updateStreamingTool = (
 /** 协调真实 Session 列表、历史消息和当前 POST SSE 运行。 */
 export function useAgentSessions() {
   const [threads, setThreads] = useState<ChatThread[]>([])
+  const [runPermissions, setRunPermissions] = useState<
+    Record<string, PermissionId | undefined>
+  >({})
   const [statuses, setStatuses] = useState<Record<string, ChatStatus>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [globalError, setGlobalError] = useState('')
@@ -253,6 +257,8 @@ export function useAgentSessions() {
   const setStatus = useCallback((sessionId: string, status: ChatStatus) => {
     statusRef.current = { ...statusRef.current, [sessionId]: status }
     setStatuses(statusRef.current)
+    if (status === 'ready')
+      setRunPermissions((current) => ({ ...current, [sessionId]: undefined }))
   }, [])
 
   const updateThread = useCallback(
@@ -275,6 +281,7 @@ export function useAgentSessions() {
       current.filter((thread) => !sessionIds.has(thread.id)),
     )
     setStatuses(statusRef.current)
+    setRunPermissions((current) => omitSessions(current, sessionIds))
     setErrors((current) => omitSessions(current, sessionIds))
     setPendingApprovals((current) => omitSessions(current, sessionIds))
     setLoadingIds(
@@ -341,8 +348,8 @@ export function useAgentSessions() {
   }, [refreshSessions])
 
   const loadThread = useCallback(
-    (sessionId: string) => {
-      if (statusRef.current[sessionId] !== undefined) {
+    (sessionId: string, reconnect = false) => {
+      if (!reconnect && statusRef.current[sessionId] !== undefined) {
         return Promise.resolve()
       }
       const current = loadingRef.current.get(sessionId)
@@ -350,12 +357,20 @@ export function useAgentSessions() {
 
       setLoadingIds((ids) => new Set(ids).add(sessionId))
       setErrors((errors) => ({ ...errors, [sessionId]: '' }))
+      let reconnectedTerminal = false
       const task = Promise.all([
         getAgentSession(sessionId),
         listAgentSessionMessages(sessionId),
         getPendingToolApproval(sessionId),
         reconnectAgentRun(sessionId, (event) => {
-          if (event.type === 'tool_approval_required') {
+          if (event.type === 'done' || event.type === 'error')
+            reconnectedTerminal = true
+          if (event.type === 'start') {
+            setRunPermissions((current) => ({
+              ...current,
+              [sessionId]: event.permission,
+            }))
+          } else if (event.type === 'tool_approval_required') {
             setPendingApprovals((current) => ({
               ...current,
               [sessionId]: event,
@@ -436,7 +451,15 @@ export function useAgentSessions() {
                   [sessionId]: errorMessage(error),
                 }))
               })
-              .finally(() => setStatus(sessionId, 'ready'))
+              .finally(() => {
+                if (reconnectedTerminal) setStatus(sessionId, 'ready')
+                else
+                  setErrors((current) => ({
+                    ...current,
+                    [sessionId]:
+                      '连接已中断，本轮权限保持不变。请刷新重连或停止本轮。',
+                  }))
+              })
           }
         })
         .catch((error) => {
@@ -598,6 +621,10 @@ export function useAgentSessions() {
       const preview =
         payload.message || attachments[0]?.name || contextItems[0]?.label || ''
       setErrors((current) => ({ ...current, [sessionId]: '' }))
+      setRunPermissions((current) => ({
+        ...current,
+        [sessionId]: payload.permission,
+      }))
       setStatus(sessionId, 'submitted')
       updateThread(sessionId, (thread) => ({
         ...thread,
@@ -636,6 +663,10 @@ export function useAgentSessions() {
           (event) => {
             switch (event.type) {
               case 'start':
+                setRunPermissions((current) => ({
+                  ...current,
+                  [sessionId]: event.permission,
+                }))
                 setStatus(sessionId, 'streaming')
                 break
               case 'text_delta':
@@ -700,10 +731,12 @@ export function useAgentSessions() {
                             ...(event.isError
                               ? { errorText: toolOutputText(event.output) }
                               : { output: event.output }),
-                            input:
-                              (item.activity?.tools ?? item.tools)?.find(
-                                (tool) => tool.toolCallId === event.toolCallId,
-                              )?.input ?? {},
+                            input: event.filePath
+                              ? { path: event.filePath }
+                              : ((item.activity?.tools ?? item.tools)?.find(
+                                  (tool) =>
+                                    tool.toolCallId === event.toolCallId,
+                                )?.input ?? {}),
                             kind: toolKind(event.toolName),
                             outcome: event.outcome,
                             state: event.isError
@@ -822,13 +855,14 @@ export function useAgentSessions() {
         runError ||= errorMessage(error)
       } finally {
         previewUrls.forEach((url) => URL.revokeObjectURL(url))
-        setStatus(sessionId, 'ready')
+        if (terminal) setStatus(sessionId, 'ready')
+        else await loadThread(sessionId, true)
       }
       if (runError) {
         setErrors((current) => ({ ...current, [sessionId]: runError }))
       }
     },
-    [loadMessages, setStatus, updateThread],
+    [loadMessages, loadThread, setStatus, updateThread],
   )
 
   const abort = useCallback(
@@ -841,18 +875,17 @@ export function useAgentSessions() {
       }))
       try {
         await abortAgentSession(sessionId)
+        setPendingApprovals((current) => ({
+          ...current,
+          [sessionId]: undefined,
+        }))
+        setStatus(sessionId, 'ready')
         await loadMessages(sessionId)
       } catch (error) {
         setErrors((current) => ({
           ...current,
           [sessionId]: errorMessage(error),
         }))
-      } finally {
-        setPendingApprovals((current) => ({
-          ...current,
-          [sessionId]: undefined,
-        }))
-        setStatus(sessionId, 'ready')
       }
     },
     [loadMessages, setStatus, updateThread],
@@ -918,6 +951,7 @@ export function useAgentSessions() {
     resolveApproval,
     sendMessage,
     statuses,
+    runPermissions,
     setSessionArchived,
     threads,
     updateModel,

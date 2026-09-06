@@ -233,6 +233,7 @@ export function ChatLayout({
 
   return (
     <SettingsProvider
+      permissionScope={`${activePageId}:${activeWorkspaceId ?? selectedWorkspaceId}`}
       selectedWorkspaceId={selectedWorkspaceId}
       onOpenPluginSettings={openPluginSettings}
     >

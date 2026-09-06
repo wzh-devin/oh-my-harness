@@ -1,5 +1,3 @@
-import { isAbsolute } from 'node:path'
-
 import type {
   Entry,
   JsonValue,
@@ -18,6 +16,7 @@ import type {
 } from '@earendil-works/pi-ai'
 
 import { AgentRuntimeError } from '../error/agent-runtime-error.ts'
+import { toolFilePath } from '../execution/tool-file-path.ts'
 import { structuredMessageDetails } from '../execution/attachment-message.ts'
 import { safeBashOutcome } from '../execution/bash-outcome.ts'
 import {
@@ -235,8 +234,6 @@ function safeToolInput(input: Record<string, unknown>) {
   if (
     path === undefined ||
     path.includes('\0') ||
-    path.split(/[\\/]/u).includes('..') ||
-    isAbsolute(path) ||
     path === '~' ||
     path.startsWith('~/') ||
     path.startsWith('file:')
@@ -256,7 +253,9 @@ function toSessionTool(
     toolCall.name === 'bash' ? safeBashOutcome(result?.details) : undefined
   return {
     ...(result?.isError && output ? { errorText: output } : {}),
-    input: safeToolInput(toolCall.arguments),
+    input: toolFilePath(result?.details)
+      ? { path: toolFilePath(result?.details) }
+      : safeToolInput(toolCall.arguments),
     kind:
       toolCall.name === 'bash' || toolCall.name === 'command'
         ? 'command'

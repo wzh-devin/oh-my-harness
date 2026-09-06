@@ -24,6 +24,7 @@ interface SettingsProviderProps {
   children: ReactNode
   onOpenPluginSettings: (tab: PluginSettingsTab) => void
   selectedWorkspaceId: string
+  permissionScope: string
 }
 
 /** 持有模型、权限、当前工作区能力与插件设置状态。 */
@@ -31,12 +32,29 @@ export function SettingsProvider({
   children,
   onOpenPluginSettings,
   selectedWorkspaceId,
+  permissionScope,
 }: SettingsProviderProps) {
   const [providers, setProviders] = useState(createInitialModelProviders)
   const [isLoadingProviders, setIsLoadingProviders] = useState(true)
   const [providerError, setProviderError] = useState<string | null>(null)
   const [thinkingLevel, setThinkingLevel] = useState<ModelThinkingLevel>('off')
-  const [permission, setPermission] = useState<PermissionId>('workspace-write')
+  const [permissionSelection, setPermissionSelection] = useState<{
+    scope: string
+    permission: PermissionId
+  }>({ scope: permissionScope, permission: 'workspace-write' })
+  const permission =
+    permissionSelection.scope === permissionScope
+      ? permissionSelection.permission
+      : 'workspace-write'
+  if (permissionSelection.scope !== permissionScope) {
+    setPermissionSelection({
+      scope: permissionScope,
+      permission: 'workspace-write',
+    })
+  }
+  /** 新会话或工作区不继承上一处的完全访问选择。 */
+  const setPermission = (next: PermissionId) =>
+    setPermissionSelection({ scope: permissionScope, permission: next })
   const [skills, setSkills] = useState<AssistantSkill[]>([])
   const [commands, setCommands] = useState<CapabilityCommand[]>([])
   const [capabilityError, setCapabilityError] = useState<string | null>(null)

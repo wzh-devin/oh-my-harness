@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { isAbsolute } from 'node:path'
 
 import {
   ToolPolicy,
   ToolPolicyError,
+  isToolPermission,
   type ApprovalDecision,
   type ApprovalResolution,
   type PendingToolApproval,
@@ -37,6 +37,7 @@ import {
 } from '../capability/capability-service.ts'
 import { compactSessionIfNeeded } from '../compaction/session-compaction.ts'
 import { AgentRuntimeError } from '../error/agent-runtime-error.ts'
+import { toolFilePath } from '../execution/tool-file-path.ts'
 import {
   attachmentManifest,
   attachmentResourcesFromEntries,
@@ -81,6 +82,12 @@ interface AgentRuntimeToolOptions {
 
 /** 向每个已连接消费者广播活跃 Run 事件，断开只移除当前订阅。 */
 class ActiveRunEventChannel {
+  readonly permission: ToolPermission
+
+  constructor(permission: ToolPermission) {
+    this.permission = permission
+  }
+
   private readonly subscribers = new Set<EventStream<AgentRuntimeEvent, void>>()
 
   subscribe(initialEvent?: AgentRuntimeEvent): AgentRun {
@@ -193,8 +200,6 @@ function safeToolInput(input: unknown) {
   if (
     typeof path !== 'string' ||
     path.includes('\0') ||
-    path.split(/[\\/]/u).includes('..') ||
-    isAbsolute(path) ||
     path === '~' ||
     path.startsWith('~/') ||
     path.startsWith('file:')
@@ -388,7 +393,11 @@ export class AgentRuntime {
     this.assertOpen()
     const operation = this.active.get(id)
     return operation?.kind === 'run' && operation.events
-      ? operation.events.subscribe({ sessionId: id, type: 'start' })
+      ? operation.events.subscribe({
+          permission: operation.events.permission,
+          sessionId: id,
+          type: 'start',
+        })
       : undefined
   }
 
@@ -423,6 +432,12 @@ export class AgentRuntime {
     input?: AgentRunInput,
   ): Promise<AgentRun> {
     this.assertOpen()
+    if (!isToolPermission(permission))
+      throw new AgentRuntimeError(
+        'INVALID_RUN_PERMISSION',
+        '运行权限无效。',
+        400,
+      )
     const operation = this.reserve(id, 'run')
     try {
       const opened = await this.sessions.open(id)
@@ -553,7 +568,7 @@ export class AgentRuntime {
       }
       operation.controller.signal.throwIfAborted()
 
-      const events = new ActiveRunEventChannel()
+      const events = new ActiveRunEventChannel(permission)
       operation.events = events
       const run = events.subscribe()
       const runId = randomUUID()
@@ -617,6 +632,7 @@ export class AgentRuntime {
         })
       }
       const systemPrompt = buildSystemPrompt({
+        permission,
         currentTodos,
         hasWorkspaceTools: Boolean(workspaceTools),
         skills: resolved?.catalog.skills ?? [],
@@ -712,7 +728,11 @@ export class AgentRuntime {
     })
     options.agent.subscribe((event) => this.forwardDelta(event, options.events))
 
-    options.events.push({ sessionId: options.sessionId, type: 'start' })
+    options.events.push({
+      permission: options.events.permission,
+      sessionId: options.sessionId,
+      type: 'start',
+    })
     try {
       if (options.incoming) await options.agent.prompt(options.incoming)
       else await options.agent.continue()
@@ -817,6 +837,9 @@ export class AgentRuntime {
           : undefined
       events.push({
         isError: event.isError,
+        ...(toolFilePath(event.result?.details)
+          ? { filePath: toolFilePath(event.result?.details) }
+          : {}),
         ...(outcome ? { outcome } : {}),
         output: event.result?.content,
         toolCallId: event.toolCallId,
@@ -857,7 +880,7 @@ export class AgentRuntime {
     await session.appendCustomEntry(SESSION_CUSTOM_TYPE.approvalRequested, {
       approvalId: approval.approvalId,
       effect: approval.effect,
-      ...(approval.effect === 'execute' ? {} : { path: approval.path }),
+      ...(approval.effect === 'execute' ? {} : { scope: approval.scope }),
       runId: approval.runId,
       toolCallId: approval.toolCallId,
       toolName: approval.toolName,

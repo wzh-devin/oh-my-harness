@@ -1,20 +1,28 @@
-import {
-  createContext,
-  useContext,
-  type Dispatch,
-  type SetStateAction,
-} from 'react'
+import { createContext, useContext } from 'react'
 
 export const PERMISSION_OPTIONS = [
-  { id: 'read-only', label: 'Read Only' },
-  { id: 'workspace-write', label: 'Workspace Write' },
+  {
+    id: 'read-only',
+    label: '请求批准',
+    description: '文件修改、外部访问与命令均需批准',
+  },
+  {
+    id: 'workspace-write',
+    label: '帮我批准',
+    description: '工作区文件自动处理，其他操作需批准',
+  },
+  {
+    id: 'full-access',
+    label: '完全访问权限',
+    description: '文件、命令与联网操作无需逐次批准',
+  },
 ] as const
 
 export type PermissionId = (typeof PERMISSION_OPTIONS)[number]['id']
 
 interface PermissionSettingsContextValue {
   permission: PermissionId
-  setPermission: Dispatch<SetStateAction<PermissionId>>
+  setPermission: (permission: PermissionId) => void
 }
 
 export const PermissionSettingsContext =

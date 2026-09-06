@@ -337,10 +337,27 @@ export function createAgentRunController(runtime: AgentRuntime) {
       }
     },
     continue: async (context: Context) => {
+      const input = await context.req.json<unknown>().catch(() => undefined)
+      if (
+        !input ||
+        typeof input !== 'object' ||
+        Array.isArray(input) ||
+        Object.keys(input).some((key) => key !== 'permission') ||
+        !isToolPermission((input as Record<string, unknown>).permission)
+      ) {
+        return context.json(
+          { code: 'INVALID_RUN_PERMISSION', message: '运行权限无效。' },
+          400,
+        )
+      }
       try {
         return streamRun(
           context,
-          await runtime.continue(context.req.param('id')!),
+          await runtime.continue(
+            context.req.param('id')!,
+            (input as { permission: SendAgentMessageDto['permission'] })
+              .permission,
+          ),
         )
       } catch (error) {
         return agentErrorResponse(context, error)

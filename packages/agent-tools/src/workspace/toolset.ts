@@ -1,15 +1,14 @@
+import { relative } from 'node:path'
 import type {
   ApprovalResolution,
   PendingToolApproval,
   ToolPermission,
 } from '@oh-my-harness/agent-policy'
 import { ToolPolicy, ToolPolicyError } from '@oh-my-harness/agent-policy'
-import {
-  type AgentHarnessTool,
-  type AgentTool,
-  type BeforeToolCallContext,
-  type BeforeToolCallResult,
-  type ExecutionToolContext,
+import type {
+  AgentTool,
+  BeforeToolCallContext,
+  BeforeToolCallResult,
 } from '@earendil-works/pi-agent-core'
 
 import { createBashTool, parseBashInput } from '../tools/bash.ts'
@@ -29,115 +28,160 @@ interface WorkspaceToolsOptions {
   sessionId: string
 }
 
-const bindTool = <TContext extends ExecutionToolContext>(
-  tool: AgentHarnessTool<TContext>,
-  context: TContext,
-): AgentTool => ({
-  ...tool,
-  execute: (toolCallId, params, signal, onUpdate) =>
-    tool.execute(toolCallId, params, signal, onUpdate, context),
-})
-
-const toolKind = (
-  toolName: string,
-):
-  | { effect: 'execute'; toolName: 'bash' }
-  | { effect: 'read'; toolName: 'read' }
-  | { effect: 'write'; toolName: 'edit' | 'write' }
-  | undefined => {
-  if (toolName === 'bash') return { effect: 'execute', toolName }
-  if (toolName === 'read') return { effect: 'read' as const, toolName }
-  if (toolName === 'write' || toolName === 'edit') {
-    return { effect: 'write' as const, toolName }
-  }
-  return undefined
+type FileTarget = Awaited<
+  ReturnType<WorkspaceExecutionEnv['resolveToolTarget']>
+>
+interface AuthorizedCall {
+  input: string
+  toolName: string
+  target?: FileTarget
 }
 
-const inputPath = (args: unknown) => {
-  if (!args || typeof args !== 'object' || Array.isArray(args)) return undefined
-  const path = (args as Record<string, unknown>).path
-  return typeof path === 'string' ? path : undefined
-}
-
-/** 为一次 Run 绑定受限文件环境、Policy 与 Pi 工具。 */
+/** 为一次 Run 绑定 Policy；执行只消费同 ID、同参数的一次授权。 */
 export const createWorkspaceTools = async (options: WorkspaceToolsOptions) => {
   const env = await WorkspaceExecutionEnv.create(
     options.cwd,
     options.protectedRoots,
   )
-  const context = { env }
-  const tools = [
-    bindTool(createReadTool(), context),
-    bindTool(createWriteTool(), context),
-    bindTool(createEditTool(), context),
-    createBashTool(env.cwd),
-  ]
+  const authorized = new Map<string, AuthorizedCall>()
+  const fileTools = [createReadTool(), createWriteTool(), createEditTool()]
+  const bash = createBashTool(env.cwd, options.permission === 'full-access')
+  const tools: AgentTool[] = [...fileTools, bash].map((tool) => ({
+    ...tool,
+    async execute(toolCallId, params, signal, onUpdate) {
+      const call = authorized.get(toolCallId)
+      authorized.delete(toolCallId)
+      signal?.throwIfAborted()
+      if (
+        !call ||
+        call.toolName !== tool.name ||
+        call.input !== JSON.stringify(params)
+      ) {
+        throw new ToolPolicyError(
+          'TOOL_PERMISSION_DENIED',
+          '工具调用没有匹配的单次授权。',
+        )
+      }
+      if (!call.target)
+        return bash.execute(toolCallId, params, signal, onUpdate)
+      const input = params as Record<string, unknown>
+      const current = await env.resolveToolTarget(input.path as string)
+      if (current.path !== call.target.path) {
+        throw new ToolPolicyError(
+          'TOOL_PERMISSION_DENIED',
+          '审批后文件目标已变化，请重新发起调用。',
+        )
+      }
+      const scopedEnv = env.forTarget(
+        call.target,
+        tool.name === 'read' ? 'read' : 'write',
+      )
+      try {
+        const fileTool = fileTools.find(
+          (candidate) => candidate.name === tool.name,
+        )!
+        const result = await fileTool.execute(
+          toolCallId,
+          { ...input, path: call.target.path } as never,
+          signal,
+          onUpdate,
+          { env: scopedEnv },
+        )
+        return {
+          ...result,
+          details: {
+            ...(result.details && typeof result.details === 'object'
+              ? result.details
+              : {}),
+            fileTarget: {
+              scope: call.target.scope,
+              path:
+                call.target.scope === 'workspace'
+                  ? relative(env.cwd, call.target.path)
+                  : call.target.path,
+            },
+          },
+        }
+      } finally {
+        await scopedEnv.cleanup()
+      }
+    },
+  }))
 
   const beforeToolCall = async (
     call: BeforeToolCallContext,
     signal?: AbortSignal,
   ): Promise<BeforeToolCallResult | undefined> => {
-    const kind = toolKind(call.toolCall.name)
-    if (!kind) {
-      return { block: true, reason: '工具或参数不在允许范围内。' }
+    authorized.delete(call.toolCall.id)
+    const toolName = call.toolCall.name
+    const input = JSON.stringify(call.args)
+    const common = {
+      permission: options.permission,
+      runId: options.runId,
+      sessionId: options.sessionId,
+      toolCallId: call.toolCall.id,
+    }
+    const hooks = {
+      onRequested: options.onApprovalRequested,
+      onResolved: options.onApprovalResolved,
     }
     try {
-      if (kind.effect === 'execute') {
+      signal?.throwIfAborted()
+      if (toolName === 'bash') {
         const { command } = parseBashInput(call.args)
         await options.policy.authorize(
-          {
-            command,
-            effect: 'execute',
-            permission: options.permission,
-            runId: options.runId,
-            sessionId: options.sessionId,
-            toolCallId: call.toolCall.id,
-            toolName: 'bash',
-          },
-          {
-            onRequested: options.onApprovalRequested,
-            onResolved: options.onApprovalResolved,
-          },
+          { ...common, command, effect: 'execute', toolName },
+          hooks,
           signal,
         )
-        return undefined
+        signal?.throwIfAborted()
+        authorized.set(call.toolCall.id, { input, toolName })
+        return
       }
-      const path = inputPath(call.args)
-      if (path === undefined) {
-        return { block: true, reason: '工具或参数不在允许范围内。' }
+      if (toolName !== 'read' && toolName !== 'write' && toolName !== 'edit') {
+        return { block: true, reason: '工具不在允许范围内。' }
       }
-      const relativePath = await env.describePath(path, kind.effect)
+      const args = call.args as Record<string, unknown> | null
+      if (!args || typeof args.path !== 'string')
+        return { block: true, reason: '文件参数无效。' }
+      const target = await env.resolveToolTarget(args.path)
+      const effect = toolName === 'read' ? 'read' : 'write'
       await options.policy.authorize(
         {
-          effect: kind.effect,
-          path: relativePath,
-          permission: options.permission,
-          runId: options.runId,
-          sessionId: options.sessionId,
-          toolCallId: call.toolCall.id,
-          toolName: kind.toolName,
+          ...common,
+          effect,
+          toolName,
+          scope: target.scope,
+          path:
+            target.scope === 'workspace'
+              ? relative(env.cwd, target.path) || '.'
+              : target.path,
         },
-        {
-          onRequested: options.onApprovalRequested,
-          onResolved: options.onApprovalResolved,
-        },
+        hooks,
         signal,
       )
-      return undefined
+      signal?.throwIfAborted()
+      authorized.set(call.toolCall.id, { input, target, toolName })
+      return
     } catch (error) {
       return {
         block: true,
         reason:
           error instanceof ToolPolicyError
             ? error.message
-            : kind.effect === 'execute'
-              ? error instanceof Error
-                ? error.message
-                : '命令参数不在允许范围内。'
-              : '文件路径不在当前工作区允许范围内。',
+            : toolName === 'bash'
+              ? '命令无效或已取消。'
+              : '文件路径无效、受保护或调用已取消。',
       }
     }
   }
 
-  return { beforeToolCall, cleanup: () => env.cleanup(), tools }
+  return {
+    beforeToolCall,
+    cleanup: () => {
+      authorized.clear()
+      return env.cleanup()
+    },
+    tools,
+  }
 }

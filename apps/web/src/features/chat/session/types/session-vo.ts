@@ -1,3 +1,5 @@
+import type { PermissionId } from '../../../settings/index.ts'
+
 export interface AgentSessionVo {
   archived: boolean
   createdAt: number
@@ -78,7 +80,7 @@ export interface AgentTodoItemVo {
 }
 
 export type AgentRunEventVo =
-  | { sessionId: string; type: 'start' }
+  | { permission: PermissionId; sessionId: string; type: 'start' }
   | { delta: string; type: 'text_delta' | 'reasoning_delta' }
   | { todos: AgentTodoItemVo[]; type: 'todo_updated' }
   | {
@@ -89,6 +91,7 @@ export type AgentRunEventVo =
     }
   | {
       isError: boolean
+      filePath?: string
       outcome?: BashOutcomeVo
       output: unknown
       toolCallId: string

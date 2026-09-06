@@ -89,25 +89,27 @@ export function ComposerModelMenu({
     <Dropdown>
       <Dropdown.Trigger
         aria-label={`模型服务商：${selectedGroup?.name ?? '暂无可用模型服务商'}，模型：${selectedName ?? '暂无可用模型'}${supportsThinking ? `，推理强度：${thinkingLabel}` : ''}`}
-        className="flex h-8 max-w-[calc(100vw-8.5rem)] items-center gap-1.5 rounded-lg bg-transparent px-2 !text-sm text-foreground transition-colors hover:bg-surface-secondary sm:max-w-80"
+        className="flex h-8 min-w-16 max-w-fit flex-1 items-center gap-1.5 rounded-lg bg-transparent px-2 !text-sm text-muted outline-none transition-colors hover:bg-surface-secondary hover:text-foreground focus-visible:bg-surface-secondary focus-visible:ring-2 focus-visible:ring-focus @lg:min-w-40"
         isDisabled={isDisabled}
       >
         <ModelProviderIcon
-          className="size-3.5"
+          className="hidden size-3.5 @sm:block"
           providerId={selectedGroup?.id}
         />
-        <span className="truncate" title={selectedName}>
+        <span className="min-w-0 truncate" title={selectedName}>
           {selectedName ?? '暂无可用模型'}
         </span>
         {supportsThinking ? (
-          <span className="shrink-0 text-muted">{thinkingLabel}</span>
+          <span className="hidden shrink-0 text-muted @lg:inline">
+            思考：{selectedThinkingLevel === 'off' ? '关' : thinkingLabel}
+          </span>
         ) : null}
         <ChevronDown className="size-3 shrink-0 text-muted" />
       </Dropdown.Trigger>
 
       <Dropdown.Popover
         className="min-w-56 w-[min(18rem,calc(100vw-1.5rem))]"
-        placement="top end"
+        placement="top start"
       >
         <Dropdown.Menu
           aria-label="模型与推理设置"

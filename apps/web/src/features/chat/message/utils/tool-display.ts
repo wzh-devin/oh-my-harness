@@ -183,7 +183,15 @@ export const getToolFilePresentation = (
     return
   }
   const path = inputField(tool.input, 'path')
-  if (typeof path !== 'string' || !path.trim() || path === '[blocked path]') {
+  if (
+    typeof path !== 'string' ||
+    !path.trim() ||
+    path === '[blocked path]' ||
+    path.startsWith('/') ||
+    path.startsWith('\\') ||
+    /^[A-Za-z]:/.test(path) ||
+    path.split(/[\\/]/u).includes('..')
+  ) {
     return
   }
   return { label: tool.kind === 'read' ? '已读取' : '已编辑', path }

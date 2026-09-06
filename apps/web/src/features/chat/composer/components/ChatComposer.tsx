@@ -11,6 +11,7 @@ import { Bulb, Folder, Terminal } from '@gravity-ui/icons'
 import { Button } from '@heroui/react'
 import { SelectMenu } from '../../../../components/ui/index.ts'
 import {
+  type PermissionId,
   getSelectableModelGroups,
   resolveModelThinkingLevel,
   resolveModelSelectionKey,
@@ -57,6 +58,7 @@ interface ComposerMenuState {
 }
 
 interface ChatComposerProps {
+  activePermission?: PermissionId
   className?: string
   contextUsage?: ChatContextUsage
   error?: string
@@ -85,6 +87,7 @@ const revokeAttachmentUrl = (attachment: PendingAttachment) => {
 
 /** 管理消息草稿、模型和可选能力；运行状态由会话协调层控制。 */
 export function ChatComposer({
+  activePermission,
   className,
   contextUsage,
   error,
@@ -440,7 +443,7 @@ export function ChatComposer({
   )
 
   return (
-    <div ref={composerRef} className={className ?? 'w-full'}>
+    <div ref={composerRef} className={`@container ${className ?? 'w-full'}`}>
       {composerWorkspace.isSelectable ? (
         <div className="mb-3 flex h-8 items-center px-2">
           <SelectMenu
@@ -490,7 +493,7 @@ export function ChatComposer({
             ) : null}
 
             <div
-              className={`flex min-w-0 items-start gap-2 px-4 pb-16 ${attachments.length > 0 || hasUnavailableContext ? 'pt-1' : 'pt-4'}`}
+              className={`flex min-w-0 items-start gap-2 px-4 pb-3 ${attachments.length > 0 || hasUnavailableContext ? 'pt-1' : 'pt-4'}`}
             >
               <ComposerContextBar
                 className="max-w-[55%] shrink-0 sm:max-w-[60%]"
@@ -515,8 +518,8 @@ export function ChatComposer({
             </div>
           </PromptInput.Content>
 
-          <PromptInput.Toolbar className="gap-2">
-            <PromptInput.ToolbarStart className="min-w-0 !gap-0.5">
+          <PromptInput.Toolbar className="!static !items-end gap-2 px-4 pt-2 pb-3 @sm:gap-4">
+            <PromptInput.ToolbarStart className="min-w-0 flex-1 flex-wrap !gap-1 @sm:!gap-2">
               <input
                 ref={fileInputRef}
                 aria-hidden
@@ -539,28 +542,10 @@ export function ChatComposer({
                 }}
                 onSelect={handleCapabilitySelect}
               />
-              <ComposerPermissionMenu isDisabled={isGenerating} />
-              {activeMode ? (
-                <>
-                  <span aria-hidden className="h-4 w-px shrink-0 bg-divider" />
-                  <Button
-                    aria-label={`关闭${activeMode.label}`}
-                    className="h-8 min-w-0 shrink-0 gap-1 rounded-lg bg-transparent px-1 text-sm font-normal text-muted hover:bg-surface-secondary hover:text-foreground"
-                    isDisabled={isGenerating}
-                    size="sm"
-                    variant="ghost"
-                    onPress={() => handleRemoveContext(activeMode.id)}
-                  >
-                    <ActiveModeIcon className="size-3.5 shrink-0" />
-                    <span className="max-w-24 truncate">
-                      {activeMode.label}
-                    </span>
-                  </Button>
-                </>
-              ) : null}
-            </PromptInput.ToolbarStart>
-
-            <PromptInput.ToolbarEnd className="gap-1">
+              <ComposerPermissionMenu
+                activePermission={activePermission}
+                isDisabled={isGenerating || isDisabled}
+              />
               <ComposerModelMenu
                 groups={modelGroups}
                 isDisabled={isDisabled || isGenerating || isModelUpdating}
@@ -570,6 +555,22 @@ export function ChatComposer({
                 onChange={(key) => void handleModelChange(key)}
                 onThinkingLevelChange={setThinkingLevel}
               />
+              {activeMode ? (
+                <Button
+                  aria-label={`关闭${activeMode.label}`}
+                  className="h-8 min-w-0 shrink-0 gap-1.5 rounded-lg bg-transparent px-2 text-sm font-normal text-muted hover:bg-surface-secondary hover:text-foreground"
+                  isDisabled={isGenerating}
+                  size="sm"
+                  variant="ghost"
+                  onPress={() => handleRemoveContext(activeMode.id)}
+                >
+                  <ActiveModeIcon className="size-3.5 shrink-0" />
+                  <span className="max-w-24 truncate">{activeMode.label}</span>
+                </Button>
+              ) : null}
+            </PromptInput.ToolbarStart>
+
+            <PromptInput.ToolbarEnd className="shrink-0 gap-2">
               {visibleContextUsage ? (
                 <ContextUsageMeter usage={visibleContextUsage} />
               ) : null}

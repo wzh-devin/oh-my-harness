@@ -93,10 +93,13 @@ const resultText = (
   return text.join('\n') || '(no output)'
 }
 
-/** 在固定工作区中执行一条完整 Bash 命令；每次调用仍由 Policy 单独审批。 */
-export const createBashTool = (cwd: string): AgentTool => ({
+/** 在固定工作区中执行一条完整 Bash 命令；审批由本轮 Policy 决定。 */
+export const createBashTool = (cwd: string, fullAccess = false): AgentTool => ({
   description:
-    'Run a complete Bash command in the workspace. Pipes, redirections, conditionals, and multiple commands are supported. Every call requires user approval.',
+    'Run a complete Bash command in the workspace. Pipes, redirections, conditionals, and multiple commands are supported. ' +
+    (fullAccess
+      ? 'Calls are authorized by the full-access run policy.'
+      : 'Every call requires user approval.'),
   label: 'bash',
   name: 'bash',
   parameters,

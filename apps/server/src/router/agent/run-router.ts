@@ -21,7 +21,11 @@ export function createAgentRunRouter(runtime: AgentRuntime) {
     controller.prompt,
   )
   router.get('/:id/events/stream', controller.reconnect)
-  router.post('/:id/continue/stream', controller.continue)
+  router.post(
+    '/:id/continue/stream',
+    bodyLimit({ maxSize: 4096 }),
+    controller.continue,
+  )
   router.post('/:id/abort', controller.abort)
   router.get('/:id/tool-approvals/pending', controller.pendingApproval)
   router.post(

@@ -48,6 +48,7 @@ export function App() {
     resolveApproval,
     sendMessage,
     statuses,
+    runPermissions,
     setSessionArchived,
     threads,
     updateModel,
@@ -250,6 +251,7 @@ export function App() {
       case 'thread':
         return (
           <ChatPage
+            activePermission={runPermissions[activePage.thread.id]}
             key={activePage.thread.id}
             error={errors[activePage.thread.id]}
             isLoading={loadingIds.has(activePage.thread.id)}
