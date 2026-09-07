@@ -1,4 +1,15 @@
-import { Button, Input, Label, TextField } from '@heroui/react'
+import { useState } from 'react'
+import {
+  Button,
+  Checkbox,
+  Disclosure,
+  FieldError,
+  Form,
+  Input,
+  Label,
+  TextField,
+} from '@heroui/react'
+import { SettingsEditorActions } from '../../shared/components/SettingsEditorActions.tsx'
 import { pluginRequest, type ConnectionVo } from '../api/plugin-api.ts'
 import { usePluginConnection } from '../hooks/use-plugin-connection.ts'
 
@@ -21,12 +32,13 @@ export function PluginConnection({
     setSession,
     perform,
   } = usePluginConnection(onChanged)
+  const [oauthExpanded, setOauthExpanded] = useState(false)
   return (
     <section
-      className="space-y-2 rounded-lg border border-divider p-3"
+      className="flex min-w-0 flex-col gap-3 border-t border-divider pt-4"
       aria-label={`连接 ${connection.serverName}`}
     >
-      <p className="text-sm font-medium">
+      <p className="text-sm font-medium text-foreground">
         {connection.serverName} · {connection.transport}
       </p>
       {connection.endpoint ? (
@@ -55,7 +67,8 @@ export function PluginConnection({
       <div className="flex flex-wrap gap-2">
         <Button
           size="sm"
-          variant="secondary"
+          className="h-7 min-h-0 rounded-full !px-2.5 !text-xs"
+          variant="outline"
           isDisabled={busy || !connection.allowed}
           onPress={() =>
             void perform(async () => {
@@ -71,7 +84,8 @@ export function PluginConnection({
         </Button>
         <Button
           size="sm"
-          variant="secondary"
+          className="h-7 min-h-0 rounded-full !px-2.5 !text-xs"
+          variant="outline"
           isDisabled={busy}
           onPress={() => setEditing(!editing)}
         >
@@ -80,7 +94,8 @@ export function PluginConnection({
         {connection.transport === 'http' ? (
           <Button
             size="sm"
-            variant="secondary"
+            className="h-7 min-h-0 rounded-full !px-2.5 !text-xs"
+            variant="outline"
             isDisabled={busy || !connection.allowed}
             onPress={() =>
               void perform(async () =>
@@ -98,7 +113,8 @@ export function PluginConnection({
         ) : null}
         <Button
           size="sm"
-          variant="tertiary"
+          className="h-7 min-h-0 rounded-full !px-2.5 !text-xs text-danger"
+          variant="outline"
           isDisabled={busy || !connection.allowed}
           onPress={() =>
             void perform(async () => {
@@ -119,8 +135,9 @@ export function PluginConnection({
         </p>
       ) : null}
       {editing ? (
-        <form
-          className="space-y-3"
+        <Form
+          aria-label={`配置连接 ${connection.serverName}`}
+          className="flex flex-col gap-5"
           onSubmit={(event) => {
             event.preventDefault()
             const form = event.currentTarget
@@ -158,50 +175,80 @@ export function PluginConnection({
             })
           }}
         >
-          <p className="text-xs text-warning">
+          <p className="text-xs leading-[18px] text-muted">
             {connection.transport === 'stdio'
               ? '仅信任的插件才能允许启动本地进程：它具有当前系统用户的访问能力，并非沙箱。不会自动安装依赖。'
               : '允许向插件声明的 MCP 服务建立连接。OAuth 范围不替代工具调用审批。'}{' '}
             保存会替换配置并清除旧登录态，敏感字段需重新填写。
           </p>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" name="allowed" required />
-            我信任此插件并允许连接
-          </label>
+          <Checkbox name="allowed" value="on" isRequired isDisabled={busy}>
+            <Checkbox.Content className="flex items-center gap-2 text-sm text-foreground">
+              <Checkbox.Control className="shrink-0 before:bg-foreground">
+                <Checkbox.Indicator className="**:data-[slot=checkbox-default-indicator--checkmark]:text-background" />
+              </Checkbox.Control>
+              我信任此插件并允许连接
+            </Checkbox.Content>
+            <FieldError />
+          </Checkbox>
           {connection.requiredKeys.map((key) => (
-            <TextField key={key} name={`env:${key}`} type="password" isRequired>
+            <TextField
+              key={key}
+              name={`env:${key}`}
+              type="password"
+              isRequired
+              isDisabled={busy}
+            >
               <Label>{key}</Label>
-              <Input autoComplete="off" />
+              <Input autoComplete="off" variant="secondary" />
+              <FieldError />
             </TextField>
           ))}
           {connection.transport === 'http' ? (
-            <details>
-              <summary className="cursor-pointer text-sm">
-                OAuth 应用配置（按服务要求填写）
-              </summary>
-              <div className="mt-3 space-y-2">
-                {[
-                  ['clientId', 'Client ID'],
-                  ['clientSecret', 'Client Secret'],
-                  ['clientMetadataUrl', 'Client Metadata URL'],
-                  ['scope', 'Scope'],
-                ].map(([key, label]) => (
-                  <TextField
-                    key={key}
-                    name={key}
-                    type={key === 'clientSecret' ? 'password' : 'text'}
-                  >
-                    <Label>{label}</Label>
-                    <Input autoComplete="off" />
-                  </TextField>
-                ))}
-              </div>
-            </details>
+            <Disclosure
+              isExpanded={oauthExpanded}
+              onExpandedChange={setOauthExpanded}
+            >
+              <Disclosure.Heading className="border-t border-divider pt-4">
+                <Button
+                  className="h-auto min-h-0 justify-start gap-2 whitespace-normal px-0 py-0 text-left text-sm font-medium text-muted"
+                  slot="trigger"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Disclosure.Indicator className="shrink-0 text-muted" />
+                  OAuth 应用配置（按服务要求填写）
+                </Button>
+              </Disclosure.Heading>
+              <Disclosure.Content className="**:data-[slot=disclosure-body]:p-0">
+                <Disclosure.Body className="flex flex-col gap-5 pt-5">
+                  {[
+                    ['clientId', 'Client ID'],
+                    ['clientSecret', 'Client Secret'],
+                    ['clientMetadataUrl', 'Client Metadata URL'],
+                    ['scope', 'Scope'],
+                  ].map(([key, label]) => (
+                    <TextField
+                      key={key}
+                      name={key}
+                      type={key === 'clientSecret' ? 'password' : 'text'}
+                      isDisabled={busy}
+                    >
+                      <Label>{label}</Label>
+                      <Input autoComplete="off" variant="secondary" />
+                    </TextField>
+                  ))}
+                </Disclosure.Body>
+              </Disclosure.Content>
+            </Disclosure>
           ) : null}
-          <Button size="sm" type="submit" isDisabled={busy}>
-            保存连接配置
-          </Button>
-        </form>
+          <SettingsEditorActions
+            submitLabel={busy ? '保存中…' : '保存连接配置'}
+            isDisabled={busy}
+            onCancel={() => {
+              if (!busy) setEditing(false)
+            }}
+          />
+        </Form>
       ) : null}
       {session ? (
         <div className="space-y-2 text-sm" role="status">
@@ -217,7 +264,7 @@ export function PluginConnection({
                 }[session.status] ?? session.status)}
           </p>
           {session.status === 'pending' && session.authorizationUrl ? (
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <a
                 className="text-accent underline"
                 href={session.authorizationUrl}
@@ -228,7 +275,8 @@ export function PluginConnection({
               </a>
               <Button
                 size="sm"
-                variant="tertiary"
+                className="h-7 min-h-0 rounded-full !px-2.5 !text-xs"
+                variant="outline"
                 onPress={() =>
                   void perform(async () => {
                     await pluginRequest(`plugin-oauth-sessions/${session.id}`, {
