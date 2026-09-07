@@ -103,3 +103,68 @@ export interface AgentSessionMessageContextItemDto {
   reference: string
   sourceId: string
 }
+
+interface AgentTrajectoryRecordDtoBase {
+  position: number
+  runId: string
+  runNumber: number
+  sourceRecordId?: string
+  resultRecordId?: string
+  preview?: string
+  source?: string
+  detail?: Readonly<Record<string, unknown>>
+  completedAt?: number
+  durationMs: number
+  id: string
+  kind: 'assistant' | 'context' | 'request' | 'system' | 'tool' | 'user'
+  label: string
+  lane: 'input' | 'model' | 'tools'
+  request?: number
+  startedAt: number
+  status: 'aborted' | 'completed' | 'failed' | 'interrupted' | 'running'
+  summary: string
+  turn: number
+}
+
+export type AgentTrajectoryRecordDto = AgentTrajectoryRecordDtoBase &
+  (
+    | { kind: 'system' | 'context' | 'user'; lane: 'input' }
+    | {
+        kind: 'request' | 'assistant'
+        lane: 'model'
+        request: number
+        sourceRecordId: string
+      }
+    | { kind: 'tool'; lane: 'tools'; request: number; sourceRecordId: string }
+  )
+
+export type AgentTrajectoryRecordDetailDto = AgentTrajectoryRecordDto & {
+  detail: Readonly<Record<string, unknown>>
+  preview: string
+  raw: Readonly<Record<string, unknown>>
+  source: string
+}
+
+export interface AgentTrajectorySearchDto {
+  recordIds: string[]
+  cursor: { sequence: number; revision: number }
+}
+
+export interface AgentTrajectoryDto {
+  completedAt?: number
+  durationMs: number
+  model: string
+  records: AgentTrajectoryRecordDto[]
+  requestCount: number
+  sessionId: string
+  cursor: { sequence: number; revision: number }
+  runs: {
+    runId: string
+    number: number
+    startedAt: number
+    completedAt?: number
+    status: AgentTrajectoryRecordDto['status']
+  }[]
+  startedAt: number
+  turnCount: number
+}

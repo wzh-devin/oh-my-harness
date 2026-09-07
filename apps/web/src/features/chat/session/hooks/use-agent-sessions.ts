@@ -1,4 +1,5 @@
 import type { PermissionId } from '../../../settings/index.ts'
+import { publishTraceUpdate } from '../../../trace/api/index.ts'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChatStatus } from '@agile-avocation/ui-pro/prompt-input'
 import type { ChatSubmitPayload } from '../../composer/index.ts'
@@ -251,6 +252,9 @@ export function useAgentSessions() {
   const [pendingApprovals, setPendingApprovals] = useState<PendingApprovalMap>(
     {},
   )
+  const [trajectoryVersions, setTrajectoryVersions] = useState<
+    Record<string, number>
+  >({})
   const statusRef = useRef<Record<string, ChatStatus>>({})
   const loadingRef = useRef(new Map<string, Promise<void>>())
 
@@ -272,6 +276,13 @@ export function useAgentSessions() {
     [],
   )
 
+  const bumpTrajectory = useCallback((sessionId: string) => {
+    setTrajectoryVersions((current) => ({
+      ...current,
+      [sessionId]: (current[sessionId] ?? 0) + 1,
+    }))
+  }, [])
+
   const forgetSessions = useCallback((ids: readonly string[]) => {
     const sessionIds = new Set(ids)
     if (sessionIds.size === 0) return
@@ -284,6 +295,7 @@ export function useAgentSessions() {
     setRunPermissions((current) => omitSessions(current, sessionIds))
     setErrors((current) => omitSessions(current, sessionIds))
     setPendingApprovals((current) => omitSessions(current, sessionIds))
+    setTrajectoryVersions((current) => omitSessions(current, sessionIds))
     setLoadingIds(
       (current) => new Set([...current].filter((id) => !sessionIds.has(id))),
     )
@@ -365,7 +377,14 @@ export function useAgentSessions() {
         reconnectAgentRun(sessionId, (event) => {
           if (event.type === 'done' || event.type === 'error')
             reconnectedTerminal = true
-          if (event.type === 'start') {
+          if (
+            event.type === 'trajectory_updated' ||
+            event.type === 'trajectory_delta'
+          ) {
+            publishTraceUpdate(sessionId, event)
+          } else if (event.type === 'trajectory_changed') {
+            bumpTrajectory(sessionId)
+          } else if (event.type === 'start') {
             setRunPermissions((current) => ({
               ...current,
               [sessionId]: event.permission,
@@ -479,7 +498,7 @@ export function useAgentSessions() {
       loadingRef.current.set(sessionId, task)
       return task
     },
-    [loadMessages, setStatus, updateThread],
+    [bumpTrajectory, loadMessages, setStatus, updateThread],
   )
 
   const createSession = useCallback(async (payload: ChatSubmitPayload) => {
@@ -662,6 +681,13 @@ export function useAgentSessions() {
           },
           (event) => {
             switch (event.type) {
+              case 'trajectory_updated':
+              case 'trajectory_delta':
+                publishTraceUpdate(sessionId, event)
+                break
+              case 'trajectory_changed':
+                bumpTrajectory(sessionId)
+                break
               case 'start':
                 setRunPermissions((current) => ({
                   ...current,
@@ -862,7 +888,7 @@ export function useAgentSessions() {
         setErrors((current) => ({ ...current, [sessionId]: runError }))
       }
     },
-    [loadMessages, loadThread, setStatus, updateThread],
+    [bumpTrajectory, loadMessages, loadThread, setStatus, updateThread],
   )
 
   const abort = useCallback(
@@ -954,6 +980,7 @@ export function useAgentSessions() {
     runPermissions,
     setSessionArchived,
     threads,
+    trajectoryVersions,
     updateModel,
   }
 }

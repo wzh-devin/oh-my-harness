@@ -4,7 +4,11 @@ import type {
   ModelThinkingLevel,
 } from '@oh-my-harness/agent-runtime'
 
-import type { ContextUsageDto } from './session-dto.ts'
+import type {
+  ContextUsageDto,
+  AgentTrajectoryDto,
+  AgentTrajectoryRecordDetailDto,
+} from './session-dto.ts'
 
 export interface BashOutcomeDto {
   exitCode: number | null
@@ -23,7 +27,20 @@ export interface SendAgentMessageDto {
 }
 
 export type AgentRunEventDto =
+  | {
+      type: 'trajectory_updated'
+      trajectory: Omit<AgentTrajectoryDto, 'records'>
+      records: AgentTrajectoryRecordDetailDto[]
+    }
+  | {
+      type: 'trajectory_delta'
+      cursor: AgentTrajectoryDto['cursor']
+      id: string
+      block: 'text' | 'thinking'
+      delta: string
+    }
   | { permission: ToolPermission; sessionId: string; type: 'start' }
+  | { type: 'trajectory_changed' }
   | { delta: string; type: 'text_delta' }
   | { delta: string; type: 'reasoning_delta' }
   | {

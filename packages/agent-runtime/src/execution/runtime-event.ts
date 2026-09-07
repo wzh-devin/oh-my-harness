@@ -2,9 +2,12 @@ import type { ToolPermission } from '@oh-my-harness/agent-policy'
 import type { BashOutcome, TodoItem } from '@oh-my-harness/agent-tools'
 
 import type { ContextUsageSnapshot } from './context-usage.ts'
+import type { TrajectoryUpdate } from '../trajectory/trajectory-stream.ts'
 
 export type AgentRuntimeEvent =
+  | TrajectoryUpdate
   | { permission: ToolPermission; sessionId: string; type: 'start' }
+  | { type: 'trajectory_changed' }
   | { delta: string; type: 'text_delta' }
   | { delta: string; type: 'reasoning_delta' }
   | { todos: TodoItem[]; type: 'todo_updated' }

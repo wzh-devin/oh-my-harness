@@ -80,7 +80,9 @@ export interface AgentTodoItemVo {
 }
 
 export type AgentRunEventVo =
+  | import('../../../trace/api/agent-trace-api.ts').AgentTraceUpdate
   | { permission: PermissionId; sessionId: string; type: 'start' }
+  | { type: 'trajectory_changed' }
   | { delta: string; type: 'text_delta' | 'reasoning_delta' }
   | { todos: AgentTodoItemVo[]; type: 'todo_updated' }
   | {

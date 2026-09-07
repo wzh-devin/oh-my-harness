@@ -10,7 +10,9 @@ import { formatTraceDuration } from '../utils/format-trace-duration.ts'
 const TRACE_RECORD_TOOLTIP_DELAY_MS = 1_000
 
 interface TraceTimelineRecordProps {
-  durationMs: number
+  index: number
+  slotCount: number
+  isDimmed: boolean
   isSelected: boolean
   record: AgentTraceRecord
   onSelect: (record: AgentTraceRecord) => void
@@ -18,7 +20,9 @@ interface TraceTimelineRecordProps {
 
 /** 展示时间轴中的一条可选择轨迹记录。 */
 export function TraceTimelineRecord({
-  durationMs,
+  index,
+  slotCount,
+  isDimmed,
   isSelected,
   record,
   onSelect,
@@ -36,12 +40,13 @@ export function TraceTimelineRecord({
       <Tooltip.Trigger
         aria-current={isSelected || undefined}
         aria-label={`${record.label}，${formatTraceDuration(record.startMs)} 到 ${formatTraceDuration(endMs)}`}
-        className={`group absolute inset-y-0 cursor-[var(--cursor-interactive)] ${isSelected ? 'z-40' : 'hover:z-40'}`}
-        data-trace-timeline-record
+        className="group absolute inset-y-0 cursor-[var(--cursor-interactive)] outline-none"
+        data-trace-timeline-record={record.id}
+        data-trace-kind={record.kind}
         role="button"
         style={{
-          left: `${(record.startMs / durationMs) * 100}%`,
-          width: `${Math.max((record.durationMs / durationMs) * 100, 0.7)}%`,
+          left: `${(index / slotCount) * 100}%`,
+          width: `${100 / slotCount}%`,
         }}
         tabIndex={0}
         onClick={() => onSelect(record)}
@@ -49,12 +54,14 @@ export function TraceTimelineRecord({
       >
         <span
           aria-hidden
-          className={`block size-full rounded-[1px] ${AGENT_TRACE_KIND_STYLES[record.kind].timelineClassName}`}
+          className={`absolute inset-x-px inset-y-2 rounded-[1px] ${AGENT_TRACE_KIND_STYLES[record.kind].timelineClassName} ${isDimmed ? 'opacity-20' : ''}`}
         />
         <span
           aria-hidden
-          className={`pointer-events-none absolute -inset-0.5 rounded-[3px] border border-accent ${
-            isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+          className={`pointer-events-none absolute inset-x-0 inset-y-[6px] rounded-[3px] border border-accent ${
+            isSelected
+              ? 'opacity-100'
+              : 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100'
           }`}
         />
       </Tooltip.Trigger>

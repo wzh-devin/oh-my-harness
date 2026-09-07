@@ -5,6 +5,6 @@ import {
 
 export function getTraceEventRowText(record: AgentTraceRecord): string {
   return record.kind === AgentTraceRecordKind.TOOL
-    ? record.label
-    : record.preview
+    ? `${record.label} ${record.summary}`
+    : record.summary
 }

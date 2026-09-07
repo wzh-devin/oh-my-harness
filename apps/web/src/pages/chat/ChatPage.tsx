@@ -24,6 +24,7 @@ interface ChatPageProps {
   isLoading: boolean
   status: ChatStatus
   thread: ChatThread
+  trajectoryRevision: number
   onStop: () => void
   pendingApproval?: PendingToolApprovalVo
   onApprovalResolve: (decision: ApprovalDecision) => Promise<void>
@@ -47,6 +48,7 @@ export function ChatPage({
   pendingApproval,
   status,
   thread,
+  trajectoryRevision,
 }: ChatPageProps) {
   const [draft, setDraft] = useState('')
   const [isRestoring, setIsRestoring] = useState(false)
@@ -77,7 +79,7 @@ export function ChatPage({
   return (
     <div className="flex h-[calc(100svh-var(--chat-navbar-height,64px))] flex-col overflow-hidden min-[769px]:h-svh">
       <Tabs
-        className="relative flex min-h-0 flex-1 flex-col"
+        className="relative flex min-h-0 flex-1 flex-col gap-0"
         defaultSelectedKey="conversation"
         variant="secondary"
       >
@@ -94,7 +96,7 @@ export function ChatPage({
           </Tabs.List>
         </Tabs.ListContainer>
         <Tabs.Panel
-          className="min-h-0 flex-1 overflow-hidden p-0"
+          className="min-h-0 flex-1 overflow-hidden p-0 pt-2"
           id="conversation"
         >
           <ChatConversation className="h-full min-h-0">
@@ -136,7 +138,11 @@ export function ChatPage({
           className="min-h-0 flex-1 overflow-hidden p-0"
           id="trajectory"
         >
-          <AgentTraceView />
+          <AgentTraceView
+            key={thread.id}
+            revision={trajectoryRevision}
+            sessionId={thread.id}
+          />
         </Tabs.Panel>
       </Tabs>
 

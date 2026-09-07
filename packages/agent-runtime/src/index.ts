@@ -3,6 +3,17 @@ export { AgentRuntimeError } from './error/agent-runtime-error.ts'
 export { SESSION_CUSTOM_TYPE } from './session/session-custom-type.ts'
 export type { AgentRun, AgentRuntimeEvent } from './execution/runtime-event.ts'
 export type { ContextUsageSnapshot } from './execution/context-usage.ts'
+export {
+  projectAgentTrajectory,
+  redactTrajectoryValue,
+} from './trajectory/agent-trajectory.ts'
+export type {
+  AgentTrajectory,
+  AgentTrajectoryLane,
+  AgentTrajectoryRecord,
+  AgentTrajectoryRecordKind,
+  AgentTrajectoryStatus,
+} from './trajectory/agent-trajectory.ts'
 export type {
   AgentMessageAttachment,
   AgentMessageContextItem,

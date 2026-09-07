@@ -11,15 +11,15 @@ import type {
 import { SESSION_CUSTOM_TYPE } from '../session/session-custom-type.ts'
 
 export interface StoredAttachment extends AgentMessageAttachment {
-  content?: string
-  kind?: 'image' | 'text'
+  content: string
+  kind: 'image' | 'text'
 }
 
 export interface StructuredMessageDetails {
   attachments: StoredAttachment[]
   content: string
   contextItems: AgentMessageContextItem[]
-  schemaVersion: 1 | 2
+  schemaVersion: 2
 }
 
 export interface SessionAttachmentResource {
@@ -60,7 +60,7 @@ export function structuredMessageDetails(
   }
   const details = value as Record<string, unknown>
   if (
-    (details.schemaVersion !== 1 && details.schemaVersion !== 2) ||
+    details.schemaVersion !== 2 ||
     typeof details.content !== 'string' ||
     !Array.isArray(details.attachments) ||
     !Array.isArray(details.contextItems)
@@ -85,9 +85,8 @@ export function structuredMessageDetails(
         typeof item.size !== 'number' ||
         !Number.isSafeInteger(item.contentIndex) ||
         (item.contentIndex as number) < 0 ||
-        (schemaVersion === 2 &&
-          (typeof item.content !== 'string' ||
-            (item.kind !== 'image' && item.kind !== 'text')))
+        typeof item.content !== 'string' ||
+        (item.kind !== 'image' && item.kind !== 'text')
       ) {
         return []
       }
@@ -98,12 +97,8 @@ export function structuredMessageDetails(
           mimeType: item.mimeType,
           name: item.name,
           size: item.size,
-          ...(schemaVersion === 2
-            ? {
-                content: item.content as string,
-                kind: item.kind as 'image' | 'text',
-              }
-            : {}),
+          content: item.content,
+          kind: item.kind,
         },
       ]
     },
@@ -168,17 +163,7 @@ export const modelSafeAttachmentMessage = (
       ],
     }
   }
-  if (details.schemaVersion === 2) return message
-  const attachmentIndexes = new Set(
-    details.attachments.map((attachment) => attachment.contentIndex),
-  )
-  const content =
-    typeof message.content === 'string'
-      ? [{ text: details.content, type: 'text' as const }]
-      : message.content.filter((_, index) => !attachmentIndexes.has(index))
-  if (details.attachments.length)
-    content.push(attachmentManifest(details.attachments))
-  return { ...message, content }
+  return message
 }
 
 export const convertAttachmentMessagesToLlm = (messages: AgentMessage[]) =>
@@ -190,14 +175,6 @@ export const modelSafeAttachmentEntries = (entries: Entry[]) =>
       ? { ...entry, message: modelSafeAttachmentMessage(entry.message) }
       : entry,
   ) as Entry[]
-
-const legacyText = (text: string) => {
-  const start = text.indexOf('\n')
-  const suffix = '\n</attachment>'
-  return text.startsWith('<attachment ') && start >= 0 && text.endsWith(suffix)
-    ? text.slice(start + 1, -suffix.length)
-    : text
-}
 
 export const attachmentResourcesFromEntries = (
   entries: readonly Entry[],
@@ -220,39 +197,13 @@ export const attachmentResourcesFromEntries = (
     const details = structuredMessageDetails(message.details)
     if (!details) continue
     for (const attachment of details.attachments) {
-      if (
-        details.schemaVersion === 2 &&
-        attachment.content !== undefined &&
-        attachment.kind
-      ) {
-        resources.set(attachment.id, {
-          content: attachment.content,
-          id: attachment.id,
-          kind: attachment.kind,
-          mimeType: attachment.mimeType,
-          name: attachment.name,
-        })
-        continue
-      }
-      if (typeof message.content === 'string') continue
-      const content = message.content[attachment.contentIndex]
-      if (content?.type === 'image') {
-        resources.set(attachment.id, {
-          content: content.data,
-          id: attachment.id,
-          kind: 'image',
-          mimeType: content.mimeType,
-          name: attachment.name,
-        })
-      } else if (content?.type === 'text') {
-        resources.set(attachment.id, {
-          content: legacyText(content.text),
-          id: attachment.id,
-          kind: 'text',
-          mimeType: attachment.mimeType,
-          name: attachment.name,
-        })
-      }
+      resources.set(attachment.id, {
+        content: attachment.content,
+        id: attachment.id,
+        kind: attachment.kind,
+        mimeType: attachment.mimeType,
+        name: attachment.name,
+      })
     }
   }
   return [...resources.values()]

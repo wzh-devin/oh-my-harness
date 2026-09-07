@@ -51,6 +51,7 @@ export function App() {
     runPermissions,
     setSessionArchived,
     threads,
+    trajectoryVersions,
     updateModel,
   } = useAgentSessions()
   const activeThreads = useMemo(
@@ -258,6 +259,7 @@ export function App() {
             pendingApproval={pendingApprovals[activePage.thread.id]}
             status={statuses[activePage.thread.id] ?? 'ready'}
             thread={activePage.thread}
+            trajectoryRevision={trajectoryVersions[activePage.thread.id] ?? 0}
             onRestore={() => setSessionArchived(activePage.thread.id, false)}
             onModelChange={(selection) =>
               updateModel(activePage.thread.id, selection)

@@ -27,6 +27,11 @@ import type {
   AgentMessageAttachment,
   AgentMessageContextItem,
 } from '../execution/run-input.ts'
+import {
+  projectAgentTrajectory,
+  type AgentTrajectory,
+  type AgentTrajectoryRecord,
+} from '../trajectory/agent-trajectory.ts'
 import { SESSION_CUSTOM_TYPE } from './session-custom-type.ts'
 
 export interface AgentSessionModelConfig {
@@ -438,6 +443,7 @@ export class AgentSessionService {
   private listCache?: AgentSessionInfo[]
   private metadataIndex?: Promise<Map<string, AgentSessionMetadata>>
   private repositoryTail = Promise.resolve()
+  private readonly trajectoryCache = new Map<string, AgentTrajectory>()
 
   constructor(
     repository: AgentSessionRepository,
@@ -546,12 +552,14 @@ export class AgentSessionService {
   }
 
   private projectChanged(id: string) {
+    this.trajectoryCache.delete(id)
     void this.projection?.changed(id).catch(() => {
       // 投影失败不得回滚已成功的 JSONL mutation。
     })
   }
 
   private projectDeleted(id: string) {
+    this.trajectoryCache.delete(id)
     return this.projection?.deleted(id).catch(() => {
       // 启动对账会从 JSONL 缺失事实中补偿删除。
     })
@@ -702,6 +710,38 @@ export class AgentSessionService {
     }
   }
 
+  async trajectory(id: string, active: boolean): Promise<AgentTrajectory> {
+    const cached = active ? undefined : this.trajectoryCache.get(id)
+    if (cached) return cached
+    const opened = await this.open(id)
+    const trajectory = projectAgentTrajectory({
+      active,
+      entries: opened.entries,
+      model: opened.config.modelId,
+      sessionId: id,
+    })
+    if (!active) this.trajectoryCache.set(id, trajectory)
+    return trajectory
+  }
+
+  async trajectoryRecord(
+    id: string,
+    recordId: string,
+    active: boolean,
+  ): Promise<AgentTrajectoryRecord> {
+    const record = (await this.trajectory(id, active)).records.find(
+      (candidate) => candidate.id === recordId,
+    )
+    if (!record) {
+      throw new AgentRuntimeError(
+        'TRAJECTORY_RECORD_NOT_FOUND',
+        '轨迹记录不存在。',
+        404,
+      )
+    }
+    return record
+  }
+
   async attachment(id: string, entryId: string, contentIndex: number) {
     if (!Number.isSafeInteger(contentIndex) || contentIndex < 0) {
       throw new AgentRuntimeError(
@@ -727,24 +767,12 @@ export class AgentSessionService {
       const attachment = details?.attachments.find(
         (candidate) => candidate.contentIndex === contentIndex,
       )
-      const legacyContent = entry.message.content[contentIndex]
-      const image =
-        details?.schemaVersion === 2 &&
-        attachment?.kind === 'image' &&
-        attachment.content !== undefined
-          ? {
-              data: attachment.content,
-              mimeType: attachment.mimeType,
-            }
-          : legacyContent?.type === 'image'
-            ? legacyContent
-            : undefined
-      if (!attachment || !image) {
+      if (attachment?.kind !== 'image') {
         throw new AgentRuntimeError('ATTACHMENT_NOT_FOUND', '附件不存在。', 404)
       }
       return {
-        data: image.data,
-        mimeType: image.mimeType,
+        data: attachment.content,
+        mimeType: attachment.mimeType,
         name: attachment.name,
       }
     } catch (error) {

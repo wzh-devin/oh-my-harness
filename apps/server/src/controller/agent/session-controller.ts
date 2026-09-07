@@ -3,6 +3,8 @@ import type {
   AgentSessionDetail,
   AgentSessionInfo,
   AgentSessionMessagePage,
+  AgentTrajectory,
+  AgentTrajectoryRecord,
 } from '@oh-my-harness/agent-runtime'
 import type { Context } from 'hono'
 
@@ -10,6 +12,9 @@ import type {
   AgentSessionDetailDto,
   AgentSessionDto,
   AgentSessionMessagePageDto,
+  AgentTrajectoryDto,
+  AgentTrajectoryRecordDetailDto,
+  AgentTrajectorySearchDto,
   CreateAgentSessionDto,
   UpdateAgentSessionDto,
 } from '../../dto/agent/session-dto.ts'
@@ -155,6 +160,20 @@ function messagePageDto(
   }
 }
 
+function trajectoryRecordDto(record: AgentTrajectoryRecord) {
+  const { preview, raw: _raw, source, detail, ...summary } = record
+  return record.status === 'running' && record.kind === 'assistant'
+    ? { ...summary, preview, source, detail }
+    : summary
+}
+
+function trajectoryDto(trajectory: AgentTrajectory): AgentTrajectoryDto {
+  return {
+    ...trajectory,
+    records: trajectory.records.map(trajectoryRecordDto),
+  }
+}
+
 /** 创建 Agent Session CRUD 与消息读取 Controller。 */
 export function createAgentSessionController(
   runtime: AgentRuntime,
@@ -247,6 +266,69 @@ export function createAgentSessionController(
             sessionId,
             await runtime.getMessages(sessionId, query),
           ),
+        )
+      } catch (error) {
+        return agentErrorResponse(context, error)
+      }
+    },
+    trajectory: async (context: Context) => {
+      try {
+        context.header('cache-control', 'private, no-store')
+        return context.json(
+          trajectoryDto(await runtime.getTrajectory(context.req.param('id')!)),
+        )
+      } catch (error) {
+        return agentErrorResponse(context, error)
+      }
+    },
+    /** 从完整脱敏投影搜索，返回身份而非正文，不扩张列表载荷。 */
+    trajectorySearch: async (context: Context) => {
+      context.header('cache-control', 'private, no-store')
+      const query = context.req.query('q') ?? ''
+      if (query.length > 512)
+        return context.json(
+          { code: 'INVALID_QUERY', message: '搜索词不能超过 512 个字符。' },
+          400,
+        )
+      const terms = query.trim().toLowerCase().split(/\s+/u).filter(Boolean)
+      try {
+        const trajectory = await runtime.getTrajectory(context.req.param('id')!)
+        const recordIds = trajectory.records
+          .filter((record) => {
+            if (!terms.length) return true
+            const text = [
+              record.kind,
+              record.label,
+              record.status,
+              record.source,
+              `run ${record.runNumber}`,
+              `turn ${record.turn}`,
+              record.request ? `request ${record.request}` : '',
+              record.summary,
+              record.preview,
+              JSON.stringify(record.detail),
+            ]
+              .join('\n')
+              .toLowerCase()
+            return terms.every((term) => text.includes(term))
+          })
+          .map((record) => record.id)
+        return context.json({
+          recordIds,
+          cursor: trajectory.cursor,
+        } satisfies AgentTrajectorySearchDto)
+      } catch (error) {
+        return agentErrorResponse(context, error)
+      }
+    },
+    trajectoryRecord: async (context: Context) => {
+      try {
+        context.header('cache-control', 'private, no-store')
+        return context.json(
+          (await runtime.getTrajectoryRecord(
+            context.req.param('id')!,
+            context.req.param('recordId')!,
+          )) satisfies AgentTrajectoryRecordDetailDto,
         )
       } catch (error) {
         return agentErrorResponse(context, error)

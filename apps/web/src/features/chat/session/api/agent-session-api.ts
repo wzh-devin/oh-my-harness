@@ -1,3 +1,4 @@
+import { parseTraceUpdate } from '../../../trace/api/index.ts'
 import type {
   AgentRunEventVo,
   AgentSessionDetailVo,
@@ -183,6 +184,11 @@ function toRunEvent(value: unknown): AgentRunEventVo {
 
   const event = value as Record<string, unknown>
   switch (event.type) {
+    case 'trajectory_updated':
+    case 'trajectory_delta':
+      return parseTraceUpdate(event)
+    case 'trajectory_changed':
+      return { type: 'trajectory_changed' }
     case 'start':
       if (
         typeof event.sessionId === 'string' &&

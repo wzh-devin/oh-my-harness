@@ -16,6 +16,7 @@ export const AGENT_TRACE_LANE_LABELS = {
 export const AGENT_TRACE_KIND_LABELS = {
   [AgentTraceRecordKind.ASSISTANT]: 'ASSISTANT',
   [AgentTraceRecordKind.CONTEXT]: 'CONTEXT',
+  [AgentTraceRecordKind.REQUEST]: 'REQUEST',
   [AgentTraceRecordKind.SYSTEM]: 'SYSTEM',
   [AgentTraceRecordKind.TOOL]: 'TOOL',
   [AgentTraceRecordKind.USER]: 'USER',
@@ -29,6 +30,10 @@ export const AGENT_TRACE_KIND_STYLES = {
   [AgentTraceRecordKind.CONTEXT]: {
     chipClassName: `${TRACE_KIND_CHIP_CLASS_NAME} [--chip-bg:var(--success-soft)] [--chip-fg:var(--success-soft-foreground)]`,
     timelineClassName: 'bg-success/65',
+  },
+  [AgentTraceRecordKind.REQUEST]: {
+    chipClassName: `${TRACE_KIND_CHIP_CLASS_NAME} [--chip-bg:color-mix(in_oklab,var(--accent)_14%,transparent)] [--chip-fg:var(--accent)]`,
+    timelineClassName: 'bg-accent/60',
   },
   [AgentTraceRecordKind.SYSTEM]: {
     chipClassName: `${TRACE_KIND_CHIP_CLASS_NAME} [--chip-bg:var(--default)] [--chip-fg:var(--default-foreground)]`,
@@ -48,13 +53,17 @@ export const AGENT_TRACE_KIND_STYLES = {
 >
 
 export const AGENT_TRACE_STATUS_LABELS = {
+  [AgentTraceStatus.ABORTED]: '已中止',
   [AgentTraceStatus.COMPLETED]: '已完成',
   [AgentTraceStatus.FAILED]: '失败',
+  [AgentTraceStatus.INTERRUPTED]: '已中断',
   [AgentTraceStatus.RUNNING]: '运行中',
 } as const
 
 export const AGENT_TRACE_STATUS_COLORS = {
+  [AgentTraceStatus.ABORTED]: 'warning',
   [AgentTraceStatus.COMPLETED]: 'success',
   [AgentTraceStatus.FAILED]: 'danger',
+  [AgentTraceStatus.INTERRUPTED]: 'warning',
   [AgentTraceStatus.RUNNING]: 'accent',
 } as const
