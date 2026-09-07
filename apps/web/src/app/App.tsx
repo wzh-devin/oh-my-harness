@@ -248,7 +248,7 @@ export function App() {
       case 'explore':
         return <ExplorePage onNavigate={navigate} />
       case 'library':
-        return <LibraryPage onNavigate={navigate} />
+        return <LibraryPage />
       case 'thread':
         return (
           <ChatPage

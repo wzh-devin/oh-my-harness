@@ -25,11 +25,9 @@ export function ExplorePage({ onNavigate }: ExplorePageProps) {
       <div className="mx-auto flex w-full max-w-[960px] flex-col px-4 py-8">
         <PromptSuggestion variant="card">
           <PromptSuggestion.Header>
-            <PromptSuggestion.Title>
-              日常工作的常用提示词
-            </PromptSuggestion.Title>
+            <PromptSuggestion.Title>预设提示词</PromptSuggestion.Title>
             <PromptSuggestion.Description>
-              选择一个提示词，了解此模板适合哪些对话场景。所有提示词均为模拟数据，不会发送到任何后端。
+              选择一个预设填入新对话草稿，编辑并发送后才会请求模型。
             </PromptSuggestion.Description>
           </PromptSuggestion.Header>
 

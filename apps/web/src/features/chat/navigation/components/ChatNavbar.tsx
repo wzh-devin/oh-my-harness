@@ -9,11 +9,11 @@ const NAV_TITLES: Record<
   { subtitle: string; title: string }
 > = {
   explore: {
-    subtitle: '通过常用提示词探索模板能力',
+    subtitle: '选择预设提示词，开始新的对话',
     title: '探索',
   },
   library: {
-    subtitle: '已保存的提示词、语气预设和可复用对话',
+    subtitle: '资料保存与管理功能尚未开放',
     title: '资料库',
   },
   new: { subtitle: '开始一段全新的对话', title: '新建对话' },
