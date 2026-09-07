@@ -1,3 +1,4 @@
+import { APPROVAL_DECISION } from '@oh-my-harness/agent-policy/contracts'
 import type { PermissionId } from '../../../settings/index.ts'
 import { publishTraceUpdate } from '../../../trace/api/index.ts'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -6,7 +7,6 @@ import type { ChatSubmitPayload } from '../../composer/index.ts'
 import type {
   ChatMessage,
   ChatMessageActivityPart,
-  ChatMessageTool,
   ChatThread,
 } from '../../data/index.ts'
 import type { ApprovalDecision } from '../../message/index.ts'
@@ -57,17 +57,6 @@ const toolOutputText = (output: unknown) => {
     )
     .join('\n')
 }
-
-const toolKind = (toolName: string): ChatMessageTool['kind'] =>
-  toolName === 'bash' || toolName === 'command'
-    ? 'command'
-    : toolName === 'read' || toolName === 'view_attachment'
-      ? 'read'
-      : toolName === 'load_skill_resource'
-        ? 'skill'
-        : toolName === 'edit' || toolName === 'write'
-          ? 'edit'
-          : 'tool'
 
 const streamingAssistant = (id: string): ChatMessage => ({
   actions: 'full',
@@ -739,7 +728,7 @@ export function useAgentSessions() {
                           item,
                           {
                             input: event.input,
-                            kind: toolKind(event.toolName),
+                            kind: event.kind,
                             state: 'input-available',
                             toolCallId: event.toolCallId,
                             toolName: event.toolName,
@@ -772,7 +761,7 @@ export function useAgentSessions() {
                                   (tool) =>
                                     tool.toolCallId === event.toolCallId,
                                 )?.input ?? {}),
-                            kind: toolKind(event.toolName),
+                            kind: event.kind,
                             outcome: event.outcome,
                             state: event.isError
                               ? 'output-error'
@@ -932,7 +921,7 @@ export function useAgentSessions() {
       if (!approval) return
       try {
         await resolveToolApproval(sessionId, approval.approvalId, decision)
-        if (decision === 'approve-once') {
+        if (decision === APPROVAL_DECISION.approveOnce) {
           const resumedAt = Date.now()
           updateThread(sessionId, (thread) => ({
             ...thread,

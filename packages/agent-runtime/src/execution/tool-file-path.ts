@@ -1,3 +1,4 @@
+import { FILE_SCOPE } from '@oh-my-harness/agent-policy/contracts'
 import { isAbsolute } from 'node:path'
 
 /** 只投影执行器确认的真实目标；外部路径保留绝对形式，不能进入工作区预览。 */
@@ -20,9 +21,9 @@ export const toolFilePath = (details: unknown): string | undefined => {
     path.split(/[\\/]/u).includes('..')
   )
     return
-  if (target.scope === 'external' && isAbsolute(path)) return path
+  if (target.scope === FILE_SCOPE.external && isAbsolute(path)) return path
   if (
-    target.scope === 'workspace' &&
+    target.scope === FILE_SCOPE.workspace &&
     !isAbsolute(path) &&
     !/^[a-z][a-z\d+.-]*:/iu.test(path)
   )

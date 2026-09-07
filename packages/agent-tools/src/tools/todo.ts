@@ -1,13 +1,20 @@
+import { BUILTIN_TOOL_NAME } from '../tool-names.ts'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 
-export type TodoStatus = 'completed' | 'in_progress' | 'pending'
+export const TODO_STATUS = {
+  pending: 'pending',
+  inProgress: 'in_progress',
+  completed: 'completed',
+} as const
+const todoStatuses = Object.values(TODO_STATUS)
+export type TodoStatus = (typeof todoStatuses)[number]
 
 export interface TodoItem {
   content: string
   status: TodoStatus
 }
 
-const statuses = new Set<TodoStatus>(['completed', 'in_progress', 'pending'])
+const statuses = new Set<TodoStatus>(todoStatuses)
 
 const parameters = {
   additionalProperties: false,
@@ -18,7 +25,7 @@ const parameters = {
         properties: {
           content: { maxLength: 200, minLength: 1, type: 'string' },
           status: {
-            enum: ['pending', 'in_progress', 'completed'],
+            enum: todoStatuses,
             type: 'string',
           },
         },
@@ -69,7 +76,7 @@ export const parseTodoWriteInput = (input: unknown): TodoItem[] => {
       throw new Error('Todo status is invalid.')
     }
     const status = item.status as TodoStatus
-    if (status === 'in_progress' && ++activeCount > 1) {
+    if (status === TODO_STATUS.inProgress && ++activeCount > 1) {
       throw new Error('Only one todo can be in progress.')
     }
     return { content, status }
@@ -83,15 +90,17 @@ export const createTodoWriteTool = (
   description:
     'Create or replace the complete todo plan for a multi-step task. Keep at most one item in progress, update it as work advances, and pass an empty array to clear it.',
   label: 'update todo plan',
-  name: 'todo_write',
+  name: BUILTIN_TOOL_NAME.todoWrite,
   parameters,
   async execute(_toolCallId: string, input: unknown, signal?: AbortSignal) {
     signal?.throwIfAborted()
     const todos = parseTodoWriteInput(input)
     await onUpdated(todos)
-    const completed = todos.filter((todo) => todo.status === 'completed').length
+    const completed = todos.filter(
+      (todo) => todo.status === TODO_STATUS.completed,
+    ).length
     const inProgress = todos.filter(
-      (todo) => todo.status === 'in_progress',
+      (todo) => todo.status === TODO_STATUS.inProgress,
     ).length
     const pending = todos.length - completed - inProgress
     return {

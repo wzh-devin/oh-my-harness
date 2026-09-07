@@ -1,3 +1,7 @@
+import type {
+  ToolActivityKind,
+  ToolApprovalEvent,
+} from './tool-presentation.ts'
 import type { ToolPermission } from '@oh-my-harness/agent-policy'
 import type { BashOutcome, TodoItem } from '@oh-my-harness/agent-tools'
 
@@ -15,6 +19,7 @@ export type AgentRuntimeEvent =
       input: unknown
       toolCallId: string
       toolName: string
+      kind: ToolActivityKind
       type: 'tool_start'
     }
   | {
@@ -24,39 +29,10 @@ export type AgentRuntimeEvent =
       output: unknown
       toolCallId: string
       toolName: string
+      kind: ToolActivityKind
       type: 'tool_end'
     }
-  | {
-      approvalId: string
-      kind: 'edit' | 'read'
-      path: string
-      title: string
-      toolCallId: string
-      toolName: 'edit' | 'read' | 'write'
-      type: 'tool_approval_required'
-    }
-  | {
-      approvalId: string
-      input: { command: string }
-      kind: 'command'
-      title: string
-      toolCallId: string
-      toolName: 'bash'
-      type: 'tool_approval_required'
-    }
-  | {
-      approvalId: string
-      input: {
-        connectionId: string
-        tool: string
-        arguments: Record<string, unknown>
-      }
-      kind: 'mcp'
-      title: string
-      toolCallId: string
-      toolName: 'mcp'
-      type: 'tool_approval_required'
-    }
+  | ToolApprovalEvent
   | {
       cacheRead: number
       cacheWrite: number

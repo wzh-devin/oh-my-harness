@@ -74,6 +74,9 @@ importers:
       '@lobehub/icons-static-svg':
         specifier: 1.94.0
         version: 1.94.0
+      '@oh-my-harness/agent-policy':
+        specifier: workspace:*
+        version: link:../../packages/agent-policy
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1

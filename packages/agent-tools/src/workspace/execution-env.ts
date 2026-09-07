@@ -1,3 +1,9 @@
+import {
+  FILE_SCOPE,
+  TOOL_EFFECT,
+  type FileScope,
+  type FileToolEffect,
+} from '@oh-my-harness/agent-policy/contracts'
 import { randomUUID } from 'node:crypto'
 import { chmod, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
@@ -39,7 +45,7 @@ const isWithin = (root: string, path: string) => {
 
 interface FileTarget {
   path: string
-  scope: 'workspace' | 'external'
+  scope: FileScope
 }
 
 /** 默认限制在注册工作区；单次授权环境只允许指定文件，不提供 Shell。 */
@@ -47,12 +53,12 @@ export class WorkspaceExecutionEnv extends NodeExecutionEnv {
   private readonly protectedRoots: string[]
   private readonly workspaceRoot: string
 
-  private readonly target?: FileTarget & { effect: 'read' | 'write' }
+  private readonly target?: FileTarget & { effect: FileToolEffect }
 
   private constructor(
     workspaceRoot: string,
     protectedRoots: string[],
-    target?: FileTarget & { effect: 'read' | 'write' },
+    target?: FileTarget & { effect: FileToolEffect },
   ) {
     super({ cwd: workspaceRoot })
     this.target = target
@@ -96,8 +102,8 @@ export class WorkspaceExecutionEnv extends NodeExecutionEnv {
         return {
           path: target,
           scope: isWithin(this.workspaceRoot, target)
-            ? 'workspace'
-            : 'external',
+            ? FILE_SCOPE.workspace
+            : FILE_SCOPE.external,
         }
       }
       if (canonical.error.code !== 'not_found') throw canonical.error
@@ -108,7 +114,7 @@ export class WorkspaceExecutionEnv extends NodeExecutionEnv {
   }
 
   /** 为已获准的一次工具执行创建独立环境，不扩大共享工作区权限。 */
-  forTarget(target: FileTarget, effect: 'read' | 'write') {
+  forTarget(target: FileTarget, effect: FileToolEffect) {
     return new WorkspaceExecutionEnv(this.workspaceRoot, this.protectedRoots, {
       ...target,
       effect,
@@ -116,14 +122,14 @@ export class WorkspaceExecutionEnv extends NodeExecutionEnv {
   }
 
   /** 审批前生成工作区相对资源；执行时文件方法仍会重复校验。 */
-  async describePath(path: string, effect: 'read' | 'write') {
+  async describePath(path: string, effect: FileToolEffect) {
     if (isAbsolute(path)) {
       throw new FileError('invalid', 'Tool paths must be workspace-relative.')
     }
     const addressed = await this.resolveUserPath(path)
     if (!addressed.ok) throw addressed.error
     const guarded =
-      effect === 'read'
+      effect === TOOL_EFFECT.read
         ? await this.guardExisting(addressed.value, true)
         : await this.guardWrite(addressed.value)
     if (!guarded.ok) throw guarded.error
@@ -358,7 +364,7 @@ export class WorkspaceExecutionEnv extends NodeExecutionEnv {
   }
 
   private async guardWrite(path: string): Promise<Result<string, FileError>> {
-    if (this.target?.effect === 'read') return denied()
+    if (this.target?.effect === TOOL_EFFECT.read) return denied()
     const syntactic = this.guardSyntactic(this.addressedPath(path))
     if (!syntactic.ok) return syntactic
     try {

@@ -1,3 +1,4 @@
+import { BUILTIN_TOOL_NAME } from '../tool-names.ts'
 import { spawn } from 'node:child_process'
 
 import type { AgentTool } from '@earendil-works/pi-agent-core'
@@ -101,7 +102,7 @@ export const createBashTool = (cwd: string, fullAccess = false): AgentTool => ({
       ? 'Calls are authorized by the full-access run policy.'
       : 'Every call requires user approval.'),
   label: 'bash',
-  name: 'bash',
+  name: BUILTIN_TOOL_NAME.bash,
   parameters,
   async execute(_toolCallId, input, signal) {
     signal?.throwIfAborted()

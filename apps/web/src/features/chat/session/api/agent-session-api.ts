@@ -1,9 +1,16 @@
+import {
+  POLICY_TOOL,
+  TOOL_EFFECT,
+  getFileTool,
+  isToolPermission,
+} from '@oh-my-harness/agent-policy/contracts'
 import { parseTraceUpdate } from '../../../trace/api/index.ts'
 import type {
   AgentRunEventVo,
   AgentSessionDetailVo,
   AgentSessionMessagePageVo,
   AgentSessionVo,
+  AgentSessionToolVo,
   AgentTodoItemVo,
   BashOutcomeVo,
   ContextUsageVo,
@@ -175,6 +182,98 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     : ((await response.json()) as T)
 }
 
+const toolActivityKindMap = {
+  command: true,
+  edit: true,
+  read: true,
+  skill: true,
+  tool: true,
+} satisfies Record<AgentSessionToolVo['kind'], boolean>
+const isToolActivityKind = (
+  value: unknown,
+): value is AgentSessionToolVo['kind'] =>
+  typeof value === 'string' && Object.hasOwn(toolActivityKindMap, value)
+
+/** HTTP 恢复与 SSE 共用审批解析，拒绝枚举成员合法但组合错误的对象。 */
+const parseToolApproval = (
+  value: unknown,
+): PendingToolApprovalVo | undefined => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return
+  const event = value as Record<string, unknown>
+  if (
+    event.type !== 'tool_approval_required' ||
+    typeof event.approvalId !== 'string' ||
+    !event.approvalId ||
+    typeof event.title !== 'string' ||
+    typeof event.toolCallId !== 'string' ||
+    !event.toolCallId
+  )
+    return
+  const common = {
+    approvalId: event.approvalId,
+    title: event.title,
+    toolCallId: event.toolCallId,
+    type: 'tool_approval_required' as const,
+  }
+  if (event.kind === 'mcp' && event.toolName === POLICY_TOOL.mcp.toolName) {
+    if (
+      !event.input ||
+      typeof event.input !== 'object' ||
+      Array.isArray(event.input)
+    )
+      return
+    const input = event.input as Record<string, unknown>
+    if (
+      typeof input.connectionId !== 'string' ||
+      typeof input.tool !== 'string' ||
+      !input.arguments ||
+      typeof input.arguments !== 'object' ||
+      Array.isArray(input.arguments)
+    )
+      return
+    return {
+      ...common,
+      kind: 'mcp',
+      toolName: POLICY_TOOL.mcp.toolName,
+      input: {
+        connectionId: input.connectionId,
+        tool: input.tool,
+        arguments: input.arguments as Record<string, unknown>,
+      },
+    }
+  }
+  if (
+    event.kind === 'command' &&
+    event.toolName === POLICY_TOOL.bash.toolName
+  ) {
+    const input = bashInput(event.input)
+    if (input)
+      return {
+        ...common,
+        kind: 'command',
+        toolName: POLICY_TOOL.bash.toolName,
+        input,
+      }
+    return
+  }
+  if (typeof event.path !== 'string') return
+  const fileTool = getFileTool(event.toolName)
+  if (fileTool?.effect === TOOL_EFFECT.read && event.kind === 'read')
+    return {
+      ...common,
+      kind: 'read',
+      toolName: fileTool.toolName,
+      path: event.path,
+    }
+  if (fileTool?.effect === TOOL_EFFECT.write && event.kind === 'edit')
+    return {
+      ...common,
+      kind: 'edit',
+      toolName: fileTool.toolName,
+      path: event.path,
+    }
+}
+
 function toRunEvent(value: unknown): AgentRunEventVo {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new AgentSessionApiError(
@@ -193,9 +292,7 @@ function toRunEvent(value: unknown): AgentRunEventVo {
     case 'start':
       if (
         typeof event.sessionId === 'string' &&
-        (event.permission === 'read-only' ||
-          event.permission === 'workspace-write' ||
-          event.permission === 'full-access')
+        isToolPermission(event.permission)
       ) {
         return {
           permission: event.permission,
@@ -218,12 +315,14 @@ function toRunEvent(value: unknown): AgentRunEventVo {
     case 'tool_start':
       if (
         typeof event.toolCallId === 'string' &&
-        typeof event.toolName === 'string'
+        typeof event.toolName === 'string' &&
+        isToolActivityKind(event.kind)
       ) {
         return {
           input: event.input,
           toolCallId: event.toolCallId,
           toolName: event.toolName,
+          kind: event.kind,
           type: 'tool_start',
         }
       }
@@ -232,6 +331,7 @@ function toRunEvent(value: unknown): AgentRunEventVo {
       if (
         typeof event.toolCallId === 'string' &&
         typeof event.toolName === 'string' &&
+        isToolActivityKind(event.kind) &&
         typeof event.isError === 'boolean'
       ) {
         return {
@@ -239,89 +339,22 @@ function toRunEvent(value: unknown): AgentRunEventVo {
           ...(typeof event.filePath === 'string'
             ? { filePath: event.filePath }
             : {}),
-          ...(event.toolName === 'bash'
+          ...(event.toolName === POLICY_TOOL.bash.toolName
             ? { outcome: bashOutcome(event.outcome) }
             : {}),
           output: event.output,
           toolCallId: event.toolCallId,
           toolName: event.toolName,
+          kind: event.kind,
           type: 'tool_end',
         }
       }
       break
-    case 'tool_approval_required':
-      if (
-        typeof event.approvalId === 'string' &&
-        event.kind === 'mcp' &&
-        event.toolName === 'mcp' &&
-        typeof event.title === 'string' &&
-        typeof event.toolCallId === 'string' &&
-        event.input &&
-        typeof event.input === 'object'
-      ) {
-        const input = event.input as Record<string, unknown>
-        if (
-          typeof input.connectionId === 'string' &&
-          typeof input.tool === 'string' &&
-          input.arguments &&
-          typeof input.arguments === 'object' &&
-          !Array.isArray(input.arguments)
-        )
-          return {
-            approvalId: event.approvalId,
-            input: {
-              connectionId: input.connectionId,
-              tool: input.tool,
-              arguments: input.arguments as Record<string, unknown>,
-            },
-            kind: 'mcp',
-            title: event.title,
-            toolCallId: event.toolCallId,
-            toolName: 'mcp',
-            type: 'tool_approval_required',
-          }
-      }
-      if (
-        typeof event.approvalId === 'string' &&
-        event.kind === 'command' &&
-        event.toolName === 'bash' &&
-        typeof event.title === 'string' &&
-        typeof event.toolCallId === 'string'
-      ) {
-        const input = bashInput(event.input)
-        if (input) {
-          return {
-            approvalId: event.approvalId,
-            input,
-            kind: 'command',
-            title: event.title,
-            toolCallId: event.toolCallId,
-            toolName: 'bash',
-            type: 'tool_approval_required',
-          }
-        }
-      }
-      if (
-        typeof event.approvalId === 'string' &&
-        (event.kind === 'edit' || event.kind === 'read') &&
-        typeof event.path === 'string' &&
-        typeof event.title === 'string' &&
-        typeof event.toolCallId === 'string' &&
-        (event.toolName === 'edit' ||
-          event.toolName === 'read' ||
-          event.toolName === 'write')
-      ) {
-        return {
-          approvalId: event.approvalId,
-          kind: event.kind,
-          path: event.path,
-          title: event.title,
-          toolCallId: event.toolCallId,
-          toolName: event.toolName,
-          type: 'tool_approval_required',
-        }
-      }
+    case 'tool_approval_required': {
+      const approval = parseToolApproval(event)
+      if (approval) return approval
       break
+    }
     case 'usage':
       if (
         ['cacheRead', 'cacheWrite', 'input', 'output', 'total'].every(
@@ -467,10 +500,21 @@ export const abortAgentSession = (sessionId: string) =>
   request<void>(`${sessionPath(sessionId)}/abort`, { method: 'POST' })
 
 /** 查询断线或刷新后仍在等待的服务端工具审批。 */
-export const getPendingToolApproval = (sessionId: string) =>
-  request<PendingToolApprovalVo | undefined>(
+export const getPendingToolApproval = async (
+  sessionId: string,
+): Promise<PendingToolApprovalVo | undefined> => {
+  const value = await request<unknown>(
     `${sessionPath(sessionId)}/tool-approvals/pending`,
   )
+  if (value === undefined) return
+  const approval = parseToolApproval(value)
+  if (!approval)
+    throw new AgentSessionApiError(
+      'Agent 返回了无效的审批响应。',
+      'INVALID_APPROVAL_RESPONSE',
+    )
+  return approval
+}
 
 /** 决议服务端保存的原始工具调用，不允许客户端替换参数。 */
 export const resolveToolApproval = (

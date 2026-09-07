@@ -1,3 +1,4 @@
+import type { POLICY_TOOL } from '@oh-my-harness/agent-policy/contracts'
 import type { PermissionId } from '../../../settings/index.ts'
 
 export interface AgentSessionVo {
@@ -90,6 +91,7 @@ export type AgentRunEventVo =
       input: unknown
       toolCallId: string
       toolName: string
+      kind: AgentSessionToolVo['kind']
       type: 'tool_start'
     }
   | {
@@ -99,24 +101,30 @@ export type AgentRunEventVo =
       output: unknown
       toolCallId: string
       toolName: string
+      kind: AgentSessionToolVo['kind']
       type: 'tool_end'
     }
-  | {
+  | ({
       approvalId: string
-      kind: 'edit' | 'read'
       path: string
       title: string
       toolCallId: string
-      toolName: 'edit' | 'read' | 'write'
       type: 'tool_approval_required'
-    }
+    } & (
+      | { kind: 'read'; toolName: typeof POLICY_TOOL.read.toolName }
+      | {
+          kind: 'edit'
+          toolName:
+            typeof POLICY_TOOL.write.toolName | typeof POLICY_TOOL.edit.toolName
+        }
+    ))
   | {
       approvalId: string
       input: { command: string }
       kind: 'command'
       title: string
       toolCallId: string
-      toolName: 'bash'
+      toolName: typeof POLICY_TOOL.bash.toolName
       type: 'tool_approval_required'
     }
   | {
@@ -129,7 +137,7 @@ export type AgentRunEventVo =
       kind: 'mcp'
       title: string
       toolCallId: string
-      toolName: 'mcp'
+      toolName: typeof POLICY_TOOL.mcp.toolName
       type: 'tool_approval_required'
     }
   | {

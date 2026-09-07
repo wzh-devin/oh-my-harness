@@ -1,3 +1,7 @@
+import {
+  getToolActivityKind,
+  type ToolActivityKind,
+} from '../execution/tool-presentation.ts'
 import type {
   Entry,
   JsonValue,
@@ -8,7 +12,11 @@ import type {
   SessionStats,
 } from '@earendil-works/pi-agent-core'
 import { SessionError } from '@earendil-works/pi-agent-core'
-import { parseTodoWriteInput, type TodoItem } from '@oh-my-harness/agent-tools'
+import {
+  BUILTIN_TOOL_NAME,
+  parseTodoWriteInput,
+  type TodoItem,
+} from '@oh-my-harness/agent-tools'
 import type {
   AssistantMessage,
   ToolResultMessage,
@@ -101,7 +109,7 @@ export interface AgentSessionMessage {
 export interface AgentSessionTool {
   errorText?: string
   input: Record<string, unknown>
-  kind: 'command' | 'edit' | 'read' | 'skill' | 'tool'
+  kind: ToolActivityKind
   outcome?: import('@oh-my-harness/agent-tools').BashOutcome
   output?: string
   state: 'input-available' | 'output-available' | 'output-error'
@@ -256,24 +264,15 @@ function toSessionTool(
   const result = toolResults.get(toolCall.id)
   const output = result ? toolResultText(result) : undefined
   const outcome =
-    toolCall.name === 'bash' ? safeBashOutcome(result?.details) : undefined
+    toolCall.name === BUILTIN_TOOL_NAME.bash
+      ? safeBashOutcome(result?.details)
+      : undefined
   return {
     ...(result?.isError && output ? { errorText: output } : {}),
     input: toolFilePath(result?.details)
       ? { path: toolFilePath(result?.details) }
       : safeToolInput(toolCall.arguments),
-    kind:
-      toolCall.name === 'bash' || toolCall.name === 'command'
-        ? 'command'
-        : toolCall.name === 'read'
-          ? 'read'
-          : toolCall.name === 'load_skill_resource'
-            ? 'skill'
-            : toolCall.name === 'view_attachment'
-              ? 'read'
-              : toolCall.name === 'edit' || toolCall.name === 'write'
-                ? 'edit'
-                : 'tool',
+    kind: getToolActivityKind(toolCall.name),
     ...(!result?.isError && output ? { output } : {}),
     ...(outcome ? { outcome } : {}),
     state: result

@@ -1,3 +1,4 @@
+import type { ToolActivityKind } from '@oh-my-harness/agent-runtime'
 export interface CreateAgentSessionDto {
   modelId: string
   name?: string
@@ -59,7 +60,7 @@ export interface AgentSessionMessageDto {
 export interface AgentSessionToolDto {
   errorText?: string
   input: Record<string, unknown>
-  kind: 'command' | 'edit' | 'read' | 'skill' | 'tool'
+  kind: ToolActivityKind
   outcome?: {
     exitCode: number | null
     outputExceeded: boolean

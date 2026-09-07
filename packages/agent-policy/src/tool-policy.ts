@@ -1,56 +1,19 @@
 import { randomUUID } from 'node:crypto'
 
-export const TOOL_PERMISSIONS = [
-  'read-only',
-  'workspace-write',
-  'full-access',
-] as const
-
-export type ToolPermission = (typeof TOOL_PERMISSIONS)[number]
-export type ApprovalDecision = 'approve-once' | 'reject'
-export type ToolEffect = 'execute' | 'read' | 'write' | 'mcp'
-
-interface ToolAuthorizationBase {
-  permission: ToolPermission
-  runId: string
-  sessionId: string
-  toolCallId: string
-}
-
-export interface FileToolAuthorizationRequest extends ToolAuthorizationBase {
-  effect: 'read' | 'write'
-  path: string
-  scope: 'workspace' | 'external'
-  toolName: 'edit' | 'read' | 'write'
-}
-
-export interface BashToolAuthorizationRequest extends ToolAuthorizationBase {
-  command: string
-  effect: 'execute'
-  toolName: 'bash'
-}
-
-export type ToolAuthorizationRequest =
-  | BashToolAuthorizationRequest
-  | FileToolAuthorizationRequest
-  | McpToolAuthorizationRequest
-
-export interface McpToolAuthorizationRequest extends ToolAuthorizationBase {
-  effect: 'mcp'
-  toolName: 'mcp'
-  connectionId: string
-  remoteToolName: string
-  input: Record<string, unknown>
-}
-
-export type PendingToolApproval = ToolAuthorizationRequest & {
-  approvalId: string
-}
-
-export type ApprovalResolution = PendingToolApproval & {
-  decision: ApprovalDecision
-  reason: 'aborted' | 'server-closed' | 'user'
-}
+import {
+  APPROVAL_DECISION,
+  FILE_SCOPE,
+  POLICY_DECISION,
+  TOOL_EFFECT,
+  TOOL_PERMISSION,
+  getPolicyTool,
+  isToolPermission,
+  type ApprovalDecision,
+  type ApprovalResolution,
+  type PendingToolApproval,
+  type PolicyDecision,
+  type ToolAuthorizationRequest,
+} from './contracts.ts'
 
 interface ApprovalHooks {
   onRequested(approval: PendingToolApproval): Promise<void>
@@ -81,34 +44,32 @@ export class ToolPolicyError extends Error {
   }
 }
 
-/** 校验来自 API 的权限值，避免客户端扩大服务端能力。 */
-export const isToolPermission = (value: unknown): value is ToolPermission =>
-  TOOL_PERMISSIONS.some((permission) => permission === value)
-
-/** 对固定工具矩阵做无副作用决策。 */
+/** 对固定工具矩阵做无副作用决策，未知权限或能力组合一律拒绝。 */
 export const evaluateToolPolicy = (
   request: ToolAuthorizationRequest,
-): 'allow' | 'deny' | 'require-approval' => {
-  if (!isToolPermission(request.permission)) return 'deny'
-  if (request.toolName === 'mcp' && request.effect === 'mcp')
-    return 'require-approval'
-  if (request.toolName === 'bash' && request.effect === 'execute') {
-    return request.permission === 'full-access' ? 'allow' : 'require-approval'
+): PolicyDecision => {
+  if (!isToolPermission(request.permission)) return POLICY_DECISION.deny
+  const tool = getPolicyTool(request.toolName)
+  if (!tool || request.effect !== tool.effect) return POLICY_DECISION.deny
+  if (request.effect === TOOL_EFFECT.mcp) return POLICY_DECISION.requireApproval
+  if (request.effect === TOOL_EFFECT.execute) {
+    return request.permission === TOOL_PERMISSION.fullAccess
+      ? POLICY_DECISION.allow
+      : POLICY_DECISION.requireApproval
   }
   if (
-    (request.toolName === 'read' && request.effect === 'read') ||
-    ((request.toolName === 'write' || request.toolName === 'edit') &&
-      request.effect === 'write')
-  ) {
-    if (request.scope !== 'workspace' && request.scope !== 'external')
-      return 'deny'
-    if (request.permission === 'full-access') return 'allow'
-    if (request.scope === 'external') return 'require-approval'
-    return request.effect === 'read' || request.permission === 'workspace-write'
-      ? 'allow'
-      : 'require-approval'
-  }
-  return 'deny'
+    request.scope !== FILE_SCOPE.workspace &&
+    request.scope !== FILE_SCOPE.external
+  )
+    return POLICY_DECISION.deny
+  if (request.permission === TOOL_PERMISSION.fullAccess)
+    return POLICY_DECISION.allow
+  if (request.scope === FILE_SCOPE.external)
+    return POLICY_DECISION.requireApproval
+  return request.effect === TOOL_EFFECT.read ||
+    request.permission === TOOL_PERMISSION.workspaceWrite
+    ? POLICY_DECISION.allow
+    : POLICY_DECISION.requireApproval
 }
 
 /** 保存活跃 Run 的单次审批，不持久化会话级授权。 */
@@ -125,8 +86,8 @@ export class ToolPolicy {
     signal?: AbortSignal,
   ) {
     const decision = evaluateToolPolicy(request)
-    if (decision === 'allow') return
-    if (decision === 'deny') {
+    if (decision === POLICY_DECISION.allow) return
+    if (decision === POLICY_DECISION.deny) {
       throw new ToolPolicyError(
         'TOOL_PERMISSION_DENIED',
         '当前工具调用不在允许的能力范围内。',
@@ -164,7 +125,9 @@ export class ToolPolicy {
     }
 
     const onAbort = () => {
-      void this.resolveState(state, 'reject', 'aborted').catch(() => undefined)
+      void this.resolveState(state, APPROVAL_DECISION.reject, 'aborted').catch(
+        () => undefined,
+      )
     }
     signal?.addEventListener('abort', onAbort, { once: true })
     if (signal?.aborted) onAbort()
@@ -240,7 +203,7 @@ export class ToolPolicy {
       runId: state.approval.runId,
       sessionId: state.approval.sessionId,
     })
-    if (decision === 'approve-once') {
+    if (decision === APPROVAL_DECISION.approveOnce) {
       state.complete()
     } else {
       state.complete(

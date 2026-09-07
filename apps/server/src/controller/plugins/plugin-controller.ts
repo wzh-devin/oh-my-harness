@@ -1,3 +1,4 @@
+import { TOOL_PERMISSION } from '@oh-my-harness/agent-policy/contracts'
 import { join } from 'node:path'
 import { ToolPolicy } from '@oh-my-harness/agent-policy'
 import {
@@ -333,7 +334,7 @@ export function createPluginController(
         connections,
         targets: [item],
         policy: new ToolPolicy(),
-        permission: 'read-only',
+        permission: TOOL_PERMISSION.readOnly,
         runId: 'connection-test',
         sessionId: 'connection-test',
         signal: AbortSignal.timeout(30_000),

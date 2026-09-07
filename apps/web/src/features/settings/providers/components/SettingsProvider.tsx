@@ -1,3 +1,4 @@
+import { TOOL_PERMISSION } from '@oh-my-harness/agent-policy/contracts'
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { getProviders } from '../../models/api/index.ts'
 import {
@@ -40,15 +41,15 @@ export function SettingsProvider({
   const [permissionSelection, setPermissionSelection] = useState<{
     scope: string
     permission: PermissionId
-  }>({ scope: permissionScope, permission: 'workspace-write' })
+  }>({ scope: permissionScope, permission: TOOL_PERMISSION.workspaceWrite })
   const permission =
     permissionSelection.scope === permissionScope
       ? permissionSelection.permission
-      : 'workspace-write'
+      : TOOL_PERMISSION.workspaceWrite
   if (permissionSelection.scope !== permissionScope) {
     setPermissionSelection({
       scope: permissionScope,
-      permission: 'workspace-write',
+      permission: TOOL_PERMISSION.workspaceWrite,
     })
   }
   /** 新会话或工作区不继承上一处的完全访问选择。 */

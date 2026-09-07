@@ -1,3 +1,4 @@
+import { APPROVAL_DECISION } from '@oh-my-harness/agent-policy/contracts'
 import { useEffect } from 'react'
 import { Button, Kbd } from '@heroui/react'
 import { FileTextIcon, HandIcon, PencilIcon, TerminalIcon } from 'lucide-react'
@@ -16,11 +17,11 @@ export function ApprovalPrompt({ tool, onResolve }: ApprovalPromptProps) {
     const handleShortcut = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault()
-        onResolve('reject')
+        onResolve(APPROVAL_DECISION.reject)
       }
       if (event.key === 'Enter') {
         event.preventDefault()
-        onResolve('approve-once')
+        onResolve(APPROVAL_DECISION.approveOnce)
       }
     }
 
@@ -66,7 +67,7 @@ export function ApprovalPrompt({ tool, onResolve }: ApprovalPromptProps) {
           className="h-9 min-h-0 rounded-full px-3.5 text-sm"
           type="button"
           variant="outline"
-          onPress={() => onResolve('reject')}
+          onPress={() => onResolve(APPROVAL_DECISION.reject)}
         >
           拒绝
           <Kbd className="ml-0.5 h-5 min-w-7 px-1 text-[10px]">Esc</Kbd>
@@ -75,7 +76,7 @@ export function ApprovalPrompt({ tool, onResolve }: ApprovalPromptProps) {
         <Button
           className="h-9 min-h-0 rounded-full bg-foreground px-3.5 text-sm text-background hover:bg-foreground/90"
           type="button"
-          onPress={() => onResolve('approve-once')}
+          onPress={() => onResolve(APPROVAL_DECISION.approveOnce)}
         >
           允许一次
           <Kbd className="ml-0.5 h-5 min-w-6 bg-background/10 px-1 text-[10px] text-background">

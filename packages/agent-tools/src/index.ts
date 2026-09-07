@@ -1,3 +1,5 @@
+export { BUILTIN_TOOL_NAME } from './tool-names.ts'
+export type { BuiltinToolName } from './tool-names.ts'
 export { createWorkspaceTools } from './workspace/toolset.ts'
 export {
   createSkillResourceTool,

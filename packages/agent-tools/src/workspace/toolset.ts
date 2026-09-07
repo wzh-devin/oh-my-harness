@@ -1,3 +1,9 @@
+import {
+  FILE_SCOPE,
+  POLICY_TOOL,
+  TOOL_PERMISSION,
+  getFileTool,
+} from '@oh-my-harness/agent-policy/contracts'
 import { relative } from 'node:path'
 import type {
   ApprovalResolution,
@@ -44,8 +50,23 @@ export const createWorkspaceTools = async (options: WorkspaceToolsOptions) => {
     options.protectedRoots,
   )
   const authorized = new Map<string, AuthorizedCall>()
-  const fileTools = [createReadTool(), createWriteTool(), createEditTool()]
-  const bash = createBashTool(env.cwd, options.permission === 'full-access')
+  const fileToolMap = {
+    [POLICY_TOOL.read.toolName]: createReadTool(),
+    [POLICY_TOOL.write.toolName]: createWriteTool(),
+    [POLICY_TOOL.edit.toolName]: createEditTool(),
+  }
+  for (const [name, tool] of Object.entries(fileToolMap)) {
+    if (tool.name !== name)
+      throw new ToolPolicyError(
+        'TOOL_PERMISSION_DENIED',
+        'SDK 工具名称与宿主契约不一致。',
+      )
+  }
+  const fileTools = Object.values(fileToolMap)
+  const bash = createBashTool(
+    env.cwd,
+    options.permission === TOOL_PERMISSION.fullAccess,
+  )
   const tools: AgentTool[] = [...fileTools, bash].map((tool) => ({
     ...tool,
     async execute(toolCallId, params, signal, onUpdate) {
@@ -72,14 +93,15 @@ export const createWorkspaceTools = async (options: WorkspaceToolsOptions) => {
           '审批后文件目标已变化，请重新发起调用。',
         )
       }
-      const scopedEnv = env.forTarget(
-        call.target,
-        tool.name === 'read' ? 'read' : 'write',
-      )
+      const definition = getFileTool(tool.name)
+      if (!definition)
+        throw new ToolPolicyError(
+          'TOOL_PERMISSION_DENIED',
+          '文件工具不在允许范围内。',
+        )
+      const scopedEnv = env.forTarget(call.target, definition.effect)
       try {
-        const fileTool = fileTools.find(
-          (candidate) => candidate.name === tool.name,
-        )!
+        const fileTool = fileToolMap[definition.toolName]
         const result = await fileTool.execute(
           toolCallId,
           { ...input, path: call.target.path } as never,
@@ -96,7 +118,7 @@ export const createWorkspaceTools = async (options: WorkspaceToolsOptions) => {
             fileTarget: {
               scope: call.target.scope,
               path:
-                call.target.scope === 'workspace'
+                call.target.scope === FILE_SCOPE.workspace
                   ? relative(env.cwd, call.target.path)
                   : call.target.path,
             },
@@ -127,10 +149,10 @@ export const createWorkspaceTools = async (options: WorkspaceToolsOptions) => {
     }
     try {
       signal?.throwIfAborted()
-      if (toolName === 'bash') {
+      if (toolName === POLICY_TOOL.bash.toolName) {
         const { command } = parseBashInput(call.args)
         await options.policy.authorize(
-          { ...common, command, effect: 'execute', toolName },
+          { ...common, ...POLICY_TOOL.bash, command },
           hooks,
           signal,
         )
@@ -138,22 +160,21 @@ export const createWorkspaceTools = async (options: WorkspaceToolsOptions) => {
         authorized.set(call.toolCall.id, { input, toolName })
         return
       }
-      if (toolName !== 'read' && toolName !== 'write' && toolName !== 'edit') {
+      const definition = getFileTool(toolName)
+      if (!definition) {
         return { block: true, reason: '工具不在允许范围内。' }
       }
       const args = call.args as Record<string, unknown> | null
       if (!args || typeof args.path !== 'string')
         return { block: true, reason: '文件参数无效。' }
       const target = await env.resolveToolTarget(args.path)
-      const effect = toolName === 'read' ? 'read' : 'write'
       await options.policy.authorize(
         {
           ...common,
-          effect,
-          toolName,
+          ...definition,
           scope: target.scope,
           path:
-            target.scope === 'workspace'
+            target.scope === FILE_SCOPE.workspace
               ? relative(env.cwd, target.path) || '.'
               : target.path,
         },
@@ -169,7 +190,7 @@ export const createWorkspaceTools = async (options: WorkspaceToolsOptions) => {
         reason:
           error instanceof ToolPolicyError
             ? error.message
-            : toolName === 'bash'
+            : toolName === POLICY_TOOL.bash.toolName
               ? '命令无效或已取消。'
               : '文件路径无效、受保护或调用已取消。',
       }

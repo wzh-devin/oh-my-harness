@@ -1,3 +1,4 @@
+import { BUILTIN_TOOL_NAME } from '../tool-names.ts'
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
 
@@ -49,7 +50,7 @@ export const createSkillResourceTool = (
     description:
       'Read a file owned by an available skill. Use path "<skill-id>/<relative-path>"; use SKILL.md for the skill instructions.',
     label: 'load skill resource',
-    name: 'load_skill_resource',
+    name: BUILTIN_TOOL_NAME.loadSkillResource,
     async execute(
       _toolCallId: string,
       parameters: unknown,

@@ -1,3 +1,5 @@
+import type { ToolActivityKind } from '@oh-my-harness/agent-runtime'
+import type { POLICY_TOOL } from '@oh-my-harness/agent-policy/contracts'
 import type { ToolPermission } from '@oh-my-harness/agent-policy'
 import type {
   AgentRunAttachment,
@@ -55,6 +57,7 @@ export type AgentRunEventDto =
       input: unknown
       toolCallId: string
       toolName: string
+      kind: ToolActivityKind
       type: 'tool_start'
     }
   | {
@@ -64,24 +67,30 @@ export type AgentRunEventDto =
       output: unknown
       toolCallId: string
       toolName: string
+      kind: ToolActivityKind
       type: 'tool_end'
     }
-  | {
+  | ({
       approvalId: string
-      kind: 'edit' | 'read'
       path: string
       title: string
       toolCallId: string
-      toolName: 'edit' | 'read' | 'write'
       type: 'tool_approval_required'
-    }
+    } & (
+      | { kind: 'read'; toolName: typeof POLICY_TOOL.read.toolName }
+      | {
+          kind: 'edit'
+          toolName:
+            typeof POLICY_TOOL.write.toolName | typeof POLICY_TOOL.edit.toolName
+        }
+    ))
   | {
       approvalId: string
       input: { command: string }
       kind: 'command'
       title: string
       toolCallId: string
-      toolName: 'bash'
+      toolName: typeof POLICY_TOOL.bash.toolName
       type: 'tool_approval_required'
     }
   | {
@@ -94,7 +103,7 @@ export type AgentRunEventDto =
       kind: 'mcp'
       title: string
       toolCallId: string
-      toolName: 'mcp'
+      toolName: typeof POLICY_TOOL.mcp.toolName
       type: 'tool_approval_required'
     }
   | {

@@ -1,5 +1,6 @@
 import {
   isToolPermission,
+  isApprovalDecision,
   type ApprovalDecision,
 } from '@oh-my-harness/agent-policy'
 import {
@@ -283,7 +284,7 @@ function parseApprovalDecision(value: unknown): ApprovalDecision | undefined {
   const record = value as Record<string, unknown>
   if (
     Object.keys(record).some((key) => key !== 'decision') ||
-    (record.decision !== 'approve-once' && record.decision !== 'reject')
+    !isApprovalDecision(record.decision)
   ) {
     return undefined
   }
@@ -319,39 +320,7 @@ export function createAgentRunController(runtime: AgentRuntime) {
       try {
         const approval = runtime.pendingApproval(context.req.param('id')!)
         if (!approval) return context.body(null, 204)
-        if (approval.effect === 'mcp')
-          return context.json({
-            approvalId: approval.approvalId,
-            kind: 'mcp',
-            input: {
-              connectionId: approval.connectionId,
-              tool: approval.remoteToolName,
-              arguments: approval.input,
-            },
-            title: `允许调用 MCP 工具 ${approval.remoteToolName} 吗？`,
-            toolCallId: approval.toolCallId,
-            toolName: 'mcp',
-            type: 'tool_approval_required',
-          } satisfies AgentRunEventDto)
-        if (approval.effect === 'execute') {
-          return context.json({
-            approvalId: approval.approvalId,
-            input: { command: approval.command },
-            kind: 'command',
-            title: '允许 AI 助手运行这条命令吗？',
-            toolCallId: approval.toolCallId,
-            toolName: 'bash',
-          })
-        }
-        const kind = approval.toolName === 'read' ? 'read' : 'edit'
-        return context.json({
-          approvalId: approval.approvalId,
-          kind,
-          path: approval.path,
-          title: `允许 AI 助手${kind === 'read' ? '读取' : '修改'} ${approval.path} 吗？`,
-          toolCallId: approval.toolCallId,
-          toolName: approval.toolName,
-        })
+        return context.json(approval satisfies AgentRunEventDto)
       } catch (error) {
         return agentErrorResponse(context, error)
       }

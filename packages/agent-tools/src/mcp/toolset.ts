@@ -1,3 +1,4 @@
+import { POLICY_TOOL } from '@oh-my-harness/agent-policy/contracts'
 import { createHash } from 'node:crypto'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv-provider.js'
@@ -281,8 +282,7 @@ export async function createMcpTools(options: {
       try {
         await options.policy.authorize(
           {
-            effect: 'mcp',
-            toolName: 'mcp',
+            ...POLICY_TOOL.mcp,
             connectionId: mapping.target.id,
             remoteToolName: mapping.rawName,
             input: call.args as Record<string, unknown>,

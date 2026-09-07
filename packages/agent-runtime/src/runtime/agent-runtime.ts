@@ -1,3 +1,8 @@
+import { TOOL_PERMISSION } from '@oh-my-harness/agent-policy/contracts'
+import {
+  getToolActivityKind,
+  toToolApprovalEvent,
+} from '../execution/tool-presentation.ts'
 import { randomUUID } from 'node:crypto'
 import { PluginError, type PluginService } from '@oh-my-harness/agent-plugins'
 
@@ -11,6 +16,7 @@ import {
   type ToolPermission,
 } from '@oh-my-harness/agent-policy'
 import {
+  BUILTIN_TOOL_NAME,
   createAttachmentTool,
   createSkillResourceTool,
   createTodoWriteTool,
@@ -367,7 +373,7 @@ export class AgentRuntime {
   prompt(
     id: string,
     input: AgentRunInput | string,
-    permission: ToolPermission = 'read-only',
+    permission: ToolPermission = TOOL_PERMISSION.readOnly,
   ) {
     return this.startRun(
       id,
@@ -376,13 +382,15 @@ export class AgentRuntime {
     )
   }
 
-  continue(id: string, permission: ToolPermission = 'read-only') {
+  continue(id: string, permission: ToolPermission = TOOL_PERMISSION.readOnly) {
     return this.startRun(id, permission)
   }
 
+  /** 恢复与 SSE 同源的当前审批视图，不复制授权状态。 */
   pendingApproval(id: string) {
     this.assertOpen()
-    return this.toolOptions?.policy.pendingForSession(id)[0]
+    const approval = this.toolOptions?.policy.pendingForSession(id)[0]
+    return approval ? toToolApprovalEvent(approval) : undefined
   }
 
   async resolveApproval(
@@ -653,7 +661,7 @@ export class AgentRuntime {
             cwd: opened.metadata.cwd,
             onApprovalRequested: async (approval) => {
               await this.appendApprovalRequested(opened.session, approval)
-              events.push(this.approvalEvent(approval))
+              events.push(toToolApprovalEvent(approval))
             },
             onApprovalResolved: (resolution) =>
               this.appendApprovalResolved(opened.session, resolution),
@@ -678,7 +686,7 @@ export class AgentRuntime {
               signal: operation.controller.signal,
               onApprovalRequested: async (approval) => {
                 await this.appendApprovalRequested(opened.session, approval)
-                events.push(this.approvalEvent(approval))
+                events.push(toToolApprovalEvent(approval))
               },
               onApprovalResolved: (resolution) =>
                 this.appendApprovalResolved(opened.session, resolution),
@@ -814,9 +822,9 @@ export class AgentRuntime {
           : ''
       const agent = new Agent({
         beforeToolCall: async (call, signal) =>
-          call.toolCall.name === 'load_skill_resource' ||
-          call.toolCall.name === 'view_attachment' ||
-          call.toolCall.name === 'todo_write'
+          call.toolCall.name === BUILTIN_TOOL_NAME.loadSkillResource ||
+          call.toolCall.name === BUILTIN_TOOL_NAME.viewAttachment ||
+          call.toolCall.name === BUILTIN_TOOL_NAME.todoWrite
             ? undefined
             : mcpTools?.owns(call.toolCall.name)
               ? mcpTools.beforeToolCall(call, signal)
@@ -1238,11 +1246,12 @@ export class AgentRuntime {
         input: safeToolInput(event.args),
         toolCallId: event.toolCallId,
         toolName: event.toolName,
+        kind: getToolActivityKind(event.toolName),
         type: 'tool_start',
       })
     } else if (event.type === 'tool_execution_end') {
       const outcome =
-        event.toolName === 'bash'
+        event.toolName === BUILTIN_TOOL_NAME.bash
           ? safeBashOutcome(event.result?.details)
           : undefined
       events.push({
@@ -1254,46 +1263,9 @@ export class AgentRuntime {
         output: event.result?.content,
         toolCallId: event.toolCallId,
         toolName: event.toolName,
+        kind: getToolActivityKind(event.toolName),
         type: 'tool_end',
       })
-    }
-  }
-
-  private approvalEvent(approval: PendingToolApproval) {
-    if (approval.effect === 'mcp')
-      return {
-        approvalId: approval.approvalId,
-        kind: 'mcp' as const,
-        input: {
-          connectionId: approval.connectionId,
-          tool: approval.remoteToolName,
-          arguments: approval.input,
-        },
-        title: `允许调用 MCP 工具 ${approval.remoteToolName} 吗？`,
-        toolCallId: approval.toolCallId,
-        toolName: 'mcp' as const,
-        type: 'tool_approval_required' as const,
-      }
-    if (approval.effect === 'execute') {
-      return {
-        approvalId: approval.approvalId,
-        input: { command: approval.command },
-        kind: 'command' as const,
-        title: '允许 AI 助手运行这条命令吗？',
-        toolCallId: approval.toolCallId,
-        toolName: 'bash' as const,
-        type: 'tool_approval_required' as const,
-      }
-    }
-    const kind: 'edit' | 'read' = approval.toolName === 'read' ? 'read' : 'edit'
-    return {
-      approvalId: approval.approvalId,
-      kind,
-      path: approval.path,
-      title: `允许 AI 助手${kind === 'read' ? '读取' : '修改'} ${approval.path} 吗？`,
-      toolCallId: approval.toolCallId,
-      toolName: approval.toolName,
-      type: 'tool_approval_required' as const,
     }
   }
 

@@ -1,3 +1,4 @@
+import { TOOL_PERMISSION } from '@oh-my-harness/agent-policy/contracts'
 import type { ToolPermission } from '@oh-my-harness/agent-policy'
 import type { TodoItem } from '@oh-my-harness/agent-tools'
 import type { PluginSnapshot } from '@oh-my-harness/agent-plugins'
@@ -140,9 +141,9 @@ export const buildSystemPrompt = (context: SystemPromptContext) =>
 /** 生成真正送给模型的运行时状态快照，权限仍由服务端执行。 */
 export const buildRuntimeContext = (cwd: string, permission: ToolPermission) =>
   `Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\nWorkspace: ${cwd}\nActive permission: ${permission}. ` +
-  (permission === 'full-access'
+  (permission === TOOL_PERMISSION.fullAccess
     ? 'File and Bash calls do not require per-call approval. This does not authorize actions outside the user request or bypass application protections.'
     : 'External file access and every Bash call require one-time approval. ' +
-      (permission === 'workspace-write'
+      (permission === TOOL_PERMISSION.workspaceWrite
         ? 'Workspace file changes are pre-authorized.'
         : 'Workspace file changes also require one-time approval.'))

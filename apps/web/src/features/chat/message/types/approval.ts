@@ -1,1 +1,1 @@
-export type ApprovalDecision = 'approve-once' | 'reject'
+export type { ApprovalDecision } from '@oh-my-harness/agent-policy/contracts'

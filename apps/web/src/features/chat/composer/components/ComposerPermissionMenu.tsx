@@ -1,3 +1,4 @@
+import { TOOL_PERMISSION } from '@oh-my-harness/agent-policy/contracts'
 import { ChevronDown } from '@gravity-ui/icons'
 import { Hand, ShieldCheck, ShieldAlert } from 'lucide-react'
 import { Dropdown } from '@heroui/react'
@@ -8,10 +9,10 @@ import {
 } from '../../../settings/index.ts'
 
 const PERMISSION_ICONS = {
-  'read-only': Hand,
-  'workspace-write': ShieldCheck,
-  'full-access': ShieldAlert,
-} as const
+  [TOOL_PERMISSION.readOnly]: Hand,
+  [TOOL_PERMISSION.workspaceWrite]: ShieldCheck,
+  [TOOL_PERMISSION.fullAccess]: ShieldAlert,
+} satisfies Record<PermissionId, typeof Hand>
 interface ComposerPermissionMenuProps {
   activePermission?: PermissionId
   isDisabled: boolean
@@ -28,7 +29,7 @@ export function ComposerPermissionMenu({
     PERMISSION_OPTIONS.find((option) => option.id === selectedId) ??
     PERMISSION_OPTIONS[1]
   const PermissionIcon = PERMISSION_ICONS[selectedPermission.id]
-  const fullAccess = selectedPermission.id === 'full-access'
+  const fullAccess = selectedPermission.id === TOOL_PERMISSION.fullAccess
 
   return (
     <Dropdown>
@@ -61,7 +62,7 @@ export function ComposerPermissionMenu({
         >
           {PERMISSION_OPTIONS.map((option) => {
             const Icon = PERMISSION_ICONS[option.id]
-            const warning = option.id === 'full-access'
+            const warning = option.id === TOOL_PERMISSION.fullAccess
             return (
               <Dropdown.Item
                 key={option.id}
