@@ -16,3 +16,15 @@ export {
   type TodoStatus,
 } from './tools/todo.ts'
 export { WorkspaceExecutionEnv } from './workspace/execution-env.ts'
+export { createMcpTools } from './mcp/toolset.ts'
+export {
+  McpConnectionService,
+  pluginConnectionTargets,
+} from './mcp/auth/connection-service.ts'
+export type {
+  McpCredentialStore,
+  McpCredentialRecord,
+  McpConnectionSettings,
+  McpConnectionTarget,
+  McpConnectionStatus,
+} from './mcp/auth/connection-service.ts'

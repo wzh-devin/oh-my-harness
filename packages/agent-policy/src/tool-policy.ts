@@ -8,7 +8,7 @@ export const TOOL_PERMISSIONS = [
 
 export type ToolPermission = (typeof TOOL_PERMISSIONS)[number]
 export type ApprovalDecision = 'approve-once' | 'reject'
-export type ToolEffect = 'execute' | 'read' | 'write'
+export type ToolEffect = 'execute' | 'read' | 'write' | 'mcp'
 
 interface ToolAuthorizationBase {
   permission: ToolPermission
@@ -31,7 +31,17 @@ export interface BashToolAuthorizationRequest extends ToolAuthorizationBase {
 }
 
 export type ToolAuthorizationRequest =
-  BashToolAuthorizationRequest | FileToolAuthorizationRequest
+  | BashToolAuthorizationRequest
+  | FileToolAuthorizationRequest
+  | McpToolAuthorizationRequest
+
+export interface McpToolAuthorizationRequest extends ToolAuthorizationBase {
+  effect: 'mcp'
+  toolName: 'mcp'
+  connectionId: string
+  remoteToolName: string
+  input: Record<string, unknown>
+}
 
 export type PendingToolApproval = ToolAuthorizationRequest & {
   approvalId: string
@@ -80,6 +90,8 @@ export const evaluateToolPolicy = (
   request: ToolAuthorizationRequest,
 ): 'allow' | 'deny' | 'require-approval' => {
   if (!isToolPermission(request.permission)) return 'deny'
+  if (request.toolName === 'mcp' && request.effect === 'mcp')
+    return 'require-approval'
   if (request.toolName === 'bash' && request.effect === 'execute') {
     return request.permission === 'full-access' ? 'allow' : 'require-approval'
   }

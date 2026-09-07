@@ -1,4 +1,8 @@
 import { ToolPolicy } from '@oh-my-harness/agent-policy'
+import { PluginService } from '@oh-my-harness/agent-plugins'
+import { McpConnectionService } from '@oh-my-harness/agent-tools'
+import { FileMcpCredentialStore } from './infrastructure/plugins/mcp-credential-store.ts'
+import { createPluginRouter } from './router/plugins/plugin-router.ts'
 import { AgentRuntime } from '@oh-my-harness/agent-runtime'
 import {
   createProviderModels,
@@ -45,8 +49,21 @@ export async function createApp(
   const fileEditors =
     options.fileEditors ?? new FileEditorService(dataDirectory)
   await workspaces.list()
+  const plugins = new PluginService(
+    dataDirectory,
+    process.env.OH_MY_HARNESS_PLUGIN_GIT_HOSTS?.split(',')
+      .map((host) => host.trim())
+      .filter(Boolean),
+  )
+  await plugins.list()
+  const connections = new McpConnectionService(
+    new FileMcpCredentialStore(dataDirectory),
+    `${process.env.OH_MY_HARNESS_PUBLIC_URL ?? `http://127.0.0.1:${process.env.OH_MY_HARNESS_SERVER_PORT ?? 4318}`}/api/plugin-oauth-sessions/callback`,
+  )
   const runtime = new AgentRuntime(models, repository, sessionIndex, {
     dataDirectory,
+    plugins,
+    connections,
     policy: new ToolPolicy(),
     protectedRoots: [dataDirectory],
   })
@@ -55,6 +72,8 @@ export async function createApp(
     if (closed) return
     closed = true
     await runtime.close()
+    connections.close()
+    await plugins.close()
     await sessionIndex.close()
   }
 
@@ -69,6 +88,7 @@ export async function createApp(
       fileEditors,
     ),
   )
+  app.route('/api', createPluginRouter(plugins, connections))
 
   return app
 }

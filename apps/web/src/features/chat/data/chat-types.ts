@@ -126,6 +126,7 @@ export interface ChatMessage {
 }
 
 export interface ChatThread {
+  pluginIds?: readonly string[]
   archived: boolean
   contextUsage?: ChatContextUsage | undefined
   id: string

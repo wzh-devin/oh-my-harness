@@ -21,6 +21,7 @@ export interface ContextUsageVo {
 }
 
 export interface AgentSessionDetailVo extends AgentSessionVo {
+  pluginIds: string[]
   contextUsage?: ContextUsageVo
   stats: {
     cachedTokens: number
@@ -119,6 +120,19 @@ export type AgentRunEventVo =
       type: 'tool_approval_required'
     }
   | {
+      approvalId: string
+      input: {
+        connectionId: string
+        tool: string
+        arguments: Record<string, unknown>
+      }
+      kind: 'mcp'
+      title: string
+      toolCallId: string
+      toolName: 'mcp'
+      type: 'tool_approval_required'
+    }
+  | {
       cacheRead: number
       cacheWrite: number
       contextUsage?: ContextUsageVo
@@ -146,7 +160,7 @@ export interface AgentSessionMessageAttachmentVo {
 export interface AgentSessionMessageContextItemVo {
   description: string
   id: string
-  kind: 'command' | 'skill'
+  kind: 'command' | 'skill' | 'plugin'
   label: string
   reference: string
   sourceId: string

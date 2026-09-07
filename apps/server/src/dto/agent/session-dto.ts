@@ -31,6 +31,7 @@ export interface ContextUsageDto {
 }
 
 export interface AgentSessionDetailDto extends AgentSessionDto {
+  pluginIds: string[]
   contextUsage?: ContextUsageDto
   stats: {
     cachedTokens: number
@@ -98,7 +99,7 @@ export interface AgentSessionMessageAttachmentDto {
 export interface AgentSessionMessageContextItemDto {
   description: string
   id: string
-  kind: 'command' | 'skill'
+  kind: 'command' | 'skill' | 'plugin'
   label: string
   reference: string
   sourceId: string

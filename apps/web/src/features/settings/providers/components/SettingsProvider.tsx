@@ -5,7 +5,6 @@ import {
   toModelProvider,
 } from '../../models/data/provider-models.ts'
 import type { ModelThinkingLevel } from '../../models/types/provider-vo.ts'
-import { INITIAL_PLUGIN_CONNECTORS } from '../../plugins/data/plugin-connectors.ts'
 import { getAgentCapabilities } from '../api/index.ts'
 import { ModelSettingsContext } from '../contexts/model-settings-context.ts'
 import {
@@ -16,7 +15,7 @@ import {
   PluginSettingsContext,
   type AssistantSkill,
   type CapabilityCommand,
-  type McpServer,
+  type CapabilityPlugin,
   type PluginSettingsTab,
 } from '../contexts/plugin-settings-context.ts'
 
@@ -59,12 +58,11 @@ export function SettingsProvider({
   const [commands, setCommands] = useState<CapabilityCommand[]>([])
   const [capabilityError, setCapabilityError] = useState<string | null>(null)
   const [isLoadingCapabilities, setIsLoadingCapabilities] = useState(false)
-  const [mcpServers, setMcpServers] = useState<McpServer[]>([])
-  const [pluginConnectors, setPluginConnectors] = useState(() =>
-    INITIAL_PLUGIN_CONNECTORS.map((connector) => ({
-      ...connector,
-      skills: connector.skills.map((skill) => ({ ...skill })),
-    })),
+  const [plugins, setPlugins] = useState<CapabilityPlugin[]>([])
+  const [capabilityRevision, setCapabilityRevision] = useState(0)
+  const refreshCapabilities = useCallback(
+    () => setCapabilityRevision((value) => value + 1),
+    [],
   )
 
   /** 重新读取服务端 Provider 能力与认证状态。 */
@@ -99,6 +97,7 @@ export function SettingsProvider({
       if (!selectedWorkspaceId) {
         setSkills([])
         setCommands([])
+        setPlugins([])
         setCapabilityError(null)
         setIsLoadingCapabilities(false)
         return
@@ -106,6 +105,8 @@ export function SettingsProvider({
       setIsLoadingCapabilities(true)
       void getAgentCapabilities(selectedWorkspaceId, controller.signal)
         .then((catalog) => {
+          if (controller.signal.aborted) return
+          setPlugins(catalog.plugins)
           setSkills(catalog.skills)
           setCommands(catalog.commands)
           setCapabilityError(
@@ -116,6 +117,7 @@ export function SettingsProvider({
         })
         .catch((error: unknown) => {
           if (controller.signal.aborted) return
+          setPlugins([])
           setSkills([])
           setCommands([])
           setCapabilityError(
@@ -127,7 +129,7 @@ export function SettingsProvider({
         })
     })
     return () => controller.abort()
-  }, [selectedWorkspaceId])
+  }, [selectedWorkspaceId, capabilityRevision])
 
   return (
     <PermissionSettingsContext.Provider value={{ permission, setPermission }}>
@@ -147,11 +149,9 @@ export function SettingsProvider({
             capabilityError,
             commands,
             isLoadingCapabilities,
-            mcpServers,
             openPluginSettings: onOpenPluginSettings,
-            pluginConnectors,
-            setMcpServers,
-            setPluginConnectors,
+            plugins,
+            refreshCapabilities,
             setSkills,
             skills,
           }}

@@ -23,6 +23,7 @@ export interface SendAgentMessageDto {
   content: string
   permission: ToolPermission
   skillIds?: readonly string[]
+  pluginIds?: readonly string[]
   thinkingLevel?: ModelThinkingLevel
 }
 
@@ -81,6 +82,19 @@ export type AgentRunEventDto =
       title: string
       toolCallId: string
       toolName: 'bash'
+      type: 'tool_approval_required'
+    }
+  | {
+      approvalId: string
+      input: {
+        connectionId: string
+        tool: string
+        arguments: Record<string, unknown>
+      }
+      kind: 'mcp'
+      title: string
+      toolCallId: string
+      toolName: 'mcp'
       type: 'tool_approval_required'
     }
   | {

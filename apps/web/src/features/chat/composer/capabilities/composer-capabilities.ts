@@ -97,6 +97,12 @@ export function getComposerCapabilityGroups(
   skills: readonly AssistantSkill[],
   commands: readonly CapabilityCommand[],
   query = '',
+  plugins: readonly {
+    id: string
+    name: string
+    description: string
+    enabled: boolean
+  }[] = [],
 ): ComposerCapabilityGroup[] {
   const commandItems: ComposerCapability[] = commands.map((command) => ({
     description: command.description,
@@ -109,6 +115,20 @@ export function getComposerCapabilityGroups(
   if (mode !== 'slash') {
     return filterGroups(
       [
+        {
+          id: 'plugins',
+          label: '插件',
+          items: plugins
+            .filter((plugin) => plugin.enabled)
+            .map((plugin) => ({
+              id: `plugin-${plugin.id}`,
+              sourceId: plugin.id,
+              label: plugin.name,
+              description: plugin.description,
+              kind: 'plugin',
+              contextReference: `@${plugin.name}`,
+            })),
+        },
         { id: 'commands', items: commandItems, label: '命令' },
         { id: 'add', items: [...ADD_ITEMS], label: '添加' },
       ],
@@ -184,7 +204,13 @@ export function getComposerContextUnavailableReason(
   item: ComposerContextItem,
   skills: readonly AssistantSkill[],
   commands: readonly CapabilityCommand[],
+  plugins: readonly { id: string; enabled: boolean }[] = [],
 ) {
+  if (
+    item.kind === 'plugin' &&
+    !plugins.some((plugin) => plugin.id === item.sourceId && plugin.enabled)
+  )
+    return '插件已禁用或卸载'
   if (item.kind === 'skill') {
     const skill = skills.find((candidate) => candidate.id === item.sourceId)
     if (!skill) return '技能已移除'

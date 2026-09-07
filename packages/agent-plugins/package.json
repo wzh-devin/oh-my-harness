@@ -1,0 +1,32 @@
+{
+  "name": "@oh-my-harness/agent-plugins",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "node --test --experimental-strip-types src/**/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint",
+    "format": "prettier --write src package.json tsconfig.json tsconfig.build.json",
+    "format:check": "prettier --check src package.json tsconfig.json tsconfig.build.json"
+  },
+  "dependencies": {
+    "yauzl": "3.4.0"
+  },
+  "devDependencies": {
+    "@types/yauzl": "3.4.0",
+    "@types/node": "^24.13.3",
+    "oxlint": "^1.75.0",
+    "prettier": "^3.9.6",
+    "typescript": "~6.0.2"
+  }
+}

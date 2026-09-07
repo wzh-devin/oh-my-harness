@@ -20,8 +20,10 @@
     "format:check": "prettier --check src package.json tsconfig.json tsconfig.build.json"
   },
   "dependencies": {
-    "@oh-my-harness/agent-policy": "workspace:*",
-    "@earendil-works/pi-agent-core": "0.84.3"
+    "@earendil-works/pi-agent-core": "0.84.3",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@oh-my-harness/agent-plugins": "workspace:*",
+    "@oh-my-harness/agent-policy": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

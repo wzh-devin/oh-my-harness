@@ -46,6 +46,7 @@ export interface StreamAgentMessageInput {
   content: string
   permission: PermissionId
   skillIds: readonly string[]
+  pluginIds?: readonly string[]
   thinkingLevel: ModelThinkingLevel
 }
 
@@ -249,6 +250,37 @@ function toRunEvent(value: unknown): AgentRunEventVo {
       }
       break
     case 'tool_approval_required':
+      if (
+        typeof event.approvalId === 'string' &&
+        event.kind === 'mcp' &&
+        event.toolName === 'mcp' &&
+        typeof event.title === 'string' &&
+        typeof event.toolCallId === 'string' &&
+        event.input &&
+        typeof event.input === 'object'
+      ) {
+        const input = event.input as Record<string, unknown>
+        if (
+          typeof input.connectionId === 'string' &&
+          typeof input.tool === 'string' &&
+          input.arguments &&
+          typeof input.arguments === 'object' &&
+          !Array.isArray(input.arguments)
+        )
+          return {
+            approvalId: event.approvalId,
+            input: {
+              connectionId: input.connectionId,
+              tool: input.tool,
+              arguments: input.arguments as Record<string, unknown>,
+            },
+            kind: 'mcp',
+            title: event.title,
+            toolCallId: event.toolCallId,
+            toolName: 'mcp',
+            type: 'tool_approval_required',
+          }
+      }
       if (
         typeof event.approvalId === 'string' &&
         event.kind === 'command' &&
@@ -513,6 +545,7 @@ export async function streamAgentMessage(
     content: input.content,
     permission: input.permission,
     ...(input.skillIds.length ? { skillIds: input.skillIds } : {}),
+    pluginIds: input.pluginIds ?? [],
     thinkingLevel: input.thinkingLevel,
   }
   const body = input.attachments.length

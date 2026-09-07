@@ -45,6 +45,19 @@ export type AgentRuntimeEvent =
       type: 'tool_approval_required'
     }
   | {
+      approvalId: string
+      input: {
+        connectionId: string
+        tool: string
+        arguments: Record<string, unknown>
+      }
+      kind: 'mcp'
+      title: string
+      toolCallId: string
+      toolName: 'mcp'
+      type: 'tool_approval_required'
+    }
+  | {
       cacheRead: number
       cacheWrite: number
       contextUsage?: ContextUsageSnapshot

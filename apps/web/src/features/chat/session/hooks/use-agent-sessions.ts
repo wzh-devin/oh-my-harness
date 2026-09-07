@@ -635,7 +635,10 @@ export function useAgentSessions() {
         return { mimeType: file.type, name: file.name, src }
       })
       const contextItems = payload.contextItems.filter(
-        (item) => item.kind === 'command' || item.kind === 'skill',
+        (item) =>
+          item.kind === 'command' ||
+          item.kind === 'skill' ||
+          item.kind === 'plugin',
       )
       const preview =
         payload.message || attachments[0]?.name || contextItems[0]?.label || ''
@@ -659,6 +662,9 @@ export function useAgentSessions() {
           streamingAssistant(assistantId),
         ],
         preview,
+        pluginIds: contextItems.flatMap((item) =>
+          item.kind === 'plugin' && item.sourceId ? [item.sourceId] : [],
+        ),
         todos: undefined,
         updatedAt: '刚刚',
       }))
@@ -673,6 +679,9 @@ export function useAgentSessions() {
             commandId: contextItems.find((item) => item.kind === 'command')
               ?.sourceId,
             content: payload.message,
+            pluginIds: contextItems.flatMap((item) =>
+              item.kind === 'plugin' && item.sourceId ? [item.sourceId] : [],
+            ),
             permission: payload.permission,
             skillIds: contextItems.flatMap((item) =>
               item.kind === 'skill' && item.sourceId ? [item.sourceId] : [],
@@ -790,7 +799,7 @@ export function useAgentSessions() {
                           item,
                           {
                             approval: {
-                              ...(event.kind === 'command'
+                              ...('input' in event
                                 ? {
                                     description: JSON.stringify(
                                       event.input,
@@ -802,10 +811,10 @@ export function useAgentSessions() {
                               title: event.title,
                             },
                             input:
-                              event.kind === 'command'
+                              'input' in event
                                 ? event.input
                                 : { path: event.path },
-                            kind: event.kind,
+                            kind: event.kind === 'mcp' ? 'tool' : event.kind,
                             state: 'requires-action',
                             toolCallId: event.toolCallId,
                             toolName: event.toolName,

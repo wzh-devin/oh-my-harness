@@ -6,6 +6,7 @@ import { createReadTool, type AgentTool } from '@earendil-works/pi-agent-core'
 export interface SkillResourceRoot {
   id: string
   rootDirectory: string
+  resourceRootDirectory?: string
 }
 
 const MAX_RESOURCE_BYTES = 256 * 1024
@@ -42,7 +43,7 @@ export const createSkillResourceTool = (
   roots: readonly SkillResourceRoot[],
 ): AgentTool => {
   const schema = createReadTool()
-  const rootById = new Map(roots.map((root) => [root.id, root.rootDirectory]))
+  const rootById = new Map(roots.map((root) => [root.id, root]))
   return {
     ...schema,
     description:
@@ -74,17 +75,28 @@ export const createSkillResourceTool = (
         !resourcePath ||
         resourcePath.includes('\0') ||
         isAbsolute(resourcePath) ||
-        resourcePath.split(/[\\/]/u).includes('..')
+        (!root.resourceRootDirectory &&
+          resourcePath.split(/[\\/]/u).includes('..'))
       ) {
         throw new Error('Skill resource path is invalid.')
       }
 
-      const canonicalRoot = await realpath(root).catch(() => undefined)
+      const canonicalRoot = await realpath(root.rootDirectory).catch(
+        () => undefined,
+      )
+      const boundary = await realpath(
+        root.resourceRootDirectory ?? root.rootDirectory,
+      ).catch(() => undefined)
       if (!canonicalRoot) throw new Error('Skill resource is unavailable.')
       const target = await realpath(resolve(canonicalRoot, resourcePath)).catch(
         () => undefined,
       )
-      if (!target || !isWithin(canonicalRoot, target)) {
+      if (
+        !boundary ||
+        !target ||
+        !isWithin(boundary, canonicalRoot) ||
+        !isWithin(boundary, target)
+      ) {
         throw new Error('Skill resource is unavailable.')
       }
       const info = await stat(target).catch(() => undefined)

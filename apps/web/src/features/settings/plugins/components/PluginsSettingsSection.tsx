@@ -8,6 +8,7 @@ import { PluginListPanel } from './PluginListPanel.tsx'
 
 const skillSourceLabels = {
   user: 'oh-my-harness',
+  plugin: '插件',
 } as const
 
 interface PluginsSettingsSectionProps {
@@ -15,14 +16,14 @@ interface PluginsSettingsSectionProps {
   onTabChange: (tab: PluginSettingsTab) => void
 }
 
-/** 展示当前工作区真实 Skill；MCP 在未接入 Runtime 前不渲染。 */
+/** 分别展示真实技能、已安装插件和市场来源。 */
 export function PluginsSettingsSection({
   activeTab,
   onTabChange,
 }: PluginsSettingsSectionProps) {
   const { capabilityError, isLoadingCapabilities, skills } = usePluginSettings()
   const [searchQuery, setSearchQuery] = useState('')
-  const selectedTab = activeTab === 'mcp' ? 'skills' : activeTab
+  const selectedTab = activeTab
   const normalizedSearchQuery = searchQuery.trim().toLocaleLowerCase()
   const visibleSkills = skills.filter((skill) =>
     `${skill.name} ${skill.description} ${skill.source} ${skillSourceLabels[skill.source]}`
@@ -51,6 +52,10 @@ export function PluginsSettingsSection({
             </Tabs.Tab>
             <Tabs.Tab className="!w-auto px-3" id="plugins">
               插件
+              <Tabs.Indicator />
+            </Tabs.Tab>
+            <Tabs.Tab className="!w-auto px-3" id="marketplaces">
+              市场
               <Tabs.Indicator />
             </Tabs.Tab>
           </Tabs.List>
@@ -107,6 +112,13 @@ export function PluginsSettingsSection({
 
         <Tabs.Panel className="pt-5" id="plugins">
           <PluginListPanel
+            searchQuery={searchQuery}
+            onSearchQueryChange={setSearchQuery}
+          />
+        </Tabs.Panel>
+        <Tabs.Panel className="pt-5" id="marketplaces">
+          <PluginListPanel
+            mode="marketplaces"
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
           />

@@ -115,7 +115,9 @@ export function structuredMessageDetails(
       }
       const item = contextItem as Record<string, unknown>
       return typeof item.id === 'string' &&
-        (item.kind === 'command' || item.kind === 'skill') &&
+        (item.kind === 'command' ||
+          item.kind === 'skill' ||
+          item.kind === 'plugin') &&
         typeof item.label === 'string' &&
         typeof item.description === 'string' &&
         typeof item.reference === 'string' &&

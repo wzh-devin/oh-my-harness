@@ -15,6 +15,7 @@ export interface AgentRunInput {
   commandId?: string
   content: string
   skillIds?: readonly string[]
+  pluginIds?: readonly string[]
   thinkingLevel?: ModelThinkingLevel
 }
 
@@ -29,7 +30,7 @@ export interface AgentMessageAttachment {
 export interface AgentMessageContextItem {
   description: string
   id: string
-  kind: 'command' | 'skill'
+  kind: 'command' | 'skill' | 'plugin'
   label: string
   reference: string
   sourceId: string

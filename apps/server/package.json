@@ -14,12 +14,13 @@
     "format:check": "prettier --check src package.json tsconfig.json tsconfig.build.json"
   },
   "dependencies": {
+    "@earendil-works/pi-agent-core": "0.84.3",
+    "@hono/node-server": "2.1.1",
+    "@oh-my-harness/agent-plugins": "workspace:*",
     "@oh-my-harness/agent-policy": "workspace:*",
     "@oh-my-harness/agent-runtime": "workspace:*",
     "@oh-my-harness/agent-tools": "workspace:*",
     "@oh-my-harness/llm": "workspace:*",
-    "@earendil-works/pi-agent-core": "0.84.3",
-    "@hono/node-server": "2.1.1",
     "hono": "4.13.5"
   },
   "devDependencies": {

@@ -58,7 +58,7 @@ export function ChatPage({
   const pendingTool = pendingApproval
     ? {
         approval: {
-          ...(pendingApproval.kind === 'command'
+          ...('input' in pendingApproval
             ? {
                 description: JSON.stringify(pendingApproval.input, null, 2),
               }
@@ -66,10 +66,13 @@ export function ChatPage({
           title: pendingApproval.title,
         },
         input:
-          pendingApproval.kind === 'command'
+          'input' in pendingApproval
             ? pendingApproval.input
             : { path: pendingApproval.path },
-        kind: pendingApproval.kind,
+        kind:
+          pendingApproval.kind === 'mcp'
+            ? ('tool' as const)
+            : pendingApproval.kind,
         state: 'requires-action' as const,
         toolCallId: pendingApproval.toolCallId,
         toolName: pendingApproval.toolName,

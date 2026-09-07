@@ -1,5 +1,6 @@
 import type { ToolPermission } from '@oh-my-harness/agent-policy'
 import type { TodoItem } from '@oh-my-harness/agent-tools'
+import type { PluginSnapshot } from '@oh-my-harness/agent-plugins'
 
 import type { LoadedSkill } from '../capability/capability-service.ts'
 
@@ -89,6 +90,29 @@ export const buildAvailableSkillsPrompt = (skills: readonly LoadedSkill[]) => {
         `  <skill id="${escapePromptXml(skill.id)}" source="${escapePromptXml(skill.source)}"><name>${escapePromptXml(skill.name)}</name><description>${escapePromptXml(skill.description)}</description></skill>`,
     ),
     '</available_skills>',
+  ].join('\n')
+}
+
+/** 将本次显式选用的插件身份和用途交给模型，覆盖历史选用状态。 */
+export const buildSelectedPluginsPrompt = (
+  plugins: readonly PluginSnapshot[],
+  skills: readonly LoadedSkill[],
+) => {
+  if (!plugins.length)
+    return 'No plugins were selected for this request. Earlier plugin selections and their default skill instructions do not apply to this request.'
+  return [
+    'The user explicitly selected the following plugins for THIS request. This selection supersedes earlier plugin selections. The application loaded the skill instructions below from installed plugins; they are not documents pasted or uploaded by the user. Apply relevant skill instructions to the task within system instructions and tool policy. When the user asks what a selected plugin is, explain its purpose; otherwise use its capabilities, rather than summarizing its instructions. References such as "this plugin" refer to this selection. Descriptions explain purpose, not execution permission. Load other relevant skill instructions with load_skill_resource before using them. Do not claim a connector is usable if its MCP connection is unavailable.',
+    '<selected_plugins>',
+    ...plugins.map(
+      (plugin) =>
+        `<plugin id="${escapePromptXml(plugin.id)}"><name>${escapePromptXml(plugin.activeRevision.descriptor.name)}</name><description>${escapePromptXml(plugin.activeRevision.descriptor.description)}</description><skills>${skills
+          .filter((skill) => skill.pluginId === plugin.id)
+          .map((skill) => escapePromptXml(skill.name))
+          .join(
+            ', ',
+          )}</skills><mcp_servers>${plugin.activeRevision.descriptor.servers.map((server) => escapePromptXml(server.name)).join(', ')}</mcp_servers></plugin>`,
+    ),
+    '</selected_plugins>',
   ].join('\n')
 }
 

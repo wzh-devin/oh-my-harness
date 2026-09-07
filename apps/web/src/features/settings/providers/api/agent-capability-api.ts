@@ -1,6 +1,7 @@
 import type {
   AssistantSkill,
   CapabilityCommand,
+  CapabilityPlugin,
 } from '../contexts/plugin-settings-context.ts'
 
 export interface AgentCapabilityDiagnosticVo {
@@ -10,6 +11,7 @@ export interface AgentCapabilityDiagnosticVo {
 }
 
 export interface AgentCapabilityCatalogVo {
+  plugins: CapabilityPlugin[]
   commands: CapabilityCommand[]
   diagnostics: AgentCapabilityDiagnosticVo[]
   skills: AssistantSkill[]

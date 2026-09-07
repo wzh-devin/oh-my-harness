@@ -81,6 +81,7 @@ function parseMessage(
         key !== 'content' &&
         key !== 'permission' &&
         key !== 'skillIds' &&
+        key !== 'pluginIds' &&
         key !== 'thinkingLevel',
     ) ||
     typeof record.content !== 'string' ||
@@ -110,7 +111,20 @@ function parseMessage(
     return undefined
   }
   const skillIds = record.skillIds as string[] | undefined
+  if (
+    record.pluginIds !== undefined &&
+    (!Array.isArray(record.pluginIds) ||
+      record.pluginIds.length > 20 ||
+      record.pluginIds.some(
+        (id) => typeof id !== 'string' || !/^[\w-]{1,100}$/.test(id),
+      ) ||
+      new Set(record.pluginIds).size !== record.pluginIds.length)
+  )
+    return undefined
   return {
+    ...(record.pluginIds === undefined
+      ? {}
+      : { pluginIds: record.pluginIds as string[] }),
     ...(commandId ? { commandId } : {}),
     content: record.content,
     permission: record.permission,
@@ -305,6 +319,20 @@ export function createAgentRunController(runtime: AgentRuntime) {
       try {
         const approval = runtime.pendingApproval(context.req.param('id')!)
         if (!approval) return context.body(null, 204)
+        if (approval.effect === 'mcp')
+          return context.json({
+            approvalId: approval.approvalId,
+            kind: 'mcp',
+            input: {
+              connectionId: approval.connectionId,
+              tool: approval.remoteToolName,
+              arguments: approval.input,
+            },
+            title: `允许调用 MCP 工具 ${approval.remoteToolName} 吗？`,
+            toolCallId: approval.toolCallId,
+            toolName: 'mcp',
+            type: 'tool_approval_required',
+          } satisfies AgentRunEventDto)
         if (approval.effect === 'execute') {
           return context.json({
             approvalId: approval.approvalId,

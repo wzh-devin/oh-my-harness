@@ -4,14 +4,20 @@ import {
   type Dispatch,
   type SetStateAction,
 } from 'react'
-import type { PluginConnector } from '../../plugins/data/plugin-connectors.ts'
 
-export type PluginSettingsTab = 'mcp' | 'plugins' | 'skills'
+export type PluginSettingsTab = 'marketplaces' | 'plugins' | 'skills'
 export type McpTransport = 'http' | 'stdio'
 export type McpConnectionStatus = 'connected' | 'disconnected'
-export type SkillSource = 'user'
+export type SkillSource = 'user' | 'plugin'
+export interface CapabilityPlugin {
+  id: string
+  name: string
+  description: string
+  enabled: boolean
+}
 
 export interface AssistantSkill {
+  pluginId?: string
   description: string
   enabled: boolean
   id: string
@@ -20,10 +26,11 @@ export interface AssistantSkill {
 }
 
 export interface CapabilityCommand {
+  pluginId?: string
   description: string
   id: string
   name: string
-  source: 'builtin' | 'project' | 'user'
+  source: 'builtin' | 'project' | 'user' | 'plugin'
 }
 
 export interface McpServer {
@@ -41,11 +48,9 @@ interface PluginSettingsContextValue {
   capabilityError: string | null
   commands: CapabilityCommand[]
   isLoadingCapabilities: boolean
-  mcpServers: McpServer[]
   openPluginSettings: (tab: PluginSettingsTab) => void
-  pluginConnectors: PluginConnector[]
-  setMcpServers: Dispatch<SetStateAction<McpServer[]>>
-  setPluginConnectors: Dispatch<SetStateAction<PluginConnector[]>>
+  plugins: CapabilityPlugin[]
+  refreshCapabilities(): void
   setSkills: Dispatch<SetStateAction<AssistantSkill[]>>
   skills: AssistantSkill[]
 }

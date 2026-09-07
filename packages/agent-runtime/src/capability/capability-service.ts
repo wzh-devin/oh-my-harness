@@ -9,11 +9,15 @@ import {
   type Skill,
 } from '@earendil-works/pi-agent-core'
 import { NodeExecutionEnv } from '@earendil-works/pi-agent-core/node'
+import type {
+  PluginService,
+  PluginSnapshot,
+} from '@oh-my-harness/agent-plugins'
 
 import { AgentRuntimeError } from '../error/agent-runtime-error.ts'
 
-export type AgentSkillSource = 'user'
-export type AgentCommandSource = 'builtin' | 'project' | 'user'
+export type AgentSkillSource = 'user' | 'plugin'
+export type AgentCommandSource = 'builtin' | 'project' | 'user' | 'plugin'
 export type AgentCapabilitySource = AgentCommandSource | AgentSkillSource
 
 export interface AgentCapabilityDiagnostic {
@@ -23,6 +27,7 @@ export interface AgentCapabilityDiagnostic {
 }
 
 export interface AgentCapabilitySkill {
+  pluginId?: string
   description: string
   enabled: boolean
   id: string
@@ -31,6 +36,7 @@ export interface AgentCapabilitySkill {
 }
 
 export interface AgentCapabilityCommand {
+  pluginId?: string
   description: string
   id: string
   name: string
@@ -38,12 +44,14 @@ export interface AgentCapabilityCommand {
 }
 
 export interface AgentCapabilityCatalog {
+  plugins: { id: string; name: string; description: string; enabled: boolean }[]
   commands: AgentCapabilityCommand[]
   diagnostics: AgentCapabilityDiagnostic[]
   skills: AgentCapabilitySkill[]
 }
 
 export interface ResolvedSkill extends AgentCapabilitySkill {
+  resourceRootDirectory?: string
   content: string
   rootDirectory: string
 }
@@ -124,6 +132,7 @@ const preferHigherPriority = <
 ) => {
   const byName = new Map<string, T>()
   const sourcePriority: Record<AgentCapabilitySource, number> = {
+    plugin: 1,
     builtin: 0,
     user: 3,
     project: 4,
@@ -150,14 +159,35 @@ export class AgentCapabilityService {
     { expiresAt: number; value: Promise<LoadedCatalog> }
   >()
   private readonly dataDirectory: string
+  private readonly plugins?: PluginService
+  private readonly pluginCache = new Map<string, Promise<LoadedCatalog>>()
 
-  constructor(dataDirectory: string) {
+  constructor(dataDirectory: string, plugins?: PluginService) {
     this.dataDirectory = dataDirectory
+    this.plugins = plugins
   }
 
   async list(cwd: string): Promise<AgentCapabilityCatalog> {
-    const catalog = await this.load(cwd)
+    const registry = await this.plugins?.list()
+    const lease = await this.plugins?.snapshot(
+      registry?.installations
+        .filter((item) => item.enabled)
+        .map((item) => item.id) ?? [],
+    )
+    let catalog: LoadedCatalog
+    try {
+      catalog = await this.withPlugins(cwd, lease?.installations ?? [])
+    } finally {
+      await lease?.release()
+    }
     return {
+      plugins:
+        registry?.installations.map((item) => ({
+          id: item.id,
+          name: item.activeRevision.descriptor.name,
+          description: item.activeRevision.descriptor.description,
+          enabled: item.enabled,
+        })) ?? [],
       commands: catalog.commands.map(
         ({ template: _template, ...command }) => command,
       ),
@@ -167,6 +197,7 @@ export class AgentCapabilityService {
           content: _content,
           disableModelInvocation: _disabled,
           rootDirectory: _root,
+          resourceRootDirectory: _resourceRoot,
           ...skill
         }) => skill,
       ),
@@ -179,40 +210,176 @@ export class AgentCapabilityService {
       commandId?: string
       content: string
       skillIds?: readonly string[]
+      pluginIds?: readonly string[]
     },
   ) {
-    const catalog = await this.load(cwd)
-    const skills = (input.skillIds ?? []).map((id) => {
-      const skill = catalog.skills.find((candidate) => candidate.id === id)
-      if (!skill) {
+    const owners = [
+      ...(input.skillIds ?? []),
+      ...(input.commandId ? [input.commandId] : []),
+    ].flatMap((id) => (id.split(':').length === 3 ? [id.split(':')[1]] : []))
+    const lease = await this.plugins?.snapshot([
+      ...new Set([...(input.pluginIds ?? []), ...owners]),
+    ])
+    try {
+      const catalog = await this.withPlugins(cwd, lease?.installations ?? [])
+      const defaultSkills = (lease?.installations ?? []).flatMap((plugin) => {
+        const available = catalog.skills.filter(
+          (skill) =>
+            skill.pluginId === plugin.id && !skill.disableModelInvocation,
+        )
+        const primary =
+          available.find(
+            (skill) =>
+              skill.name ===
+              `${plugin.activeRevision.descriptor.name}:${plugin.activeRevision.descriptor.name}`,
+          ) ?? (available.length === 1 ? available[0] : undefined)
+        return primary ? [primary.id] : []
+      })
+      const skills = [
+        ...new Set([...(input.skillIds ?? []), ...defaultSkills]),
+      ].map((id) => {
+        const skill = catalog.skills.find((candidate) => candidate.id === id)
+        if (!skill) {
+          throw new AgentRuntimeError(
+            'AGENT_SKILL_NOT_FOUND',
+            '所选 Skill 不存在或不可用。',
+            400,
+          )
+        }
+        return skill
+      })
+      const command = input.commandId
+        ? catalog.commands.find((candidate) => candidate.id === input.commandId)
+        : undefined
+      if (input.commandId && !command) {
         throw new AgentRuntimeError(
-          'AGENT_SKILL_NOT_FOUND',
-          '所选 Skill 不存在或不可用。',
+          'AGENT_COMMAND_NOT_FOUND',
+          '所选命令不存在或不可用。',
           400,
         )
       }
-      return skill
-    })
-    const command = input.commandId
-      ? catalog.commands.find((candidate) => candidate.id === input.commandId)
-      : undefined
-    if (input.commandId && !command) {
-      throw new AgentRuntimeError(
-        'AGENT_COMMAND_NOT_FOUND',
-        '所选命令不存在或不可用。',
-        400,
-      )
+      return {
+        plugins: lease?.installations ?? [],
+        release: () => lease?.release() ?? Promise.resolve(),
+        catalog,
+        command,
+        commandContent: command
+          ? formatPromptTemplateInvocation(
+              command.template,
+              parseCommandArgs(input.content),
+            )
+          : undefined,
+        skills,
+      }
+    } catch (error) {
+      await lease?.release()
+      throw error
     }
+  }
+
+  private async withPlugins(
+    cwd: string,
+    plugins: readonly PluginSnapshot[],
+  ): Promise<LoadedCatalog> {
+    const base = await this.load(cwd)
+    const additions = await Promise.all(
+      plugins.map((plugin) => {
+        const key = plugin.rootDirectory
+        let value = this.pluginCache.get(key)
+        if (!value) {
+          value = this.loadPlugin(plugin)
+          this.pluginCache.set(key, value)
+          if (this.pluginCache.size > 200)
+            this.pluginCache.delete(this.pluginCache.keys().next().value!)
+          void value.catch(() => this.pluginCache.delete(key))
+        }
+        return value
+      }),
+    )
     return {
-      catalog,
-      command,
-      commandContent: command
-        ? formatPromptTemplateInvocation(
-            command.template,
-            parseCommandArgs(input.content),
-          )
-        : undefined,
-      skills,
+      commands: [
+        ...base.commands,
+        ...additions.flatMap((item) => item.commands),
+      ],
+      skills: [...base.skills, ...additions.flatMap((item) => item.skills)],
+      diagnostics: [
+        ...base.diagnostics,
+        ...additions.flatMap((item) => item.diagnostics),
+      ],
+    }
+  }
+
+  private async loadPlugin(plugin: PluginSnapshot): Promise<LoadedCatalog> {
+    const descriptor = plugin.activeRevision.descriptor
+    const env = new NodeExecutionEnv({ cwd: plugin.rootDirectory })
+    try {
+      const [skills, commands] = await Promise.all([
+        loadSourcedSkills(
+          env,
+          descriptor.skills.map((path) => ({
+            path: join(plugin.rootDirectory, path),
+            source: 'plugin' as const,
+          })),
+        ),
+        loadSourcedPromptTemplates(
+          env,
+          descriptor.commands.map((path) => ({
+            path: join(plugin.rootDirectory, path),
+            source: 'plugin' as const,
+          })),
+        ),
+      ])
+      const diagnostics = [...skills.diagnostics, ...commands.diagnostics].map(
+        (item) => safeDiagnostic(item.code, 'plugin'),
+      )
+      return {
+        skills: deduplicate(
+          skills.skills.flatMap(({ skill }) =>
+            this.validSkill(skill)
+              ? [
+                  {
+                    id: `skill:${plugin.id}:${skill.name}`,
+                    pluginId: plugin.id,
+                    name: `${descriptor.name}:${skill.name}`,
+                    source: 'plugin' as const,
+                    enabled: true,
+                    description: skill.description,
+                    content: skill.content,
+                    disableModelInvocation:
+                      skill.disableModelInvocation === true,
+                    rootDirectory: dirname(skill.filePath),
+                    resourceRootDirectory: plugin.rootDirectory,
+                  },
+                ]
+              : (diagnostics.push(safeDiagnostic('invalid_skill', 'plugin')),
+                []),
+          ),
+          diagnostics,
+        ),
+        commands: deduplicate(
+          commands.promptTemplates.flatMap(({ promptTemplate: template }) =>
+            this.validCommand(template) && !/!\s*`/.test(template.content)
+              ? [
+                  {
+                    id: `command:${plugin.id}:${template.name}`,
+                    pluginId: plugin.id,
+                    name: `${descriptor.name}:${template.name}`,
+                    source: 'plugin' as const,
+                    description: template.description ?? template.name,
+                    template,
+                  },
+                ]
+              : (diagnostics.push(
+                  safeDiagnostic('unsupported_dynamic_command', 'plugin'),
+                ),
+                []),
+          ),
+          diagnostics,
+        ),
+        diagnostics,
+      }
+    } finally {
+      await env.cleanup()
     }
   }
 

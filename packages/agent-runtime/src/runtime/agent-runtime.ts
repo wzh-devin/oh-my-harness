@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { PluginError, type PluginService } from '@oh-my-harness/agent-plugins'
 
 import {
   ToolPolicy,
@@ -14,6 +15,9 @@ import {
   createSkillResourceTool,
   createTodoWriteTool,
   createWorkspaceTools,
+  createMcpTools,
+  pluginConnectionTargets,
+  type McpConnectionService,
 } from '@oh-my-harness/agent-tools'
 import { ModelServiceError, type ModelService } from '@oh-my-harness/llm'
 import {
@@ -49,6 +53,7 @@ import {
   buildSystemPrompt,
   buildRuntimeContext,
   buildAvailableSkillsPrompt,
+  buildSelectedPluginsPrompt,
   buildCurrentTodosPrompt,
   escapePromptXml,
 } from '../prompt/system-prompt.ts'
@@ -84,6 +89,8 @@ interface ActiveOperation {
 }
 
 interface AgentRuntimeToolOptions {
+  plugins?: PluginService
+  connections?: McpConnectionService
   dataDirectory?: string
   policy: ToolPolicy
   protectedRoots?: readonly string[]
@@ -223,7 +230,10 @@ export class AgentRuntime {
     this.sessions = new AgentSessionService(repository, projection)
     this.toolOptions = toolOptions
     this.capabilities = toolOptions?.dataDirectory
-      ? new AgentCapabilityService(toolOptions.dataDirectory)
+      ? new AgentCapabilityService(
+          toolOptions.dataDirectory,
+          toolOptions.plugins,
+        )
       : undefined
   }
 
@@ -321,6 +331,7 @@ export class AgentRuntime {
     this.assertOpen()
     return (
       this.capabilities?.list(cwd) ?? {
+        plugins: [],
         commands: [],
         diagnostics: [],
         skills: [],
@@ -454,6 +465,10 @@ export class AgentRuntime {
         400,
       )
     const operation = this.reserve(id, 'run')
+    const cleanups: (() => Promise<unknown>)[] = []
+    const cleanup = async () => {
+      await Promise.allSettled(cleanups.splice(0).map((dispose) => dispose()))
+    }
     try {
       const opened = await this.sessions.open(id)
       if (opened.archived) {
@@ -477,10 +492,28 @@ export class AgentRuntime {
         )
       }
       operation.controller.signal.throwIfAborted()
-      const resolved = await this.capabilities?.resolve(
-        opened.metadata.cwd,
-        input ?? { content: '' },
-      )
+      const savedSelection = opened.entries
+        .filter(
+          (entry) =>
+            entry.type === 'custom' &&
+            entry.customType === SESSION_CUSTOM_TYPE.pluginSelection,
+        )
+        .at(-1)
+      const savedIds =
+        savedSelection?.type === 'custom'
+          ? (savedSelection.data as { pluginIds?: unknown }).pluginIds
+          : undefined
+      const pluginIds = input
+        ? (input.pluginIds ?? [])
+        : Array.isArray(savedIds) &&
+            savedIds.every((id) => typeof id === 'string')
+          ? (savedIds as string[])
+          : []
+      const resolved = await this.capabilities?.resolve(opened.metadata.cwd, {
+        ...(input ?? { content: '' }),
+        pluginIds,
+      })
+      if (resolved) cleanups.push(resolved.release)
       if (
         input &&
         (input.commandId || input.skillIds?.length) &&
@@ -496,13 +529,23 @@ export class AgentRuntime {
         input &&
         (input.attachments?.length ||
           input.commandId ||
-          input.skillIds?.length),
+          input.skillIds?.length ||
+          resolved?.plugins.length ||
+          input.pluginIds),
       )
       const structured =
         input && hasStructuredInput
           ? buildStructuredUserPrompt(input)
           : undefined
       const contextItems: AgentMessageContextItem[] = [
+        ...(resolved?.plugins ?? []).map((plugin) => ({
+          description: plugin.activeRevision.descriptor.description,
+          id: plugin.id,
+          kind: 'plugin' as const,
+          label: plugin.activeRevision.descriptor.name,
+          reference: `@${plugin.activeRevision.descriptor.name}`,
+          sourceId: plugin.id,
+        })),
         ...(resolved?.command
           ? [
               {
@@ -515,14 +558,16 @@ export class AgentRuntime {
               },
             ]
           : []),
-        ...(resolved?.skills ?? []).map((skill) => ({
-          description: skill.description,
-          id: skill.id,
-          kind: 'skill' as const,
-          label: skill.name,
-          reference: `/${skill.name}`,
-          sourceId: skill.id,
-        })),
+        ...(resolved?.skills ?? [])
+          .filter((skill) => input?.skillIds?.includes(skill.id))
+          .map((skill) => ({
+            description: skill.description,
+            id: skill.id,
+            kind: 'skill' as const,
+            label: skill.name,
+            reference: `/${skill.name}`,
+            sourceId: skill.id,
+          })),
       ]
       const incoming: AgentMessage | undefined = input
         ? structured
@@ -619,11 +664,33 @@ export class AgentRuntime {
             sessionId: id,
           })
         : undefined
+      if (workspaceTools) cleanups.push(() => workspaceTools.cleanup())
+      cleanups.push(async () => this.toolOptions?.policy.clearRun(runId))
+      const mcpTools =
+        this.toolOptions?.connections && resolved?.plugins.length
+          ? await createMcpTools({
+              connections: this.toolOptions.connections,
+              targets: pluginConnectionTargets(resolved.plugins),
+              policy: this.toolOptions.policy,
+              permission,
+              runId,
+              sessionId: id,
+              signal: operation.controller.signal,
+              onApprovalRequested: async (approval) => {
+                await this.appendApprovalRequested(opened.session, approval)
+                events.push(this.approvalEvent(approval))
+              },
+              onApprovalResolved: (resolution) =>
+                this.appendApprovalResolved(opened.session, resolution),
+            })
+          : undefined
+      if (mcpTools) cleanups.push(mcpTools.cleanup)
       const skillResourceTool = resolved?.catalog.skills.length
         ? createSkillResourceTool(
             resolved.catalog.skills.map((skill) => ({
               id: skill.id,
               rootDirectory: skill.rootDirectory,
+              resourceRootDirectory: skill.resourceRootDirectory,
             })),
           )
         : undefined
@@ -650,6 +717,7 @@ export class AgentRuntime {
         events.push({ todos: snapshot, type: 'todo_updated' })
       })
       const tools = [
+        ...(mcpTools?.tools ?? []),
         ...(workspaceTools?.tools ?? []),
         ...(skillResourceTool ? [skillResourceTool] : []),
         ...(attachmentTool ? [attachmentTool] : []),
@@ -709,6 +777,14 @@ export class AgentRuntime {
           'Available skills: none. Earlier skill catalogs no longer apply.',
         true,
       )
+      appendContext(
+        'plugin-selection',
+        buildSelectedPluginsPrompt(
+          resolved?.plugins ?? [],
+          resolved?.catalog.skills ?? [],
+        ),
+        true,
+      )
       if (resolved?.commandContent)
         appendContext('command', resolved.commandContent)
       for (const skill of resolved?.skills ?? [])
@@ -717,6 +793,8 @@ export class AgentRuntime {
           `<skill id="${escapePromptXml(skill.id)}">\nResources use the prefix ${skill.id}/.\n${skill.content}\n</skill>`,
         )
       appendContext('task-recovery', buildCurrentTodosPrompt(currentTodos))
+      if (mcpTools?.diagnostics.length)
+        appendContext('plugin-diagnostics', mcpTools.diagnostics.join('\n'))
       const requestState: {
         id?: string
         startedAt?: number
@@ -740,7 +818,9 @@ export class AgentRuntime {
           call.toolCall.name === 'view_attachment' ||
           call.toolCall.name === 'todo_write'
             ? undefined
-            : workspaceTools?.beforeToolCall(call, signal),
+            : mcpTools?.owns(call.toolCall.name)
+              ? mcpTools.beforeToolCall(call, signal)
+              : workspaceTools?.beforeToolCall(call, signal),
         initialState: {
           messages: context.messages,
           model,
@@ -800,6 +880,13 @@ export class AgentRuntime {
         toolExecution: 'sequential',
       })
       operation.agent = agent
+      await opened.session.appendCustomEntry(
+        SESSION_CUSTOM_TYPE.pluginSelection,
+        {
+          pluginIds: resolved?.plugins.map((plugin) => plugin.id) ?? [],
+          schemaVersion: 1,
+        },
+      )
       await opened.session.appendCustomEntry(SESSION_CUSTOM_TYPE.runStarted, {
         runId,
         startedAt: Date.now(),
@@ -807,12 +894,7 @@ export class AgentRuntime {
       })
       void this.executeRun({
         agent,
-        cleanupTools: workspaceTools
-          ? async () => {
-              await workspaceTools.cleanup()
-              this.toolOptions?.policy.clearRun(runId)
-            }
-          : undefined,
+        cleanupTools: cleanup,
         events,
         ...(incoming ? { incoming } : {}),
         operation,
@@ -826,7 +908,10 @@ export class AgentRuntime {
       }).finally(() => this.release(id, operation))
       return run
     } catch (error) {
+      await cleanup()
       this.release(id, operation)
+      if (error instanceof PluginError)
+        throw new AgentRuntimeError('AGENT_SKILL_NOT_FOUND', error.message, 400)
       if (
         error instanceof AgentRuntimeError ||
         error instanceof ModelServiceError
@@ -1175,6 +1260,20 @@ export class AgentRuntime {
   }
 
   private approvalEvent(approval: PendingToolApproval) {
+    if (approval.effect === 'mcp')
+      return {
+        approvalId: approval.approvalId,
+        kind: 'mcp' as const,
+        input: {
+          connectionId: approval.connectionId,
+          tool: approval.remoteToolName,
+          arguments: approval.input,
+        },
+        title: `允许调用 MCP 工具 ${approval.remoteToolName} 吗？`,
+        toolCallId: approval.toolCallId,
+        toolName: 'mcp' as const,
+        type: 'tool_approval_required' as const,
+      }
     if (approval.effect === 'execute') {
       return {
         approvalId: approval.approvalId,
@@ -1205,7 +1304,7 @@ export class AgentRuntime {
     await session.appendCustomEntry(SESSION_CUSTOM_TYPE.approvalRequested, {
       approvalId: approval.approvalId,
       effect: approval.effect,
-      ...(approval.effect === 'execute' ? {} : { scope: approval.scope }),
+      ...('scope' in approval ? { scope: approval.scope } : {}),
       runId: approval.runId,
       toolCallId: approval.toolCallId,
       toolName: approval.toolName,
