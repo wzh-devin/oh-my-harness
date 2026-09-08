@@ -1,8 +1,6 @@
 import { Button, Tooltip } from '@heroui/react'
-import {
-  type AgentTraceRecord,
-  AgentTraceRecordKind,
-} from '../types/agent-trace.ts'
+import { AGENT_TRAJECTORY_RECORD_KIND } from '@oh-my-harness/shared'
+import { type AgentTraceRecord } from '../types/agent-trace.ts'
 import { getTraceEventRowText } from '../utils/get-trace-event-row-text.ts'
 import { TraceKindChip } from './TraceKindChip.tsx'
 
@@ -33,7 +31,7 @@ export function TraceEventRow({
 }: TraceEventRowProps) {
   const isInRange = rangeRecordIds === null || rangeRecordIds.has(record.id)
   const isSelected = record.id === selectedRecordId
-  const isRequest = record.kind === AgentTraceRecordKind.REQUEST
+  const isRequest = record.kind === AGENT_TRAJECTORY_RECORD_KIND.REQUEST
 
   if (isRequest) {
     return (

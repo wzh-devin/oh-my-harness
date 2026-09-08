@@ -3,9 +3,16 @@ import type {
   CapabilityCommand,
   PluginSettingsTab,
 } from '../../../settings/index.ts'
+import {
+  COMPOSER_CAPABILITY_KIND,
+  COMPOSER_MENU_MODE,
+  type CapabilityKind,
+  type ComposerCapabilityKind,
+  type ComposerMenuMode,
+} from '@oh-my-harness/shared'
 
-export type ComposerMenuMode = 'mention' | 'plus' | 'slash'
-export type ComposerContextKind = 'command' | 'mcp' | 'plugin' | 'skill'
+export type { ComposerMenuMode }
+export type ComposerContextKind = CapabilityKind
 
 export interface ComposerContextItem {
   description: string
@@ -18,11 +25,11 @@ export interface ComposerContextItem {
 
 /** 命令会影响本轮 Agent 的交互方式，并在发送成功后清除。 */
 export const isComposerModeContext = (item: ComposerContextItem) =>
-  item.kind === 'command'
+  item.kind === COMPOSER_CAPABILITY_KIND.COMMAND
 
 export interface ComposerTrigger {
   end: number
-  mode: Exclude<ComposerMenuMode, 'plus'>
+  mode: Exclude<ComposerMenuMode, typeof COMPOSER_MENU_MODE.PLUS>
   query: string
   start: number
 }
@@ -31,7 +38,7 @@ export type ComposerCapability = {
   contextReference?: string
   description: string
   id: string
-  kind: 'attachment' | 'command' | 'mcp' | 'plugin' | 'skill'
+  kind: ComposerCapabilityKind
   label: string
   settingsTab?: PluginSettingsTab
   sourceId?: string
@@ -47,7 +54,7 @@ const ADD_ITEMS: readonly ComposerCapability[] = [
   {
     description: '从设备中选择一个或多个文件。',
     id: 'attachment-files',
-    kind: 'attachment',
+    kind: COMPOSER_CAPABILITY_KIND.ATTACHMENT,
     label: '文件',
   },
 ]
@@ -85,7 +92,8 @@ export function findComposerTrigger(
 
   return {
     end: safeCaret,
-    mode: symbol === '@' ? 'mention' : 'slash',
+    mode:
+      symbol === '@' ? COMPOSER_MENU_MODE.MENTION : COMPOSER_MENU_MODE.SLASH,
     query,
     start: safeCaret - query.length - 1,
   }
@@ -108,11 +116,11 @@ export function getComposerCapabilityGroups(
     description: command.description,
     id: command.id,
     contextReference: `/${command.name}`,
-    kind: 'command',
+    kind: COMPOSER_CAPABILITY_KIND.COMMAND,
     label: command.name,
     sourceId: command.id,
   }))
-  if (mode !== 'slash') {
+  if (mode !== COMPOSER_MENU_MODE.SLASH) {
     return filterGroups(
       [
         {
@@ -125,7 +133,7 @@ export function getComposerCapabilityGroups(
               sourceId: plugin.id,
               label: plugin.name,
               description: plugin.description,
-              kind: 'plugin',
+              kind: COMPOSER_CAPABILITY_KIND.PLUGIN,
               contextReference: `@${plugin.name}`,
             })),
         },
@@ -142,7 +150,7 @@ export function getComposerCapabilityGroups(
       description: skill.description,
       id: `skill-${skill.id}`,
       contextReference: `/${skill.name}`,
-      kind: 'skill',
+      kind: COMPOSER_CAPABILITY_KIND.SKILL,
       label: skill.name,
       sourceId: skill.id,
     }))
@@ -168,7 +176,7 @@ export function createComposerContextItem(
   capability: ComposerCapability,
 ): ComposerContextItem | null {
   if (
-    capability.kind === 'attachment' ||
+    capability.kind === COMPOSER_CAPABILITY_KIND.ATTACHMENT ||
     capability.settingsTab ||
     !capability.contextReference
   ) {
@@ -190,8 +198,13 @@ export function addComposerContextItem(
   currentItems: readonly ComposerContextItem[],
   nextItem: ComposerContextItem,
 ): ComposerContextItem[] {
-  if (nextItem.kind === 'command') {
-    return [nextItem, ...currentItems.filter((item) => item.kind !== 'command')]
+  if (nextItem.kind === COMPOSER_CAPABILITY_KIND.COMMAND) {
+    return [
+      nextItem,
+      ...currentItems.filter(
+        (item) => item.kind !== COMPOSER_CAPABILITY_KIND.COMMAND,
+      ),
+    ]
   }
 
   return currentItems.some((item) => item.id === nextItem.id)
@@ -207,18 +220,18 @@ export function getComposerContextUnavailableReason(
   plugins: readonly { id: string; enabled: boolean }[] = [],
 ) {
   if (
-    item.kind === 'plugin' &&
+    item.kind === COMPOSER_CAPABILITY_KIND.PLUGIN &&
     !plugins.some((plugin) => plugin.id === item.sourceId && plugin.enabled)
   )
     return '插件已禁用或卸载'
-  if (item.kind === 'skill') {
+  if (item.kind === COMPOSER_CAPABILITY_KIND.SKILL) {
     const skill = skills.find((candidate) => candidate.id === item.sourceId)
     if (!skill) return '技能已移除'
     if (!skill.enabled) return '技能已禁用'
   }
 
   if (
-    item.kind === 'command' &&
+    item.kind === COMPOSER_CAPABILITY_KIND.COMMAND &&
     !commands.some((command) => command.id === item.sourceId)
   ) {
     return '命令已移除'

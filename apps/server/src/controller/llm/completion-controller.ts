@@ -1,5 +1,6 @@
 import { ModelServiceError, type ModelService } from '@oh-my-harness/llm'
 import type { Context } from 'hono'
+import { COMPLETION_EVENT_TYPE, MESSAGE_ROLE } from '@oh-my-harness/shared'
 import { streamSSE } from 'hono/streaming'
 
 import type {
@@ -24,7 +25,8 @@ function isCompletionRequest(
     request.messages.every(
       (message) =>
         !!message &&
-        (message.role === 'user' || message.role === 'assistant') &&
+        (message.role === MESSAGE_ROLE.USER ||
+          message.role === MESSAGE_ROLE.ASSISTANT) &&
         typeof message.content === 'string' &&
         message.content.length <= 1_000_000,
     )
@@ -73,25 +75,35 @@ export function createCompletionController(models: ModelService) {
 
       try {
         for await (const event of events) {
-          if (event.type === 'start') await write({ type: 'start' })
-          else if (event.type === 'text_delta') {
-            await write({ delta: event.delta, type: 'text_delta' })
+          if (event.type === COMPLETION_EVENT_TYPE.START)
+            await write({ type: COMPLETION_EVENT_TYPE.START })
+          else if (event.type === COMPLETION_EVENT_TYPE.TEXT_DELTA) {
+            await write({
+              delta: event.delta,
+              type: COMPLETION_EVENT_TYPE.TEXT_DELTA,
+            })
           } else if (event.type === 'thinking_delta') {
-            await write({ delta: event.delta, type: 'reasoning_delta' })
-          } else if (event.type === 'done') {
+            await write({
+              delta: event.delta,
+              type: COMPLETION_EVENT_TYPE.REASONING_DELTA,
+            })
+          } else if (event.type === COMPLETION_EVENT_TYPE.DONE) {
             const usage = event.message.usage
             await write({
               input: usage.input,
               output: usage.output,
               total: usage.totalTokens,
-              type: 'usage',
+              type: COMPLETION_EVENT_TYPE.USAGE,
             })
-            await write({ stopReason: event.reason, type: 'done' })
-          } else if (event.type === 'error') {
+            await write({
+              stopReason: event.reason,
+              type: COMPLETION_EVENT_TYPE.DONE,
+            })
+          } else if (event.type === COMPLETION_EVENT_TYPE.ERROR) {
             await write({
               code: 'MODEL_REQUEST_FAILED',
               message: '模型调用失败。',
-              type: 'error',
+              type: COMPLETION_EVENT_TYPE.ERROR,
             })
           }
         }
@@ -100,7 +112,7 @@ export function createCompletionController(models: ModelService) {
           await write({
             code: 'MODEL_REQUEST_FAILED',
             message: '模型调用失败。',
-            type: 'error',
+            type: COMPLETION_EVENT_TYPE.ERROR,
           })
         }
       }

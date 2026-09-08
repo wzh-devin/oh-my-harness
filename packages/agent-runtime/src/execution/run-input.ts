@@ -1,10 +1,14 @@
-import type { ModelThinkingLevel } from '@earendil-works/pi-ai'
+import type {
+  AgentContextKind,
+  AttachmentKind,
+  ModelThinkingLevel,
+} from '@oh-my-harness/shared'
 
-export type { ModelThinkingLevel } from '@earendil-works/pi-ai'
+export type { ModelThinkingLevel } from '@oh-my-harness/shared'
 
 export interface AgentRunAttachment {
   content: string
-  kind: 'image' | 'text'
+  kind: AttachmentKind
   mimeType: string
   name: string
   size: number
@@ -30,7 +34,7 @@ export interface AgentMessageAttachment {
 export interface AgentMessageContextItem {
   description: string
   id: string
-  kind: 'command' | 'skill' | 'plugin'
+  kind: AgentContextKind
   label: string
   reference: string
   sourceId: string

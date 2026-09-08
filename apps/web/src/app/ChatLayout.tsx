@@ -1,5 +1,11 @@
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  CHAT_ROUTE_KIND,
+  PLUGIN_SETTINGS_TAB,
+  SETTINGS_SECTION,
+  type SettingsSection,
+} from '@oh-my-harness/shared'
 import { AppLayout } from '@agile-avocation/ui-pro/app-layout'
 import '../styles/ChatLayout.css'
 import {
@@ -86,16 +92,19 @@ export function ChatLayout({
   const isFileEditorBusy = useRef(false)
   const [settingsTarget, setSettingsTarget] = useState<{
     pluginTab: PluginSettingsTab
-    section: 'archived' | 'general' | 'plugins'
-  }>({ pluginTab: 'skills', section: 'general' })
-  const isThreadPage = activePage.kind === 'thread'
+    section: SettingsSection
+  }>({
+    pluginTab: PLUGIN_SETTINGS_TAB.SKILLS,
+    section: SETTINGS_SECTION.GENERAL,
+  })
+  const isThreadPage = activePage.kind === CHAT_ROUTE_KIND.THREAD
   const activePageId = isThreadPage ? activePage.thread.id : activePage.kind
   const activeWorkspaceId = isThreadPage
     ? activePage.thread.workspaceId
     : undefined
 
   const openPluginSettings = useCallback((pluginTab: PluginSettingsTab) => {
-    setSettingsTarget({ pluginTab, section: 'plugins' })
+    setSettingsTarget({ pluginTab, section: SETTINGS_SECTION.PLUGINS })
     setIsSettingsOpen(true)
   }, [])
 
@@ -269,7 +278,7 @@ export function ChatLayout({
               onSettings={() => {
                 setSettingsTarget((currentTarget) => ({
                   ...currentTarget,
-                  section: 'general',
+                  section: SETTINGS_SECTION.GENERAL,
                 }))
                 setIsSettingsOpen(true)
               }}

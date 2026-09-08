@@ -1,4 +1,5 @@
 import type { ChatTodoItem } from '../../features/chat/index.ts'
+import { PLAN_STEP_STATE, TODO_STATUS } from '@oh-my-harness/shared'
 import type { PlanStep } from '../../types/agent-plan.ts'
 
 export interface TodoProgress {
@@ -12,8 +13,12 @@ export interface TodoProgress {
 export const getTodoProgress = (
   todos: readonly ChatTodoItem[],
 ): TodoProgress => {
-  const completed = todos.filter((todo) => todo.status === 'completed').length
-  const currentIndex = todos.findIndex((todo) => todo.status === 'in_progress')
+  const completed = todos.filter(
+    (todo) => todo.status === TODO_STATUS.COMPLETED,
+  ).length
+  const currentIndex = todos.findIndex(
+    (todo) => todo.status === TODO_STATUS.IN_PROGRESS,
+  )
   if (currentIndex >= 0) {
     return {
       completed,
@@ -23,7 +28,9 @@ export const getTodoProgress = (
     }
   }
 
-  const pendingIndex = todos.findIndex((todo) => todo.status === 'pending')
+  const pendingIndex = todos.findIndex(
+    (todo) => todo.status === TODO_STATUS.PENDING,
+  )
   if (pendingIndex >= 0) {
     return {
       completed,
@@ -42,9 +49,9 @@ export const getTodoProgress = (
 }
 
 const planState = {
-  completed: 'done',
-  in_progress: 'active',
-  pending: 'pending',
+  [TODO_STATUS.COMPLETED]: PLAN_STEP_STATE.DONE,
+  [TODO_STATUS.IN_PROGRESS]: PLAN_STEP_STATE.ACTIVE,
+  [TODO_STATUS.PENDING]: PLAN_STEP_STATE.PENDING,
 } as const
 
 /** 将现有 Todo 快照适配为 Scrim UI Agent Plan 步骤。 */

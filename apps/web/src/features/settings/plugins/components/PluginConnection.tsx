@@ -1,5 +1,11 @@
 import { useState } from 'react'
 import {
+  MCP_AUTH_STATUS,
+  MCP_OAUTH_STATUS,
+  MCP_RUNTIME_CONNECTION_STATUS,
+  MCP_TRANSPORT,
+} from '@oh-my-harness/shared'
+import {
   Button,
   Checkbox,
   Disclosure,
@@ -47,18 +53,18 @@ export function PluginConnection({
       <p className="text-xs text-muted">
         {connection.allowed ? '已允许连接' : '需要配置'} · 认证：
         {{
-          'not-required': '无需 OAuth',
-          disconnected: '未认证',
-          authorizing: '认证中',
-          authorized: '已认证',
-          'reauth-required': '需要重新认证',
+          [MCP_AUTH_STATUS.NOT_REQUIRED]: '无需 OAuth',
+          [MCP_AUTH_STATUS.DISCONNECTED]: '未认证',
+          [MCP_AUTH_STATUS.AUTHORIZING]: '认证中',
+          [MCP_AUTH_STATUS.AUTHORIZED]: '已认证',
+          [MCP_AUTH_STATUS.REAUTH_REQUIRED]: '需要重新认证',
         }[connection.authStatus] ?? connection.authStatus}{' '}
         · 网络：
         {{
-          disconnected: '未连接',
-          connecting: '连接中',
-          ready: '就绪',
-          error: '连接异常',
+          [MCP_RUNTIME_CONNECTION_STATUS.DISCONNECTED]: '未连接',
+          [MCP_RUNTIME_CONNECTION_STATUS.CONNECTING]: '连接中',
+          [MCP_RUNTIME_CONNECTION_STATUS.READY]: '就绪',
+          [MCP_RUNTIME_CONNECTION_STATUS.ERROR]: '连接异常',
         }[connection.connectionStatus] ?? connection.connectionStatus}
       </p>
       {connection.message ? (
@@ -91,7 +97,7 @@ export function PluginConnection({
         >
           配置
         </Button>
-        {connection.transport === 'http' ? (
+        {connection.transport === MCP_TRANSPORT.HTTP ? (
           <Button
             size="sm"
             className="h-7 min-h-0 rounded-full !px-2.5 !text-xs"
@@ -176,7 +182,7 @@ export function PluginConnection({
           }}
         >
           <p className="text-xs leading-[18px] text-muted">
-            {connection.transport === 'stdio'
+            {connection.transport === MCP_TRANSPORT.STDIO
               ? '仅信任的插件才能允许启动本地进程：它具有当前系统用户的访问能力，并非沙箱。不会自动安装依赖。'
               : '允许向插件声明的 MCP 服务建立连接。OAuth 范围不替代工具调用审批。'}{' '}
             保存会替换配置并清除旧登录态，敏感字段需重新填写。
@@ -203,7 +209,7 @@ export function PluginConnection({
               <FieldError />
             </TextField>
           ))}
-          {connection.transport === 'http' ? (
+          {connection.transport === MCP_TRANSPORT.HTTP ? (
             <Disclosure
               isExpanded={oauthExpanded}
               onExpandedChange={setOauthExpanded}
@@ -254,7 +260,7 @@ export function PluginConnection({
         <div className="space-y-2 text-sm" role="status">
           <p>
             OAuth：
-            {session.status === 'failed'
+            {session.status === MCP_OAUTH_STATUS.FAILED
               ? '认证失败，请检查服务是否支持标准 OAuth，或配置 Client ID'
               : ({
                   pending: '等待授权',
@@ -263,7 +269,8 @@ export function PluginConnection({
                   expired: '已过期',
                 }[session.status] ?? session.status)}
           </p>
-          {session.status === 'pending' && session.authorizationUrl ? (
+          {session.status === MCP_OAUTH_STATUS.PENDING &&
+          session.authorizationUrl ? (
             <div className="flex flex-wrap items-center gap-3">
               <a
                 className="text-accent underline"

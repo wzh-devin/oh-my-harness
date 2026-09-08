@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { MESSAGE_ROLE, TOOL_ACTIVITY_KIND } from '@oh-my-harness/shared'
 import { ChatConversation } from '@agile-avocation/ui-pro/chat-conversation'
 import type { ChatStatus } from '@agile-avocation/ui-pro/prompt-input'
 import { Button, Tabs } from '@heroui/react'
@@ -70,7 +71,7 @@ export function ChatPage({
             ? pendingApproval.input
             : { path: pendingApproval.path },
         kind:
-          pendingApproval.kind === 'mcp'
+          pendingApproval.kind === TOOL_ACTIVITY_KIND.MCP
             ? ('tool' as const)
             : pendingApproval.kind,
         state: 'requires-action' as const,
@@ -118,7 +119,7 @@ export function ChatPage({
                 ) : null}
                 {thread.messages.map((message, index) => {
                   const compact = Boolean(
-                    message.role === 'assistant' &&
+                    message.role === MESSAGE_ROLE.ASSISTANT &&
                     !message.activity &&
                     thread.messages[index - 1]?.activity,
                   )

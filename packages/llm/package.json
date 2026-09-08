@@ -20,7 +20,8 @@
     "format:check": "prettier --check src package.json tsconfig.json tsconfig.build.json"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "0.84.3"
+    "@earendil-works/pi-ai": "0.84.3",
+    "@oh-my-harness/shared": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

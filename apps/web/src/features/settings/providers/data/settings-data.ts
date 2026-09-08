@@ -1,3 +1,8 @@
+import {
+  AGENT_CAPABILITY_SOURCE,
+  MCP_SETTINGS_CONNECTION_STATUS,
+  MCP_TRANSPORT,
+} from '@oh-my-harness/shared'
 import type {
   AssistantSkill,
   McpServer,
@@ -9,14 +14,14 @@ export const INITIAL_ASSISTANT_SKILLS: readonly AssistantSkill[] = [
     enabled: true,
     id: 'code-review',
     name: '代码审查',
-    source: 'user',
+    source: AGENT_CAPABILITY_SOURCE.USER,
   },
   {
     description: '把复杂任务整理为可执行计划。',
     enabled: true,
     id: 'planning',
     name: '计划模式',
-    source: 'user',
+    source: AGENT_CAPABILITY_SOURCE.USER,
   },
 ] as const
 
@@ -27,8 +32,8 @@ export const INITIAL_MCP_SERVERS: readonly McpServer[] = [
     endpoint: 'https://mcp.example.com/search',
     id: 'web-search',
     name: '网页搜索',
-    scope: 'project',
-    status: 'connected',
-    transport: 'http',
+    scope: AGENT_CAPABILITY_SOURCE.PROJECT,
+    status: MCP_SETTINGS_CONNECTION_STATUS.CONNECTED,
+    transport: MCP_TRANSPORT.HTTP,
   },
 ] as const

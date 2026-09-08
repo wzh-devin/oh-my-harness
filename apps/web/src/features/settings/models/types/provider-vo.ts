@@ -1,9 +1,17 @@
-export type AuthMethodVo = 'api_key' | 'oauth'
+import type {
+  AuthMethod,
+  ModelThinkingLevel as SharedModelThinkingLevel,
+  OAuthPromptType,
+  OAuthSessionState,
+  ProviderAuthStatus,
+  ProviderConfigStatus,
+} from '@oh-my-harness/shared'
 
-export type ProviderAuthStatusVo =
-  'unauthorized' | 'authorizing' | 'authorized' | 'expired' | 'error'
+export type AuthMethodVo = AuthMethod
 
-export type ProviderConfigStatusVo = 'unconfigured' | 'configured'
+export type ProviderAuthStatusVo = ProviderAuthStatus
+
+export type ProviderConfigStatusVo = ProviderConfigStatus
 
 export interface ProviderModelInfoVo {
   id: string
@@ -11,8 +19,7 @@ export interface ProviderModelInfoVo {
   thinkingLevels?: ModelThinkingLevel[]
 }
 
-export type ModelThinkingLevel =
-  'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+export type ModelThinkingLevel = SharedModelThinkingLevel
 
 export interface ProviderInfoVo {
   authStatus: ProviderAuthStatusVo
@@ -29,7 +36,7 @@ export interface OAuthPromptVo {
   message: string
   options?: Array<{ label: string; value: string }>
   promptId: string
-  promptType: 'text' | 'secret' | 'select' | 'manual_code'
+  promptType: OAuthPromptType
 }
 
 export interface OAuthSessionStatusVo {
@@ -40,11 +47,5 @@ export interface OAuthSessionStatusVo {
   progress?: string
   prompt?: OAuthPromptVo
   sessionId: string
-  status:
-    | 'awaiting_user'
-    | 'awaiting_provider'
-    | 'succeeded'
-    | 'failed'
-    | 'cancelled'
-    | 'expired'
+  status: OAuthSessionState
 }

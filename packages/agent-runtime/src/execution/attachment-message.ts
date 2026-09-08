@@ -3,6 +3,11 @@ import {
   type AgentMessage,
   type Entry,
 } from '@earendil-works/pi-agent-core'
+import {
+  ATTACHMENT_KIND,
+  CAPABILITY_KIND,
+  type AttachmentKind,
+} from '@oh-my-harness/shared'
 
 import type {
   AgentMessageAttachment,
@@ -12,7 +17,7 @@ import { SESSION_CUSTOM_TYPE } from '../session/session-custom-type.ts'
 
 export interface StoredAttachment extends AgentMessageAttachment {
   content: string
-  kind: 'image' | 'text'
+  kind: AttachmentKind
 }
 
 export interface StructuredMessageDetails {
@@ -25,7 +30,7 @@ export interface StructuredMessageDetails {
 export interface SessionAttachmentResource {
   content: string
   id: string
-  kind: 'image' | 'text'
+  kind: AttachmentKind
   mimeType: string
   name: string
 }
@@ -86,7 +91,8 @@ export function structuredMessageDetails(
         !Number.isSafeInteger(item.contentIndex) ||
         (item.contentIndex as number) < 0 ||
         typeof item.content !== 'string' ||
-        (item.kind !== 'image' && item.kind !== 'text')
+        (item.kind !== ATTACHMENT_KIND.IMAGE &&
+          item.kind !== ATTACHMENT_KIND.TEXT)
       ) {
         return []
       }
@@ -115,9 +121,9 @@ export function structuredMessageDetails(
       }
       const item = contextItem as Record<string, unknown>
       return typeof item.id === 'string' &&
-        (item.kind === 'command' ||
-          item.kind === 'skill' ||
-          item.kind === 'plugin') &&
+        (item.kind === CAPABILITY_KIND.COMMAND ||
+          item.kind === CAPABILITY_KIND.SKILL ||
+          item.kind === CAPABILITY_KIND.PLUGIN) &&
         typeof item.label === 'string' &&
         typeof item.description === 'string' &&
         typeof item.reference === 'string' &&
@@ -149,7 +155,7 @@ export const modelSafeAttachmentMessage = (
 ): AgentMessage => {
   if (
     message.role !== 'custom' ||
-    message.customType !== SESSION_CUSTOM_TYPE.userInput
+    message.customType !== SESSION_CUSTOM_TYPE.USER_INPUT
   ) {
     return message
   }
@@ -192,7 +198,7 @@ export const attachmentResourcesFromEntries = (
   for (const message of messages) {
     if (
       message.role !== 'custom' ||
-      message.customType !== SESSION_CUSTOM_TYPE.userInput
+      message.customType !== SESSION_CUSTOM_TYPE.USER_INPUT
     ) {
       continue
     }

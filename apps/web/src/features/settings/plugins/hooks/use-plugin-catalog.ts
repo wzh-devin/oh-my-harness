@@ -8,12 +8,14 @@ import {
 } from '../api/plugin-api.ts'
 
 /** 读取真实插件目录并串行提交管理操作，丢弃过期列表响应。 */
-export const usePluginCatalog = () => {
+export const usePluginCatalog = (initialSelectedId?: string) => {
   const { refreshCapabilities } = usePluginSettings()
   const [plugins, setPlugins] = useState<PluginVo[]>([])
   const [markets, setMarkets] = useState<MarketplaceVo[]>([])
   const [connections, setConnections] = useState<ConnectionVo[]>([])
-  const [selected, setSelected] = useState<string | null>(null)
+  const [selected, setSelected] = useState<string | null>(
+    initialSelectedId ?? null,
+  )
   const [importing, setImporting] = useState(false)
   const [replacement, setReplacement] = useState<string | undefined>()
   const [busy, setBusy] = useState(false)

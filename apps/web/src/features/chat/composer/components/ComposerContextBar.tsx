@@ -8,6 +8,7 @@ import {
   Xmark,
 } from '@gravity-ui/icons'
 import { Button } from '@heroui/react'
+import { COMPOSER_CAPABILITY_KIND } from '@oh-my-harness/shared'
 import type {
   ComposerContextItem,
   ComposerContextKind,
@@ -94,7 +95,7 @@ export function ComposerContextBar({
                 className="size-3.5 shrink-0"
                 role="img"
               />
-            ) : item.kind === 'mcp' ? (
+            ) : item.kind === COMPOSER_CAPABILITY_KIND.MCP ? (
               <CircleFill
                 aria-label="MCP 已连接"
                 className="size-1.5 shrink-0 text-success"

@@ -1,8 +1,21 @@
 import type { ComponentType } from 'react'
 import type { ToolPartState } from '@agile-avocation/ui-pro/chat-tool'
 import type { ComposerContextItem } from '../composer/capabilities/composer-capabilities.ts'
+import {
+  CHAT_MESSAGE_SOURCE_TYPE,
+  CHAT_ROUTE_KIND,
+  MESSAGE_PART_TYPE,
+  type ChatAssistantStatus,
+  type ChatRouteKind,
+  type ChatToolKind,
+  type MessageRole,
+  type TodoStatus,
+} from '@oh-my-harness/shared'
 
-export type ChatNavItemId = 'new' | 'library' | 'explore'
+export type ChatNavItemId = Exclude<
+  ChatRouteKind,
+  typeof CHAT_ROUTE_KIND.THREAD
+>
 
 export interface ChatNavItem {
   href: string
@@ -40,7 +53,7 @@ export interface ChatMessageTool {
   argsText?: string
   errorText?: string
   input?: unknown
-  kind?: 'browser' | 'command' | 'edit' | 'read' | 'search' | 'skill' | 'tool'
+  kind?: ChatToolKind
   label?: string
   outcome?: {
     exitCode: number | null
@@ -57,12 +70,12 @@ export interface ChatMessageTool {
 export type ChatMessageSource =
   | {
       description?: string
-      sourceType: 'url'
+      sourceType: typeof CHAT_MESSAGE_SOURCE_TYPE.URL
       title?: string
       url: string
     }
   | {
-      sourceType: 'document'
+      sourceType: typeof CHAT_MESSAGE_SOURCE_TYPE.DOCUMENT
       title: string
     }
 
@@ -77,17 +90,20 @@ export interface ChatMessageAttachment {
   src?: string
 }
 
-export type ChatAssistantStatus = 'complete' | 'skeleton' | 'streaming'
+export type { ChatAssistantStatus }
 
 export interface ChatTodoItem {
   content: string
-  status: 'completed' | 'in_progress' | 'pending'
+  status: TodoStatus
 }
 
 export type ChatMessageActivityPart =
-  | { reasoning: ChatMessageReasoning; type: 'reasoning' }
-  | { text: string; type: 'text' }
-  | { tool: ChatMessageTool; type: 'tool' }
+  | {
+      reasoning: ChatMessageReasoning
+      type: typeof MESSAGE_PART_TYPE.REASONING
+    }
+  | { text: string; type: typeof MESSAGE_PART_TYPE.TEXT }
+  | { tool: ChatMessageTool; type: typeof MESSAGE_PART_TYPE.TOOL }
 
 export interface ChatMessageActivity {
   endedAt?: number
@@ -116,7 +132,7 @@ export interface ChatMessage {
   markdown?: string
   parts?: readonly ChatMessageActivityPart[]
   reasoning?: ChatMessageReasoning
-  role: 'assistant' | 'user'
+  role: MessageRole
   showAvatar?: boolean
   sourceGroup?: ChatMessageSourceGroup
   sources?: readonly ChatMessageSource[]
@@ -157,7 +173,7 @@ export interface ChatContextUsage {
 }
 
 export type ChatActivePage =
-  | { kind: 'explore' }
-  | { kind: 'library' }
-  | { kind: 'new' }
-  | { kind: 'thread'; thread: ChatThread }
+  | { kind: typeof CHAT_ROUTE_KIND.EXPLORE }
+  | { kind: typeof CHAT_ROUTE_KIND.LIBRARY }
+  | { kind: typeof CHAT_ROUTE_KIND.NEW }
+  | { kind: typeof CHAT_ROUTE_KIND.THREAD; thread: ChatThread }

@@ -20,6 +20,7 @@
     "format:check": "prettier --check src package.json tsconfig.json tsconfig.build.json"
   },
   "dependencies": {
+    "@oh-my-harness/shared": "workspace:*",
     "yauzl": "3.4.0"
   },
   "devDependencies": {

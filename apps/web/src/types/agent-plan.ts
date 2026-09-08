@@ -1,4 +1,5 @@
-export type PlanStepState = 'pending' | 'active' | 'done' | 'skipped' | 'failed'
+export type { PlanStepState } from '@oh-my-harness/shared'
+import type { PlanStepState } from '@oh-my-harness/shared'
 
 export interface PlanStep {
   /** Stable across plan revisions. */

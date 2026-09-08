@@ -1,4 +1,8 @@
 import { Button } from '@heroui/react'
+import {
+  AGENT_TRAJECTORY_RECORD_KIND,
+  AGENT_TRAJECTORY_STATUS,
+} from '@oh-my-harness/shared'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   applyTraceUpdate,
@@ -45,7 +49,9 @@ export function AgentTraceView({ revision, sessionId }: AgentTraceViewProps) {
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
   const [now, setNow] = useState(Date.now)
-  const running = trace?.runs.some((run) => run.status === 'running') ?? false
+  const running =
+    trace?.runs.some((run) => run.status === AGENT_TRAJECTORY_STATUS.RUNNING) ??
+    false
   const durationMs =
     trace && running
       ? Math.max(trace.durationMs, now - trace.startedAt)
@@ -142,7 +148,7 @@ export function AgentTraceView({ revision, sessionId }: AgentTraceViewProps) {
 
   const allRecords = useMemo(() => {
     return (trace?.records ?? []).map((record) =>
-      record.status === 'running' && trace
+      record.status === AGENT_TRAJECTORY_STATUS.RUNNING && trace
         ? {
             ...record,
             durationMs: Math.max(
@@ -168,7 +174,9 @@ export function AgentTraceView({ revision, sessionId }: AgentTraceViewProps) {
       [
         ...new Set(
           allRecords
-            .filter((record) => record.kind === 'tool')
+            .filter(
+              (record) => record.kind === AGENT_TRAJECTORY_RECORD_KIND.TOOL,
+            )
             .map((record) => record.label),
         ),
       ].sort(),

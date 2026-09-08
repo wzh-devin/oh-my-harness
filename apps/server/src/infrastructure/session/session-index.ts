@@ -528,7 +528,7 @@ export class SessionIndex implements AgentSessionProjection {
       } else if (
         value.kind === 'entry' &&
         value.type === 'custom' &&
-        value.customType === SESSION_CUSTOM_TYPE.sessionArchiveChanged &&
+        value.customType === SESSION_CUSTOM_TYPE.SESSION_ARCHIVE_CHANGED &&
         (value.lane === undefined || value.lane === 'main')
       ) {
         next.archived = archiveDataState(value.data)
@@ -552,7 +552,7 @@ export class SessionIndex implements AgentSessionProjection {
         type: 'model_change',
       }),
       session.findEntryOnBranch({
-        customType: SESSION_CUSTOM_TYPE.sessionArchiveChanged,
+        customType: SESSION_CUSTOM_TYPE.SESSION_ARCHIVE_CHANGED,
         order: 'newestFirst',
         type: 'custom',
       }),

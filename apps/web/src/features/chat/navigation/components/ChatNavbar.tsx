@@ -1,22 +1,26 @@
 import { AppLayout } from '@agile-avocation/ui-pro/app-layout'
+import { CHAT_ROUTE_KIND } from '@oh-my-harness/shared'
 import { Navbar } from '@agile-avocation/ui-pro/navbar'
 import { Magnifier } from '@gravity-ui/icons'
 import { Button, Kbd, Tooltip } from '@heroui/react'
 import type { ChatActivePage } from '../../data/chat-types.ts'
 
 const NAV_TITLES: Record<
-  Exclude<ChatActivePage['kind'], 'thread'>,
+  Exclude<ChatActivePage['kind'], typeof CHAT_ROUTE_KIND.THREAD>,
   { subtitle: string; title: string }
 > = {
-  explore: {
+  [CHAT_ROUTE_KIND.EXPLORE]: {
     subtitle: '选择预设提示词，开始新的对话',
     title: '探索',
   },
-  library: {
+  [CHAT_ROUTE_KIND.LIBRARY]: {
     subtitle: '资料保存与管理功能尚未开放',
     title: '资料库',
   },
-  new: { subtitle: '开始一段全新的对话', title: '新建对话' },
+  [CHAT_ROUTE_KIND.NEW]: {
+    subtitle: '开始一段全新的对话',
+    title: '新建对话',
+  },
 }
 
 interface ChatNavbarProps {
@@ -26,7 +30,7 @@ interface ChatNavbarProps {
 
 /** 展示非会话页标题，并为移动端提供导航与聊天搜索入口。 */
 export function ChatNavbar({ activePage, onSearch }: ChatNavbarProps) {
-  const isThread = activePage.kind === 'thread'
+  const isThread = activePage.kind === CHAT_ROUTE_KIND.THREAD
   const title = isThread
     ? activePage.thread.title
     : NAV_TITLES[activePage.kind].title

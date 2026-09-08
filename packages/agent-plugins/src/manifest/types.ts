@@ -1,16 +1,34 @@
-export type ManifestFormat = 'native' | 'codex' | 'claude'
+import {
+  PLUGIN_SOURCE_TYPE,
+  type McpTransport,
+  type PluginCompatibilityStatus,
+  type PluginImportKind,
+  type PluginManifestFormat,
+} from '@oh-my-harness/shared'
+
+export type ManifestFormat = PluginManifestFormat
 export type CompatibilityIssue = {
   capability: string
-  status: 'supported' | 'needs-configuration' | 'unsupported'
+  status: PluginCompatibilityStatus
   message: string
 }
 export type PluginSource =
-  | { type: 'git'; url: string; ref?: string; path?: string }
-  | { type: 'zip'; name: string }
-export type CatalogSource = PluginSource | { type: 'path'; path: string }
+  | {
+      type: typeof PLUGIN_SOURCE_TYPE.GIT
+      url: string
+      ref?: string
+      path?: string
+    }
+  | { type: typeof PLUGIN_SOURCE_TYPE.ZIP; name: string }
+export type CatalogSource =
+  | PluginSource
+  | {
+      type: typeof PLUGIN_SOURCE_TYPE.PATH
+      path: string
+    }
 export type McpServerDefinition = {
   name: string
-  transport: 'stdio' | 'http'
+  transport: McpTransport
   command?: string
   args?: string[]
   env?: Record<string, string>
@@ -46,7 +64,7 @@ export type ImportCandidate = {
   key: string
   root: string
   format: ManifestFormat
-  kind: 'plugin' | 'marketplace'
+  kind: PluginImportKind
 }
 
 export class PluginError extends Error {

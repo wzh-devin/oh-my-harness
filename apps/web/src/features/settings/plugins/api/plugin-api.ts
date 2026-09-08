@@ -1,6 +1,16 @@
+import type {
+  McpOAuthStatus,
+  McpAuthStatus,
+  McpRuntimeConnectionStatus,
+  McpTransport,
+  PluginCompatibilityStatus,
+  PluginImportKind,
+  PluginImportStatus,
+} from '@oh-my-harness/shared'
+
 export type CompatibilityVo = {
   capability: string
-  status: 'supported' | 'needs-configuration' | 'unsupported'
+  status: PluginCompatibilityStatus
   message: string
 }
 export interface PluginVo {
@@ -37,23 +47,23 @@ export interface ConnectionVo {
   id: string
   installationId: string
   serverName: string
-  transport: 'stdio' | 'http'
+  transport: McpTransport
   endpoint?: string
   allowed: boolean
   requiredKeys: string[]
   configuredKeys: string[]
-  authStatus: string
-  connectionStatus: string
+  authStatus: McpAuthStatus
+  connectionStatus: McpRuntimeConnectionStatus
   message?: string
 }
 export interface ImportVo {
   id: string
-  status: 'fetching' | 'ready' | 'failed' | 'cancelled'
+  status: PluginImportStatus
   error?: string
   candidates: {
     key: string
     root: string
-    kind: 'plugin' | 'marketplace'
+    kind: PluginImportKind
     format: string
   }[]
 }
@@ -75,7 +85,7 @@ export interface ImportPreviewVo {
 export interface PluginOAuthVo {
   id: string
   connectionId: string
-  status: 'pending' | 'authorized' | 'failed' | 'cancelled' | 'expired'
+  status: McpOAuthStatus
   authorizationUrl?: string
   expiresAt: number
 }

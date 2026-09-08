@@ -3,7 +3,8 @@ import { PluginService } from '@oh-my-harness/agent-plugins'
 import { McpConnectionService } from '@oh-my-harness/agent-tools'
 import { FileMcpCredentialStore } from './infrastructure/plugins/mcp-credential-store.ts'
 import { createPluginRouter } from './router/plugins/plugin-router.ts'
-import { AgentRuntime } from '@oh-my-harness/agent-runtime'
+import { AgentRuntime, SkillImportService } from '@oh-my-harness/agent-runtime'
+import { createSkillImportRouter } from './router/plugins/skill-import-router.ts'
 import {
   createProviderModels,
   FileCredentialStore,
@@ -68,10 +69,17 @@ export async function createApp(
     protectedRoots: [dataDirectory],
   })
   let closed = false
+  const skillImports = new SkillImportService(
+    dataDirectory,
+    process.env.OH_MY_HARNESS_PLUGIN_GIT_HOSTS?.split(',')
+      .map((host) => host.trim())
+      .filter(Boolean),
+  )
   app.close = async () => {
     if (closed) return
     closed = true
     await runtime.close()
+    await skillImports.close()
     connections.close()
     await plugins.close()
     await sessionIndex.close()
@@ -89,6 +97,10 @@ export async function createApp(
     ),
   )
   app.route('/api', createPluginRouter(plugins, connections))
+  app.route(
+    '/api',
+    createSkillImportRouter(skillImports, runtime, connections.redirectUrl),
+  )
 
   return app
 }

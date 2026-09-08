@@ -1,13 +1,16 @@
-import type { ModelThinkingLevel } from '@earendil-works/pi-ai'
+import type {
+  AuthMethod,
+  ModelThinkingLevel,
+  ProviderAuthStatus,
+  ProviderConfigStatus,
+} from '@oh-my-harness/shared'
 
-export type { ModelThinkingLevel } from '@earendil-works/pi-ai'
-
-export type AuthMethod = 'api_key' | 'oauth'
-
-export type ProviderAuthStatus =
-  'unauthorized' | 'authorizing' | 'authorized' | 'expired' | 'error'
-
-export type ProviderConfigStatus = 'unconfigured' | 'configured'
+export type {
+  AuthMethod,
+  ModelThinkingLevel,
+  ProviderAuthStatus,
+  ProviderConfigStatus,
+} from '@oh-my-harness/shared'
 
 export interface ProviderModelInfo {
   id: string

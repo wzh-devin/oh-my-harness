@@ -10,6 +10,8 @@ export type {
   PluginSnapshot,
 } from './installation/plugin-service.ts'
 export { PluginError } from './manifest/types.ts'
+export { extractZip, fetchGit, normalizeGitSource } from './source/fetch.ts'
+export { inspectTree, resolveContentPath, exists } from './source/files.ts'
 export type {
   CatalogEntry,
   CompatibilityIssue,

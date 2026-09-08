@@ -5,6 +5,12 @@ import type {
   AgentRunAttachment,
   ModelThinkingLevel,
 } from '@oh-my-harness/agent-runtime'
+import {
+  AGENT_RUN_EVENT_TYPE,
+  TOOL_ACTIVITY_KIND,
+  type TodoStatus,
+  type TrajectoryStreamBlock,
+} from '@oh-my-harness/shared'
 
 import type {
   ContextUsageDto,
@@ -31,34 +37,38 @@ export interface SendAgentMessageDto {
 
 export type AgentRunEventDto =
   | {
-      type: 'trajectory_updated'
+      type: typeof AGENT_RUN_EVENT_TYPE.TRAJECTORY_UPDATED
       trajectory: Omit<AgentTrajectoryDto, 'records'>
       records: AgentTrajectoryRecordDetailDto[]
     }
   | {
-      type: 'trajectory_delta'
+      type: typeof AGENT_RUN_EVENT_TYPE.TRAJECTORY_DELTA
       cursor: AgentTrajectoryDto['cursor']
       id: string
-      block: 'text' | 'thinking'
+      block: TrajectoryStreamBlock
       delta: string
     }
-  | { permission: ToolPermission; sessionId: string; type: 'start' }
-  | { type: 'trajectory_changed' }
-  | { delta: string; type: 'text_delta' }
-  | { delta: string; type: 'reasoning_delta' }
+  | {
+      permission: ToolPermission
+      sessionId: string
+      type: typeof AGENT_RUN_EVENT_TYPE.START
+    }
+  | { type: typeof AGENT_RUN_EVENT_TYPE.TRAJECTORY_CHANGED }
+  | { delta: string; type: typeof AGENT_RUN_EVENT_TYPE.TEXT_DELTA }
+  | { delta: string; type: typeof AGENT_RUN_EVENT_TYPE.REASONING_DELTA }
   | {
       todos: {
         content: string
-        status: 'completed' | 'in_progress' | 'pending'
+        status: TodoStatus
       }[]
-      type: 'todo_updated'
+      type: typeof AGENT_RUN_EVENT_TYPE.TODO_UPDATED
     }
   | {
       input: unknown
       toolCallId: string
       toolName: string
       kind: ToolActivityKind
-      type: 'tool_start'
+      type: typeof AGENT_RUN_EVENT_TYPE.TOOL_START
     }
   | {
       isError: boolean
@@ -68,30 +78,33 @@ export type AgentRunEventDto =
       toolCallId: string
       toolName: string
       kind: ToolActivityKind
-      type: 'tool_end'
+      type: typeof AGENT_RUN_EVENT_TYPE.TOOL_END
     }
   | ({
       approvalId: string
       path: string
       title: string
       toolCallId: string
-      type: 'tool_approval_required'
+      type: typeof AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED
     } & (
-      | { kind: 'read'; toolName: typeof POLICY_TOOL.read.toolName }
       | {
-          kind: 'edit'
+          kind: typeof TOOL_ACTIVITY_KIND.READ
+          toolName: typeof POLICY_TOOL.READ.toolName
+        }
+      | {
+          kind: typeof TOOL_ACTIVITY_KIND.EDIT
           toolName:
-            typeof POLICY_TOOL.write.toolName | typeof POLICY_TOOL.edit.toolName
+            typeof POLICY_TOOL.WRITE.toolName | typeof POLICY_TOOL.EDIT.toolName
         }
     ))
   | {
       approvalId: string
       input: { command: string }
-      kind: 'command'
+      kind: typeof TOOL_ACTIVITY_KIND.COMMAND
       title: string
       toolCallId: string
-      toolName: typeof POLICY_TOOL.bash.toolName
-      type: 'tool_approval_required'
+      toolName: typeof POLICY_TOOL.BASH.toolName
+      type: typeof AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED
     }
   | {
       approvalId: string
@@ -100,11 +113,11 @@ export type AgentRunEventDto =
         tool: string
         arguments: Record<string, unknown>
       }
-      kind: 'mcp'
+      kind: typeof TOOL_ACTIVITY_KIND.MCP
       title: string
       toolCallId: string
-      toolName: typeof POLICY_TOOL.mcp.toolName
-      type: 'tool_approval_required'
+      toolName: typeof POLICY_TOOL.MCP.toolName
+      type: typeof AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED
     }
   | {
       cacheRead: number
@@ -113,11 +126,15 @@ export type AgentRunEventDto =
       input: number
       output: number
       total: number
-      type: 'usage'
+      type: typeof AGENT_RUN_EVENT_TYPE.USAGE
     }
   | {
       entryId: string
       stopReason: string
-      type: 'done'
+      type: typeof AGENT_RUN_EVENT_TYPE.DONE
     }
-  | { code: string; message: string; type: 'error' }
+  | {
+      code: string
+      message: string
+      type: typeof AGENT_RUN_EVENT_TYPE.ERROR
+    }

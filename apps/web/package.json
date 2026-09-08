@@ -22,6 +22,7 @@
     "@heroui/styles": "3.2.4",
     "@lobehub/icons-static-svg": "1.94.0",
     "@oh-my-harness/agent-policy": "workspace:*",
+    "@oh-my-harness/shared": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "lucide-react": "^1.34.0",
     "motion": "12.43.0",

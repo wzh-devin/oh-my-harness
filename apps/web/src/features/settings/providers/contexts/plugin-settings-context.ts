@@ -1,3 +1,11 @@
+import type {
+  AgentSkillSource,
+  AgentCommandSource,
+  CapabilityScope,
+  McpSettingsConnectionStatus,
+  McpTransport,
+  PluginSettingsTab,
+} from '@oh-my-harness/shared'
 import {
   createContext,
   useContext,
@@ -5,10 +13,9 @@ import {
   type SetStateAction,
 } from 'react'
 
-export type PluginSettingsTab = 'marketplaces' | 'plugins' | 'skills'
-export type McpTransport = 'http' | 'stdio'
-export type McpConnectionStatus = 'connected' | 'disconnected'
-export type SkillSource = 'user' | 'plugin'
+export type { McpTransport, PluginSettingsTab }
+export type McpConnectionStatus = McpSettingsConnectionStatus
+export type SkillSource = AgentSkillSource
 export interface CapabilityPlugin {
   id: string
   name: string
@@ -30,7 +37,7 @@ export interface CapabilityCommand {
   description: string
   id: string
   name: string
-  source: 'builtin' | 'project' | 'user' | 'plugin'
+  source: AgentCommandSource
 }
 
 export interface McpServer {
@@ -39,7 +46,7 @@ export interface McpServer {
   endpoint: string
   id: string
   name: string
-  scope: 'project' | 'user'
+  scope: CapabilityScope
   status: McpConnectionStatus
   transport: McpTransport
 }

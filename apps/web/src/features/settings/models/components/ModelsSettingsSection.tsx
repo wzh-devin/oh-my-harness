@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { CircleFill } from '@gravity-ui/icons'
 import {
+  API_PROTOCOL,
+  AUTH_METHOD,
+  OAUTH_PROMPT_TYPE,
+  OAUTH_SESSION_STATUS,
+  PROVIDER_AUTH_STATUS,
+  PROVIDER_CONFIG_STATUS,
+} from '@oh-my-harness/shared'
+import {
   Button,
   Card,
   Description,
@@ -46,12 +54,12 @@ type ActiveEditor =
   | { type: 'custom' }
   | null
 
-const DEFAULT_API_PROTOCOL: ApiProtocol = 'openai-completions'
+const DEFAULT_API_PROTOCOL: ApiProtocol = API_PROTOCOL.OPENAI_COMPLETIONS
 const terminalStatuses = new Set<OAuthSessionStatusVo['status']>([
-  'succeeded',
-  'failed',
-  'cancelled',
-  'expired',
+  OAUTH_SESSION_STATUS.SUCCEEDED,
+  OAUTH_SESSION_STATUS.FAILED,
+  OAUTH_SESSION_STATUS.CANCELLED,
+  OAUTH_SESSION_STATUS.EXPIRED,
 ])
 
 const createEmptyConfiguration = (
@@ -74,7 +82,9 @@ export function ModelsSettingsSection() {
   const [presetProviderId, setPresetProviderId] = useState('')
   const [providerConfiguration, setProviderConfiguration] =
     useState<ProviderConfiguration>(createEmptyConfiguration)
-  const [authMethod, setAuthMethod] = useState<AuthMethodVo>('api_key')
+  const [authMethod, setAuthMethod] = useState<AuthMethodVo>(
+    AUTH_METHOD.API_KEY,
+  )
   const [apiKey, setApiKey] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
@@ -92,13 +102,13 @@ export function ModelsSettingsSection() {
   const addedProviders = providers.filter(
     (provider) =>
       provider.isCustom ||
-      provider.authStatus !== 'unauthorized' ||
+      provider.authStatus !== PROVIDER_AUTH_STATUS.UNAUTHORIZED ||
       provider.models.length > 0,
   )
   const availableProviders = providers.filter(
     (provider) =>
       !provider.isCustom &&
-      provider.authStatus === 'unauthorized' &&
+      provider.authStatus === PROVIDER_AUTH_STATUS.UNAUTHORIZED &&
       provider.models.length === 0,
   )
   const editingProvider =
@@ -110,7 +120,8 @@ export function ModelsSettingsSection() {
       ? providers.find((provider) => provider.id === presetProviderId)
       : undefined
   const authProvider = editingProvider ?? presetProvider
-  const isAuthorized = authProvider?.authStatus === 'authorized'
+  const isAuthorized =
+    authProvider?.authStatus === PROVIDER_AUTH_STATUS.AUTHORIZED
   const oauthLoginOptions = authProvider
     ? getOAuthLoginOptions(authProvider.id)
     : []
@@ -152,7 +163,9 @@ export function ModelsSettingsSection() {
       models: provider.models.map((model) => ({ ...model })),
     })
     setAuthMethod(
-      provider.configuredAuthMethod ?? provider.authMethods[0] ?? 'api_key',
+      provider.configuredAuthMethod ??
+        provider.authMethods[0] ??
+        AUTH_METHOD.API_KEY,
     )
     setOauthLoginMethod(getOAuthLoginOptions(provider.id)[0]?.id ?? '')
     setApiKey('')
@@ -171,7 +184,7 @@ export function ModelsSettingsSection() {
       baseUrl: provider.baseUrl,
       models: [],
     })
-    setAuthMethod(provider.authMethods[0] ?? 'api_key')
+    setAuthMethod(provider.authMethods[0] ?? AUTH_METHOD.API_KEY)
     setOauthLoginMethod(getOAuthLoginOptions(provider.id)[0]?.id ?? '')
     setApiKey('')
     setActionError(null)
@@ -228,7 +241,7 @@ export function ModelsSettingsSection() {
     if (oauthRun.current !== run) return
     popup.current?.close()
     popup.current = null
-    if (status.status === 'succeeded') {
+    if (status.status === OAUTH_SESSION_STATUS.SUCCEEDED) {
       await refreshProviders()
       setActiveEditor({ type: 'edit', providerId })
       setOauthStatus(null)
@@ -302,7 +315,7 @@ export function ModelsSettingsSection() {
           popup.current?.close()
           popup.current = null
         } else if (
-          oauthStatus.prompt.promptType === 'select' &&
+          oauthStatus.prompt.promptType === OAUTH_PROMPT_TYPE.SELECT &&
           !popup.current
         ) {
           popup.current = window.open(
@@ -325,13 +338,13 @@ export function ModelsSettingsSection() {
     }
     if (oauthStatus) return
 
-    if (authMethod === 'oauth' && !isAuthorized) {
+    if (authMethod === AUTH_METHOD.OAUTH && !isAuthorized) {
       await beginOAuthAuthorization()
       return
     }
 
     const nextApiKey = apiKey.trim()
-    if (authMethod === 'api_key' && !nextApiKey && !isAuthorized) {
+    if (authMethod === AUTH_METHOD.API_KEY && !nextApiKey && !isAuthorized) {
       setActionError('请输入 API 密钥。')
       return
     }
@@ -339,7 +352,7 @@ export function ModelsSettingsSection() {
     setIsSaving(true)
     let credentialChanged = false
     try {
-      if (authMethod === 'api_key' && nextApiKey) {
+      if (authMethod === AUTH_METHOD.API_KEY && nextApiKey) {
         await saveProviderApiKey(authProvider.id, { apiKey: nextApiKey })
         credentialChanged = true
       }
@@ -377,13 +390,13 @@ export function ModelsSettingsSection() {
       ...current,
       {
         ...providerConfiguration,
-        authStatus: 'authorized',
-        authMethods: ['api_key'],
+        authStatus: PROVIDER_AUTH_STATUS.AUTHORIZED,
+        authMethods: [AUTH_METHOD.API_KEY],
         baseUrl,
         configStatus: providerConfiguration.models.length
-          ? 'configured'
-          : 'unconfigured',
-        configuredAuthMethod: 'api_key',
+          ? PROVIDER_CONFIG_STATUS.CONFIGURED
+          : PROVIDER_CONFIG_STATUS.UNCONFIGURED,
+        configuredAuthMethod: AUTH_METHOD.API_KEY,
         id,
         isCustom: true,
         name,
@@ -426,7 +439,7 @@ export function ModelsSettingsSection() {
             ariaLabel="认证方式"
             options={authProvider.authMethods.map((method) => ({
               id: method,
-              label: method === 'oauth' ? 'OAuth2 授权' : 'API Key',
+              label: method === AUTH_METHOD.OAUTH ? 'OAuth2 授权' : 'API Key',
             }))}
             triggerClassName="w-full sm:max-w-60"
             value={authMethod}
@@ -440,7 +453,7 @@ export function ModelsSettingsSection() {
         </div>
       ) : null}
 
-      {authMethod === 'api_key' ? (
+      {authMethod === AUTH_METHOD.API_KEY ? (
         <TextField name="apiKey" type="password">
           <Label>API 密钥</Label>
           <Input
@@ -528,7 +541,7 @@ export function ModelsSettingsSection() {
             ) : (
               <TextField
                 type={
-                  oauthStatus.prompt.promptType === 'secret'
+                  oauthStatus.prompt.promptType === OAUTH_PROMPT_TYPE.SECRET
                     ? 'password'
                     : 'text'
                 }
@@ -548,7 +561,7 @@ export function ModelsSettingsSection() {
   ) : null
 
   const submitLabel =
-    authMethod === 'oauth' && !isAuthorized
+    authMethod === AUTH_METHOD.OAUTH && !isAuthorized
       ? oauthStatus?.prompt
         ? '继续'
         : oauthStatus
@@ -674,7 +687,9 @@ export function ModelsSettingsSection() {
                       baseUrl: provider.baseUrl,
                       models: [],
                     })
-                    setAuthMethod(provider.authMethods[0] ?? 'api_key')
+                    setAuthMethod(
+                      provider.authMethods[0] ?? AUTH_METHOD.API_KEY,
+                    )
                     setOauthLoginMethod(
                       getOAuthLoginOptions(provider.id)[0]?.id ?? '',
                     )

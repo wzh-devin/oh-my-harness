@@ -4,6 +4,7 @@ import {
   type AgentMessage,
   type AgentState,
 } from '@earendil-works/pi-agent-core'
+import { MESSAGE_ROLE } from '@oh-my-harness/shared'
 
 export interface ContextUsageSnapshot {
   contextWindow: number
@@ -29,7 +30,7 @@ const tokenFields = [
 
 const textMessage = (content: string): AgentMessage => ({
   content,
-  role: 'user',
+  role: MESSAGE_ROLE.USER,
   timestamp: 0,
 })
 

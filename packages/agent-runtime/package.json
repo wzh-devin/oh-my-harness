@@ -25,7 +25,8 @@
     "@oh-my-harness/agent-plugins": "workspace:*",
     "@oh-my-harness/agent-policy": "workspace:*",
     "@oh-my-harness/agent-tools": "workspace:*",
-    "@oh-my-harness/llm": "workspace:*"
+    "@oh-my-harness/llm": "workspace:*",
+    "@oh-my-harness/shared": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

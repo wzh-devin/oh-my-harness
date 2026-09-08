@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { CHAT_ROUTE_KIND } from '@oh-my-harness/shared'
 import { Sidebar, useSidebar } from '@agile-avocation/ui-pro/sidebar'
 import {
   Archive,
@@ -185,7 +186,7 @@ export function SidebarContents({
   const { isMobile, isOpen, setMobileOpen } = useSidebar()
   const isCollapsed = !isMobile && !isOpen
   const visibleNavItems = isCollapsed
-    ? CHAT_NAV_ITEMS.filter((item) => item.id === 'new')
+    ? CHAT_NAV_ITEMS.filter((item) => item.id === CHAT_ROUTE_KIND.NEW)
     : CHAT_NAV_ITEMS
   const handleSettings = () => {
     if (isMobile) setMobileOpen(false)
@@ -418,7 +419,7 @@ export function SidebarContents({
                                 key={thread.id}
                                 idPrefix={idPrefix}
                                 isCurrent={
-                                  activePage.kind === 'thread' &&
+                                  activePage.kind === CHAT_ROUTE_KIND.THREAD &&
                                   activePage.thread.id === thread.id
                                 }
                                 thread={thread}

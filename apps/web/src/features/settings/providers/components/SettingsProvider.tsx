@@ -1,4 +1,5 @@
 import { TOOL_PERMISSION } from '@oh-my-harness/agent-policy/contracts'
+import { MODEL_THINKING_LEVEL } from '@oh-my-harness/shared'
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { getProviders } from '../../models/api/index.ts'
 import {
@@ -37,19 +38,21 @@ export function SettingsProvider({
   const [providers, setProviders] = useState(createInitialModelProviders)
   const [isLoadingProviders, setIsLoadingProviders] = useState(true)
   const [providerError, setProviderError] = useState<string | null>(null)
-  const [thinkingLevel, setThinkingLevel] = useState<ModelThinkingLevel>('off')
+  const [thinkingLevel, setThinkingLevel] = useState<ModelThinkingLevel>(
+    MODEL_THINKING_LEVEL.OFF,
+  )
   const [permissionSelection, setPermissionSelection] = useState<{
     scope: string
     permission: PermissionId
-  }>({ scope: permissionScope, permission: TOOL_PERMISSION.workspaceWrite })
+  }>({ scope: permissionScope, permission: TOOL_PERMISSION.WORKSPACE_WRITE })
   const permission =
     permissionSelection.scope === permissionScope
       ? permissionSelection.permission
-      : TOOL_PERMISSION.workspaceWrite
+      : TOOL_PERMISSION.WORKSPACE_WRITE
   if (permissionSelection.scope !== permissionScope) {
     setPermissionSelection({
       scope: permissionScope,
-      permission: TOOL_PERMISSION.workspaceWrite,
+      permission: TOOL_PERMISSION.WORKSPACE_WRITE,
     })
   }
   /** 新会话或工作区不继承上一处的完全访问选择。 */

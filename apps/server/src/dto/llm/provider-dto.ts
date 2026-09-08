@@ -1,9 +1,15 @@
-export type AuthMethodDto = 'api_key' | 'oauth'
+import type {
+  AuthMethod,
+  ModelThinkingLevel,
+  ProviderAuthStatus,
+  ProviderConfigStatus,
+} from '@oh-my-harness/shared'
 
-export type ProviderAuthStatusDto =
-  'unauthorized' | 'authorizing' | 'authorized' | 'expired' | 'error'
+export type AuthMethodDto = AuthMethod
 
-export type ProviderConfigStatusDto = 'unconfigured' | 'configured'
+export type ProviderAuthStatusDto = ProviderAuthStatus
+
+export type ProviderConfigStatusDto = ProviderConfigStatus
 
 export interface ApiKeyCredentialRequestDto {
   apiKey: string
@@ -15,8 +21,7 @@ export interface ProviderModelInfoDto {
   thinkingLevels?: ModelThinkingLevelDto[]
 }
 
-export type ModelThinkingLevelDto =
-  'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+export type ModelThinkingLevelDto = ModelThinkingLevel
 
 export interface ProviderInfoDto {
   authStatus: ProviderAuthStatusDto

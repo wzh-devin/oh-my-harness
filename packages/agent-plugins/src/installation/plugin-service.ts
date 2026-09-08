@@ -25,6 +25,17 @@ import {
 } from '../manifest/types.ts'
 import { exists, inspectTree, resolveContentPath } from '../source/files.ts'
 import { extractZip, fetchGit, normalizeGitSource } from '../source/fetch.ts'
+import {
+  PLUGIN_COLLECTION_KIND,
+  PLUGIN_IMPORT_KIND,
+  PLUGIN_IMPORT_STATUS,
+  PLUGIN_MANIFEST_FORMAT,
+  PLUGIN_REGISTRY_ITEM_KIND,
+  PLUGIN_SOURCE_TYPE,
+  type PluginCollectionKind,
+  type PluginImportStatus,
+  type PluginRegistryItemKind,
+} from '@oh-my-harness/shared'
 
 type SourceSnapshot = {
   source: PluginSource
@@ -59,7 +70,7 @@ type Registry = {
 }
 export type PluginImport = {
   id: string
-  status: 'fetching' | 'ready' | 'failed' | 'cancelled'
+  status: PluginImportStatus
   candidates: ImportCandidate[]
   error?: string
 }
@@ -134,7 +145,9 @@ export class PluginService {
             !(await exists(
               join(
                 this.directory,
-                'revision' in record ? 'marketplaces' : 'installations',
+                'revision' in record
+                  ? PLUGIN_COLLECTION_KIND.MARKETPLACES
+                  : PLUGIN_COLLECTION_KIND.INSTALLATIONS,
                 record.id,
                 revision,
               ),
@@ -156,7 +169,7 @@ export class PluginService {
                 throw new Error('revision')
               await resolveContentPath(
                 this.directory,
-                join('installations', record.id, item.id),
+                join(PLUGIN_COLLECTION_KIND.INSTALLATIONS, record.id, item.id),
               )
             }
           }
@@ -226,8 +239,8 @@ export class PluginService {
       )
     const id = randomUUID()
     const source: PluginSource =
-      'zip' in input
-        ? { type: 'zip', name: input.name.slice(0, 200) }
+      PLUGIN_SOURCE_TYPE.ZIP in input
+        ? { type: PLUGIN_SOURCE_TYPE.ZIP, name: input.name.slice(0, 200) }
         : {
             ...normalizeGitSource(input.url, this.allowedGitHosts),
             ...(input.ref ? { ref: input.ref } : {}),
@@ -236,7 +249,7 @@ export class PluginService {
     const state: ImportState = {
       id,
       source,
-      status: 'fetching',
+      status: PLUGIN_IMPORT_STATUS.FETCHING,
       candidates: [],
       directory: join(this.directory, 'staging', id),
       controller: new AbortController(),
@@ -247,19 +260,22 @@ export class PluginService {
       try {
         await mkdir(state.directory, { mode: 0o700 })
         const content = join(state.directory, 'content')
-        if ('zip' in input) {
+        if (PLUGIN_SOURCE_TYPE.ZIP in input) {
           await mkdir(content, { mode: 0o700 })
           await extractZip(input.zip, content, state.controller.signal)
         } else
           state.resolvedCommit = await fetchGit(
-            source as Extract<PluginSource, { type: 'git' }>,
+            source as Extract<
+              PluginSource,
+              { type: typeof PLUGIN_SOURCE_TYPE.GIT }
+            >,
             content,
             state.controller.signal,
             this.allowedGitHosts,
           )
         await inspectTree(content)
         const searchRoot =
-          source.type === 'git' && source.path
+          source.type === PLUGIN_SOURCE_TYPE.GIT && source.path
             ? await resolveContentPath(content, source.path)
             : content
         state.candidates = (await detectCandidates(searchRoot)).map(
@@ -269,9 +285,11 @@ export class PluginService {
           }),
         )
         state.controller.signal.throwIfAborted()
-        state.status = 'ready'
+        state.status = PLUGIN_IMPORT_STATUS.READY
       } catch (error) {
-        state.status = state.controller.signal.aborted ? 'cancelled' : 'failed'
+        state.status = state.controller.signal.aborted
+          ? PLUGIN_IMPORT_STATUS.CANCELLED
+          : PLUGIN_IMPORT_STATUS.FAILED
         state.error =
           error instanceof PluginError
             ? error.message
@@ -302,7 +320,7 @@ export class PluginService {
     const state = this.imports.get(id)
     if (!state) return
     state.controller.abort()
-    state.status = 'cancelled'
+    state.status = PLUGIN_IMPORT_STATUS.CANCELLED
     this.imports.delete(id)
     await state.work
     await rm(state.directory, { recursive: true, force: true })
@@ -315,7 +333,7 @@ export class PluginService {
     )
     if (
       !state ||
-      state.status !== 'ready' ||
+      state.status !== PLUGIN_IMPORT_STATUS.READY ||
       !candidate ||
       state.expires < Date.now()
     )
@@ -329,14 +347,14 @@ export class PluginService {
 
   async preview(id: string, key: string) {
     const { candidate, root } = this.importCandidate(id, key)
-    return candidate.kind === 'marketplace'
+    return candidate.kind === PLUGIN_IMPORT_KIND.MARKETPLACE
       ? parseMarketplace(root, candidate.format, this.allowedGitHosts)
       : parsePlugin(root, candidate.format)
   }
 
   private async copyRevision(
     root: string,
-    kind: 'marketplaces' | 'installations',
+    kind: PluginCollectionKind,
     id: string,
     revision: string,
   ) {
@@ -366,7 +384,7 @@ export class PluginService {
 
   async registerMarketplace(importId: string, key: string, replaceId?: string) {
     const { state, candidate, root } = this.importCandidate(importId, key)
-    if (candidate.kind !== 'marketplace')
+    if (candidate.kind !== PLUGIN_IMPORT_KIND.MARKETPLACE)
       throw new PluginError('PLUGIN_IMPORT_KIND', '请选择市场入口')
     const descriptor = await parseMarketplace(
       root,
@@ -375,7 +393,12 @@ export class PluginService {
     )
     const id = replaceId ?? randomUUID()
     const revision = randomUUID()
-    await this.copyRevision(root, 'marketplaces', id, revision)
+    await this.copyRevision(
+      root,
+      PLUGIN_COLLECTION_KIND.MARKETPLACES,
+      id,
+      revision,
+    )
     const record: PluginMarketplace = {
       id,
       revision,
@@ -398,7 +421,7 @@ export class PluginService {
 
   async installImport(importId: string, key: string, replaceId?: string) {
     const { state, candidate, root } = this.importCandidate(importId, key)
-    if (candidate.kind !== 'plugin')
+    if (candidate.kind !== PLUGIN_IMPORT_KIND.PLUGIN)
       throw new PluginError('PLUGIN_IMPORT_KIND', '请选择插件入口')
     return this.install(
       root,
@@ -429,7 +452,12 @@ export class PluginService {
       resolvedCommit,
       sourceSnapshot,
     }
-    await this.copyRevision(root, 'installations', id, revision.id)
+    await this.copyRevision(
+      root,
+      PLUGIN_COLLECTION_KIND.INSTALLATIONS,
+      id,
+      revision.id,
+    )
     const result = await this.mutate((registry) => {
       if (!replaceId) {
         const separator = catalogEntryId?.indexOf(':') ?? -1
@@ -467,10 +495,18 @@ export class PluginService {
       return structuredClone(record)
     })
     if (result.id !== id)
-      await rm(join(this.directory, 'installations', id, revision.id), {
-        recursive: true,
-        force: true,
-      })
+      await rm(
+        join(
+          this.directory,
+          PLUGIN_COLLECTION_KIND.INSTALLATIONS,
+          id,
+          revision.id,
+        ),
+        {
+          recursive: true,
+          force: true,
+        },
+      )
     return result
   }
 
@@ -496,10 +532,10 @@ export class PluginService {
   }
 
   private async installEntry(market: PluginMarketplace, entry: CatalogEntry) {
-    if (entry.source!.type === 'path') {
+    if (entry.source!.type === PLUGIN_SOURCE_TYPE.PATH) {
       const marketRoot = join(
         this.directory,
-        'marketplaces',
+        PLUGIN_COLLECTION_KIND.MARKETPLACES,
         market.id,
         market.revision,
       )
@@ -513,8 +549,8 @@ export class PluginService {
         (entry.definition
           ? {
               key: '.:claude:plugin',
-              kind: 'plugin' as const,
-              format: 'claude' as const,
+              kind: PLUGIN_IMPORT_KIND.PLUGIN,
+              format: PLUGIN_MANIFEST_FORMAT.CLAUDE,
               root: '.',
             }
           : undefined)
@@ -537,7 +573,7 @@ export class PluginService {
         `${market.id}:${entry.id}`,
       )
     }
-    if (entry.source!.type !== 'git')
+    if (entry.source!.type !== PLUGIN_SOURCE_TYPE.GIT)
       throw new PluginError('PLUGIN_SOURCE_UNSUPPORTED', '不支持此来源')
     const imported = await this.importReady(entry.source!)
     try {
@@ -558,11 +594,13 @@ export class PluginService {
     }
   }
 
-  private async importReady(source: Extract<PluginSource, { type: 'git' }>) {
+  private async importReady(
+    source: Extract<PluginSource, { type: typeof PLUGIN_SOURCE_TYPE.GIT }>,
+  ) {
     const imported = await this.createImport(source)
     const state = this.imports.get(imported.id)!
     await state.work
-    if (state.status !== 'ready') {
+    if (state.status !== PLUGIN_IMPORT_STATUS.READY) {
       await this.cancelImport(state.id)
       throw new PluginError('PLUGIN_FETCH_FAILED', state.error ?? '获取失败')
     }
@@ -573,7 +611,9 @@ export class PluginService {
     candidates: ImportCandidate[],
     format: ImportCandidate['format'],
   ) {
-    const plugins = candidates.filter((item) => item.kind === 'plugin')
+    const plugins = candidates.filter(
+      (item) => item.kind === PLUGIN_IMPORT_KIND.PLUGIN,
+    )
     const matching = plugins.filter((item) => item.format === format)
     const choices = matching.length ? matching : plugins
     if (choices.length > 1)
@@ -589,7 +629,7 @@ export class PluginService {
     const market = this.registry.marketplaces.find((item) => item.id === id)
     if (!market)
       throw new PluginError('PLUGIN_MARKET_NOT_FOUND', '市场不存在', 404)
-    if (market.sourceSnapshot.source.type !== 'git')
+    if (market.sourceSnapshot.source.type !== PLUGIN_SOURCE_TYPE.GIT)
       throw new PluginError(
         'PLUGIN_ZIP_REIMPORT_REQUIRED',
         'ZIP 市场请重新导入后替换',
@@ -598,7 +638,7 @@ export class PluginService {
     try {
       const candidate = state.candidates.find(
         (item) =>
-          item.kind === 'marketplace' &&
+          item.kind === PLUGIN_IMPORT_KIND.MARKETPLACE &&
           item.root === market.sourceSnapshot.candidate.root &&
           item.format === market.descriptor.format,
       )
@@ -616,7 +656,7 @@ export class PluginService {
     if (!installed)
       throw new PluginError('PLUGIN_INSTALLATION_NOT_FOUND', '插件不存在', 404)
     const snapshot = installed.activeRevision.sourceSnapshot
-    if (snapshot.source.type !== 'git')
+    if (snapshot.source.type !== PLUGIN_SOURCE_TYPE.GIT)
       throw new PluginError(
         'PLUGIN_ZIP_REIMPORT_REQUIRED',
         'ZIP 插件请重新导入后替换',
@@ -670,9 +710,9 @@ export class PluginService {
     })
   }
 
-  async remove(id: string, kind: 'marketplace' | 'installation') {
+  async remove(id: string, kind: PluginRegistryItemKind) {
     await this.mutate((registry) => {
-      if (kind === 'marketplace')
+      if (kind === PLUGIN_REGISTRY_ITEM_KIND.MARKETPLACE)
         registry.marketplaces = registry.marketplaces.filter(
           (item) => item.id !== id,
         )
@@ -697,7 +737,7 @@ export class PluginService {
         ...structuredClone(record),
         rootDirectory: join(
           this.directory,
-          'installations',
+          PLUGIN_COLLECTION_KIND.INSTALLATIONS,
           id,
           record.activeRevision.id,
         ),
@@ -726,11 +766,14 @@ export class PluginService {
   }
 
   private async collect() {
-    for (const kind of ['marketplaces', 'installations'] as const) {
+    for (const kind of [
+      PLUGIN_COLLECTION_KIND.MARKETPLACES,
+      PLUGIN_COLLECTION_KIND.INSTALLATIONS,
+    ] as const) {
       const root = join(this.directory, kind)
       if (!(await exists(root))) continue
       const keep = new Set<string>()
-      if (kind === 'marketplaces')
+      if (kind === PLUGIN_COLLECTION_KIND.MARKETPLACES)
         for (const item of this.registry.marketplaces)
           keep.add(join(root, item.id, item.revision))
       else

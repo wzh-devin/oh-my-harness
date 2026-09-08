@@ -7,20 +7,28 @@ import type { BashOutcome, TodoItem } from '@oh-my-harness/agent-tools'
 
 import type { ContextUsageSnapshot } from './context-usage.ts'
 import type { TrajectoryUpdate } from '../trajectory/trajectory-stream.ts'
+import {
+  AGENT_RUN_EVENT_TYPE,
+  type AgentRunStopReason,
+} from '@oh-my-harness/shared'
 
 export type AgentRuntimeEvent =
   | TrajectoryUpdate
-  | { permission: ToolPermission; sessionId: string; type: 'start' }
-  | { type: 'trajectory_changed' }
-  | { delta: string; type: 'text_delta' }
-  | { delta: string; type: 'reasoning_delta' }
-  | { todos: TodoItem[]; type: 'todo_updated' }
+  | {
+      permission: ToolPermission
+      sessionId: string
+      type: typeof AGENT_RUN_EVENT_TYPE.START
+    }
+  | { type: typeof AGENT_RUN_EVENT_TYPE.TRAJECTORY_CHANGED }
+  | { delta: string; type: typeof AGENT_RUN_EVENT_TYPE.TEXT_DELTA }
+  | { delta: string; type: typeof AGENT_RUN_EVENT_TYPE.REASONING_DELTA }
+  | { todos: TodoItem[]; type: typeof AGENT_RUN_EVENT_TYPE.TODO_UPDATED }
   | {
       input: unknown
       toolCallId: string
       toolName: string
       kind: ToolActivityKind
-      type: 'tool_start'
+      type: typeof AGENT_RUN_EVENT_TYPE.TOOL_START
     }
   | {
       isError: boolean
@@ -30,7 +38,7 @@ export type AgentRuntimeEvent =
       toolCallId: string
       toolName: string
       kind: ToolActivityKind
-      type: 'tool_end'
+      type: typeof AGENT_RUN_EVENT_TYPE.TOOL_END
     }
   | ToolApprovalEvent
   | {
@@ -40,14 +48,18 @@ export type AgentRuntimeEvent =
       input: number
       output: number
       total: number
-      type: 'usage'
+      type: typeof AGENT_RUN_EVENT_TYPE.USAGE
     }
   | {
       entryId: string
-      stopReason: 'deferred' | 'length' | 'stop' | 'toolUse'
-      type: 'done'
+      stopReason: AgentRunStopReason
+      type: typeof AGENT_RUN_EVENT_TYPE.DONE
     }
-  | { code: string; message: string; type: 'error' }
+  | {
+      code: string
+      message: string
+      type: typeof AGENT_RUN_EVENT_TYPE.ERROR
+    }
 
 export interface AgentRun {
   /** 停止向已断开的消费者缓存事件，不会中止后台 Agent。 */

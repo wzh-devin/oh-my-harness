@@ -23,6 +23,9 @@
     "format": "prettier --write src package.json tsconfig.json tsconfig.build.json",
     "format:check": "prettier --check src package.json tsconfig.json tsconfig.build.json"
   },
+  "dependencies": {
+    "@oh-my-harness/shared": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "^24.13.3",
     "oxlint": "^1.75.0",

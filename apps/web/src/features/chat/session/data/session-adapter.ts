@@ -4,6 +4,11 @@ import type {
   ChatMessageTool,
   ChatThread,
 } from '../../data/index.ts'
+import {
+  CHAT_ASSISTANT_STATUS,
+  MESSAGE_PART_TYPE,
+  MESSAGE_ROLE,
+} from '@oh-my-harness/shared'
 import type { AgentSessionMessageVo, AgentSessionVo } from '../types/index.ts'
 
 const SESSION_USER = {
@@ -44,32 +49,37 @@ const toActivityParts = (
   chatMessage: ChatMessage,
 ): ChatMessageActivityPart[] =>
   message.parts?.map((part) => {
-    if (part.type === 'reasoning') {
+    if (part.type === MESSAGE_PART_TYPE.REASONING) {
       return {
         reasoning: {
           defaultExpanded: false,
           steps: [{ content: part.reasoning, label: '思考过程' }],
         },
-        type: 'reasoning',
+        type: MESSAGE_PART_TYPE.REASONING,
       }
     }
     if (part.type === 'text') return part
-    return { tool: toChatTool(part.tool), type: 'tool' }
+    return { tool: toChatTool(part.tool), type: MESSAGE_PART_TYPE.TOOL }
   }) ?? [
     ...(chatMessage.reasoning
-      ? [{ reasoning: chatMessage.reasoning, type: 'reasoning' as const }]
+      ? [
+          {
+            reasoning: chatMessage.reasoning,
+            type: MESSAGE_PART_TYPE.REASONING,
+          },
+        ]
       : []),
     ...(chatMessage.text
       ? [{ text: chatMessage.text, type: 'text' as const }]
       : []),
     ...(chatMessage.tools ?? []).map((tool) => ({
       tool,
-      type: 'tool' as const,
+      type: MESSAGE_PART_TYPE.TOOL,
     })),
   ]
 
 export const toChatMessage = (message: AgentSessionMessageVo): ChatMessage => ({
-  actions: message.role === 'assistant' ? 'full' : undefined,
+  actions: message.role === MESSAGE_ROLE.ASSISTANT ? 'full' : undefined,
   attachments: message.attachments,
   contextItems: message.contextItems,
   id: message.entryId,
@@ -79,7 +89,10 @@ export const toChatMessage = (message: AgentSessionMessageVo): ChatMessage => ({
       }
     : undefined,
   role: message.role,
-  status: message.role === 'assistant' ? 'complete' : undefined,
+  status:
+    message.role === MESSAGE_ROLE.ASSISTANT
+      ? CHAT_ASSISTANT_STATUS.COMPLETE
+      : undefined,
   text: message.content,
   tools: message.tools?.map(toChatTool),
 })
@@ -100,7 +113,7 @@ const toActivityMessage = (
     tools: message.tools ?? [],
   },
   id: `activity-${message.id}`,
-  role: 'assistant',
+  role: MESSAGE_ROLE.ASSISTANT,
   status: message.status,
 })
 
@@ -144,20 +157,20 @@ export const toChatMessages = (
   for (const message of messages) {
     const chatMessage = toChatMessage(message)
     const isToolActivity =
-      message.role === 'assistant' &&
+      message.role === MESSAGE_ROLE.ASSISTANT &&
       (message.stopReason === 'toolUse' || Boolean(message.tools?.length))
     const previous = chatMessages.at(-1)
 
-    if (message.role === 'user') {
+    if (message.role === MESSAGE_ROLE.USER) {
       runStartedAt = toRunTimestamp(message.timestamp)
     }
 
     if (!isToolActivity) {
-      if (previous?.activity && message.role === 'assistant') {
+      if (previous?.activity && message.role === MESSAGE_ROLE.ASSISTANT) {
         const finalReasoningParts = toActivityParts(
           message,
           chatMessage,
-        ).filter((part) => part.type === 'reasoning')
+        ).filter((part) => part.type === MESSAGE_PART_TYPE.REASONING)
         chatMessages[chatMessages.length - 1] = {
           ...previous,
           activity: {
@@ -180,11 +193,11 @@ export const toChatMessages = (
         }
       }
       chatMessages.push(
-        previous?.activity && message.role === 'assistant'
+        previous?.activity && message.role === MESSAGE_ROLE.ASSISTANT
           ? { ...chatMessage, reasoning: undefined }
           : chatMessage,
       )
-      if (message.role === 'assistant') runStartedAt = undefined
+      if (message.role === MESSAGE_ROLE.ASSISTANT) runStartedAt = undefined
     } else if (previous?.activity) {
       chatMessages[chatMessages.length - 1] = mergeActivityMessage(
         previous,

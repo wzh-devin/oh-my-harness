@@ -3,6 +3,7 @@ import { bodyLimit } from 'hono/body-limit'
 import type { PluginService } from '@oh-my-harness/agent-plugins'
 import type { McpConnectionService } from '@oh-my-harness/agent-tools'
 import { createPluginController } from '../../controller/plugins/plugin-controller.ts'
+import { settingsMutationGuard } from './import-guards.ts'
 
 export function createPluginRouter(
   plugins: PluginService,
@@ -16,29 +17,7 @@ export function createPluginRouter(
       return bodyLimit({ maxSize: 256 * 1024 })(c, next)
     await next()
   })
-  router.use('/plugin-*', async (c, next) => {
-    c.header('Cache-Control', 'no-store')
-    if (!['GET', 'HEAD'].includes(c.req.method)) {
-      const origin = c.req.header('origin')
-      const allowed = [
-        new URL(connections.redirectUrl).origin,
-        'http://localhost:5173',
-        'http://127.0.0.1:5173',
-        ...(process.env.OH_MY_HARNESS_WEB_ORIGIN
-          ? [process.env.OH_MY_HARNESS_WEB_ORIGIN]
-          : []),
-      ]
-      if (
-        c.req.header('sec-fetch-site') === 'cross-site' ||
-        (origin && !allowed.includes(origin))
-      )
-        return c.json(
-          { code: 'PLUGIN_ORIGIN_REJECTED', message: '不允许跨站修改插件' },
-          403,
-        )
-    }
-    await next()
-  })
+  router.use('/plugin-*', settingsMutationGuard(connections.redirectUrl))
   router.get('/plugin-imports/:id', controller.getImport)
   router.get('/plugin-imports/:id/preview', controller.previewImport)
   router.post('/plugin-imports', controller.createImport)

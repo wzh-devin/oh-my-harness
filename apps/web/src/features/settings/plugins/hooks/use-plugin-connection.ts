@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { MCP_OAUTH_STATUS } from '@oh-my-harness/shared'
 import { pluginRequest, type PluginOAuthVo } from '../api/plugin-api.ts'
 
 /** 管理连接配置与短期 OAuth 状态；凭据只随请求提交，不持久化到浏览器。 */
@@ -10,7 +11,7 @@ export const usePluginConnection = (onChanged: () => void) => {
   const [checkedTools, setCheckedTools] = useState<number | null>(null)
   const [session, setSession] = useState<PluginOAuthVo | null>(null)
   useEffect(() => {
-    if (session?.status !== 'pending') return
+    if (session?.status !== MCP_OAUTH_STATUS.PENDING) return
     const controller = new AbortController()
     const timer = window.setTimeout(
       () =>
@@ -21,7 +22,7 @@ export const usePluginConnection = (onChanged: () => void) => {
           .then((value) => {
             if (controller.signal.aborted) return
             setSession(value)
-            if (value.status !== 'pending') onChanged()
+            if (value.status !== MCP_OAUTH_STATUS.PENDING) onChanged()
           })
           .catch((error: unknown) => {
             if (!controller.signal.aborted) setError((error as Error).message)

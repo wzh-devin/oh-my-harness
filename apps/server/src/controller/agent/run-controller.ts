@@ -12,6 +12,7 @@ import {
 } from '@oh-my-harness/agent-runtime'
 import type { Context } from 'hono'
 import { streamSSE } from 'hono/streaming'
+import { ATTACHMENT_KIND, MODEL_THINKING_LEVEL } from '@oh-my-harness/shared'
 
 import type {
   AgentRunEventDto,
@@ -24,15 +25,9 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 const MAX_TEXT_BYTES = 1024 * 1024
 const MAX_TOTAL_BYTES = 20 * 1024 * 1024
 const MAX_TEXT_CHARACTERS = 200_000
-const thinkingLevels = new Set<ModelThinkingLevel>([
-  'off',
-  'minimal',
-  'low',
-  'medium',
-  'high',
-  'xhigh',
-  'max',
-])
+const thinkingLevels = new Set<ModelThinkingLevel>(
+  Object.values(MODEL_THINKING_LEVEL),
+)
 const textExtensions = new Set([
   'c',
   'cc',
@@ -197,7 +192,7 @@ async function parseAttachments(files: File[]) {
       }
       attachments.push({
         content: Buffer.from(bytes).toString('base64'),
-        kind: 'image',
+        kind: ATTACHMENT_KIND.IMAGE,
         mimeType: imageMimeType,
         name: file.name,
         size: file.size,
@@ -225,7 +220,7 @@ async function parseAttachments(files: File[]) {
     }
     attachments.push({
       content,
-      kind: 'text',
+      kind: ATTACHMENT_KIND.TEXT,
       mimeType: file.type || 'text/plain',
       name: file.name,
       size: file.size,

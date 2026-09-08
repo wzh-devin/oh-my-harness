@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { MESSAGE_PART_TYPE, TOOL_EXECUTION_STATE } from '@oh-my-harness/shared'
 import { ChatMessage as ChatMessagePrimitive } from '@agile-avocation/ui-pro/chat-message'
 import { TextShimmer } from '@agile-avocation/ui-pro/text-shimmer'
 import {
@@ -89,10 +90,18 @@ export function ToolActivity({ activity, status }: ToolActivityProps) {
   const StatusIcon = ACTIVITY_ICONS[summary.state]
   const parts = activity.parts ?? [
     ...(activity.reasoning
-      ? [{ reasoning: activity.reasoning, type: 'reasoning' as const }]
+      ? [
+          {
+            reasoning: activity.reasoning,
+            type: MESSAGE_PART_TYPE.REASONING,
+          },
+        ]
       : []),
     ...(activity.text ? [{ text: activity.text, type: 'text' as const }] : []),
-    ...activity.tools.map((tool) => ({ tool, type: 'tool' as const })),
+    ...activity.tools.map((tool) => ({
+      tool,
+      type: MESSAGE_PART_TYPE.TOOL,
+    })),
   ]
   const displayParts = groupConsecutiveToolParts(parts)
 
@@ -107,7 +116,7 @@ export function ToolActivity({ activity, status }: ToolActivityProps) {
           className={`size-4 shrink-0 ${
             summary.state === 'running'
               ? 'animate-spin motion-reduce:animate-none'
-              : summary.state === 'failed'
+              : summary.state === TOOL_EXECUTION_STATE.FAILED
                 ? 'text-danger'
                 : ''
           }`}
@@ -128,7 +137,7 @@ export function ToolActivity({ activity, status }: ToolActivityProps) {
       <CollapsibleContent className="overflow-hidden pl-5 data-closed:animate-collapsible-up data-open:animate-collapsible-down motion-reduce:animate-none">
         <div className="flex flex-col gap-2 pt-1 pb-2">
           {displayParts.map((part, index) => {
-            if (part.type === 'reasoning') {
+            if (part.type === MESSAGE_PART_TYPE.REASONING) {
               return (
                 <ReasoningPanel
                   key={`reasoning-${index}`}

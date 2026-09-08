@@ -3,6 +3,14 @@ import type {
   AgentTraceRecordDetail,
   AgentTraceSession,
 } from '../types/agent-trace.ts'
+import {
+  AGENT_RUN_EVENT_TYPE,
+  AGENT_TRAJECTORY_LANE,
+  AGENT_TRAJECTORY_RECORD_KIND,
+  AGENT_TRAJECTORY_STATUS,
+  TRAJECTORY_STREAM_BLOCK,
+  type TrajectoryStreamBlock,
+} from '@oh-my-harness/shared'
 
 interface TrajectoryRecordResponse extends Omit<AgentTraceRecord, 'startMs'> {
   startedAt: number
@@ -12,15 +20,15 @@ interface TrajectoryResponse extends Omit<AgentTraceSession, 'records'> {
 }
 export type AgentTraceUpdate =
   | {
-      type: 'trajectory_updated'
+      type: typeof AGENT_RUN_EVENT_TYPE.TRAJECTORY_UPDATED
       trajectory: Omit<TrajectoryResponse, 'records'>
       records: TrajectoryRecordResponse[]
     }
   | {
-      type: 'trajectory_delta'
+      type: typeof AGENT_RUN_EVENT_TYPE.TRAJECTORY_DELTA
       cursor: AgentTraceSession['cursor']
       id: string
-      block: 'text' | 'thinking'
+      block: TrajectoryStreamBlock
       delta: string
     }
 
@@ -30,10 +38,19 @@ const isNumber = (value: unknown) =>
   typeof value === 'number' && Number.isFinite(value)
 const isCount = (value: unknown) =>
   Number.isSafeInteger(value) && Number(value) >= 0
-const isStatus = (value: unknown) =>
-  ['aborted', 'completed', 'failed', 'interrupted', 'running'].includes(
-    String(value),
-  )
+const trajectoryStatuses = new Set<string>(
+  Object.values(AGENT_TRAJECTORY_STATUS),
+)
+const trajectoryKinds = new Set<string>(
+  Object.values(AGENT_TRAJECTORY_RECORD_KIND),
+)
+const trajectoryLanes = new Set<string>(Object.values(AGENT_TRAJECTORY_LANE))
+const modelTrajectoryKinds = new Set<string>([
+  AGENT_TRAJECTORY_RECORD_KIND.REQUEST,
+  AGENT_TRAJECTORY_RECORD_KIND.ASSISTANT,
+  AGENT_TRAJECTORY_RECORD_KIND.TOOL,
+])
+const isStatus = (value: unknown) => trajectoryStatuses.has(String(value))
 const isCursor = (value: unknown) =>
   isObject(value) && isCount(value.sequence) && isCount(value.revision)
 
@@ -46,10 +63,8 @@ function parseRecord(value: unknown): TrajectoryRecordResponse | undefined {
     !isNumber(value.startedAt) ||
     !isNumber(value.durationMs) ||
     !isCount(value.turn) ||
-    !['assistant', 'context', 'request', 'system', 'tool', 'user'].includes(
-      String(value.kind),
-    ) ||
-    !['input', 'model', 'tools'].includes(String(value.lane)) ||
+    !trajectoryKinds.has(String(value.kind)) ||
+    !trajectoryLanes.has(String(value.lane)) ||
     !isStatus(value.status) ||
     (value.completedAt !== undefined && !isNumber(value.completedAt)) ||
     !isCount(value.position) ||
@@ -57,16 +72,20 @@ function parseRecord(value: unknown): TrajectoryRecordResponse | undefined {
     Number(value.runNumber) < 1 ||
     typeof value.runId !== 'string' ||
     !value.runId ||
-    (['request', 'assistant', 'tool'].includes(String(value.kind))
+    (modelTrajectoryKinds.has(String(value.kind))
       ? !isCount(value.request) ||
         Number(value.request) < 1 ||
         Number(value.turn) < 1 ||
         typeof value.sourceRecordId !== 'string' ||
         !value.sourceRecordId ||
-        value.lane !== (value.kind === 'tool' ? 'tools' : 'model')
-      : value.lane !== 'input' ||
+        value.lane !==
+          (value.kind === AGENT_TRAJECTORY_RECORD_KIND.TOOL
+            ? AGENT_TRAJECTORY_LANE.TOOLS
+            : AGENT_TRAJECTORY_LANE.MODEL)
+      : value.lane !== AGENT_TRAJECTORY_LANE.INPUT ||
         value.request !== undefined ||
-        (value.kind === 'user' && value.turn !== 0)) ||
+        (value.kind === AGENT_TRAJECTORY_RECORD_KIND.USER &&
+          value.turn !== 0)) ||
     ['runId', 'sourceRecordId', 'resultRecordId', 'preview', 'source'].some(
       (key) => value[key] !== undefined && typeof value[key] !== 'string',
     ) ||
@@ -107,18 +126,19 @@ function isMetadata(
 export function parseTraceUpdate(value: unknown): AgentTraceUpdate {
   if (isObject(value)) {
     if (
-      value.type === 'trajectory_updated' &&
+      value.type === AGENT_RUN_EVENT_TYPE.TRAJECTORY_UPDATED &&
       isMetadata(value.trajectory) &&
       Array.isArray(value.records) &&
       value.records.every(parseRecord)
     )
       return value as unknown as AgentTraceUpdate
     if (
-      value.type === 'trajectory_delta' &&
+      value.type === AGENT_RUN_EVENT_TYPE.TRAJECTORY_DELTA &&
       isCursor(value.cursor) &&
       typeof value.id === 'string' &&
       typeof value.delta === 'string' &&
-      (value.block === 'text' || value.block === 'thinking')
+      (value.block === TRAJECTORY_STREAM_BLOCK.TEXT ||
+        value.block === TRAJECTORY_STREAM_BLOCK.THINKING)
     )
       return value as unknown as AgentTraceUpdate
   }
@@ -177,9 +197,11 @@ export function applyTraceUpdate(
   event: AgentTraceUpdate,
 ): AgentTraceSession {
   const cursor =
-    event.type === 'trajectory_updated' ? event.trajectory.cursor : event.cursor
+    event.type === AGENT_RUN_EVENT_TYPE.TRAJECTORY_UPDATED
+      ? event.trajectory.cursor
+      : event.cursor
   if (!isLaterCursor(cursor, trace.cursor)) return trace
-  if (event.type === 'trajectory_updated') {
+  if (event.type === AGENT_RUN_EVENT_TYPE.TRAJECTORY_UPDATED) {
     if (event.trajectory.sessionId !== trace.sessionId) return trace
     const updates = new Map(
       event.records.map((record) => [
@@ -208,7 +230,7 @@ export function applyTraceUpdate(
       return {
         ...record,
         detail: { ...record.detail, [event.block]: content },
-        ...(event.block === 'text'
+        ...(event.block === TRAJECTORY_STREAM_BLOCK.TEXT
           ? {
               preview: content,
               summary: content.replace(/\s+/gu, ' ').slice(0, 320),

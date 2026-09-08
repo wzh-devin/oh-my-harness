@@ -1,6 +1,13 @@
 import { readdir, realpath } from 'node:fs/promises'
 import { basename, join, relative } from 'node:path'
 import {
+  MCP_TRANSPORT,
+  PLUGIN_COMPATIBILITY_STATUS,
+  PLUGIN_IMPORT_KIND,
+  PLUGIN_MANIFEST_FORMAT,
+  PLUGIN_SOURCE_TYPE,
+} from '@oh-my-harness/shared'
+import {
   exists,
   object,
   readJson,
@@ -18,12 +25,32 @@ import {
 } from './types.ts'
 
 const entries: [string, ManifestFormat, ImportCandidate['kind']][] = [
-  ['marketplace.json', 'native', 'marketplace'],
-  ['.agents/plugins/marketplace.json', 'codex', 'marketplace'],
-  ['.claude-plugin/marketplace.json', 'claude', 'marketplace'],
-  ['plugin.json', 'native', 'plugin'],
-  ['.codex-plugin/plugin.json', 'codex', 'plugin'],
-  ['.claude-plugin/plugin.json', 'claude', 'plugin'],
+  [
+    'marketplace.json',
+    PLUGIN_MANIFEST_FORMAT.NATIVE,
+    PLUGIN_IMPORT_KIND.MARKETPLACE,
+  ],
+  [
+    '.agents/plugins/marketplace.json',
+    PLUGIN_MANIFEST_FORMAT.CODEX,
+    PLUGIN_IMPORT_KIND.MARKETPLACE,
+  ],
+  [
+    '.claude-plugin/marketplace.json',
+    PLUGIN_MANIFEST_FORMAT.CLAUDE,
+    PLUGIN_IMPORT_KIND.MARKETPLACE,
+  ],
+  ['plugin.json', PLUGIN_MANIFEST_FORMAT.NATIVE, PLUGIN_IMPORT_KIND.PLUGIN],
+  [
+    '.codex-plugin/plugin.json',
+    PLUGIN_MANIFEST_FORMAT.CODEX,
+    PLUGIN_IMPORT_KIND.PLUGIN,
+  ],
+  [
+    '.claude-plugin/plugin.json',
+    PLUGIN_MANIFEST_FORMAT.CLAUDE,
+    PLUGIN_IMPORT_KIND.PLUGIN,
+  ],
 ]
 
 /** 校验清单文本长度和控制字符。 */
@@ -85,8 +112,8 @@ export async function detectCandidates(
       found.push({
         key: `${path}:claude:plugin`,
         root: path,
-        format: 'claude',
-        kind: 'plugin',
+        format: PLUGIN_MANIFEST_FORMAT.CLAUDE,
+        kind: PLUGIN_IMPORT_KIND.PLUGIN,
       })
       return
     }
@@ -115,10 +142,10 @@ export async function parseMarketplace(
   allowedHosts?: string[],
 ): Promise<MarketplaceDescriptor> {
   const entry = entries.find(
-    (item) => item[1] === format && item[2] === 'marketplace',
+    (item) => item[1] === format && item[2] === PLUGIN_IMPORT_KIND.MARKETPLACE,
   )!
   const data = await readJson(root, entry[0])
-  if (format === 'native' && data.schemaVersion !== 1)
+  if (format === PLUGIN_MANIFEST_FORMAT.NATIVE && data.schemaVersion !== 1)
     throw new PluginError(
       'PLUGIN_SCHEMA_UNSUPPORTED',
       '不支持的市场 schemaVersion',
@@ -144,18 +171,25 @@ export async function parseMarketplace(
     try {
       const source =
         typeof item.source === 'string'
-          ? { type: 'path', path: item.source }
+          ? { type: PLUGIN_SOURCE_TYPE.PATH, path: item.source }
           : object(item.source)
       const type = source.type ?? source.source
-      if (type === 'path' || type === 'local')
-        result.source = { type: 'path', path: textField(source.path) }
+      if (type === PLUGIN_SOURCE_TYPE.PATH || type === 'local')
+        result.source = {
+          type: PLUGIN_SOURCE_TYPE.PATH,
+          path: textField(source.path),
+        }
       else if (type === 'github')
         result.source = {
           ...normalizeGitSource(textField(source.repo), allowedHosts),
           ...(source.ref ? { ref: textField(source.ref) } : {}),
           ...(source.path ? { path: textField(source.path) } : {}),
         }
-      else if (type === 'git' || type === 'url' || type === 'git-subdir')
+      else if (
+        type === PLUGIN_SOURCE_TYPE.GIT ||
+        type === 'url' ||
+        type === 'git-subdir'
+      )
         result.source = {
           ...normalizeGitSource(textField(source.url), allowedHosts),
           ...(source.ref ? { ref: textField(source.ref) } : {}),
@@ -163,25 +197,25 @@ export async function parseMarketplace(
         }
       else
         throw new PluginError('PLUGIN_SOURCE_UNSUPPORTED', '此条目来源尚不支持')
-      if (format === 'claude') result.definition = item
+      if (format === PLUGIN_MANIFEST_FORMAT.CLAUDE) result.definition = item
     } catch {
       result.compatibility.push({
         capability: 'source',
-        status: 'unsupported',
+        status: PLUGIN_COMPATIBILITY_STATUS.UNSUPPORTED,
         message: '来源类型或地址不受支持，请直接导入兼容包',
       })
     }
     return result
   })
   for (const item of catalog)
-    if (item.source?.type === 'path') {
+    if (item.source?.type === PLUGIN_SOURCE_TYPE.PATH) {
       try {
         await resolveContentPath(root, item.source.path)
       } catch {
         item.source = undefined
         item.compatibility.push({
           capability: 'source',
-          status: 'unsupported',
+          status: PLUGIN_COMPATIBILITY_STATUS.UNSUPPORTED,
           message: '条目路径不存在或越界',
         })
       }
@@ -213,13 +247,13 @@ export async function parsePlugin(
 ): Promise<PluginDescriptor> {
   root = await realpath(root)
   const entry = entries.find(
-    (item) => item[1] === format && item[2] === 'plugin',
+    (item) => item[1] === format && item[2] === PLUGIN_IMPORT_KIND.PLUGIN,
   )!
   const hasManifest = await exists(join(root, entry[0]))
   const manifest = hasManifest ? await readJson(root, entry[0]) : {}
-  if (!hasManifest && format !== 'claude')
+  if (!hasManifest && format !== PLUGIN_MANIFEST_FORMAT.CLAUDE)
     throw new PluginError('PLUGIN_MANIFEST_MISSING', '缺少插件清单')
-  if (format === 'native' && manifest.schemaVersion !== 1)
+  if (format === PLUGIN_MANIFEST_FORMAT.NATIVE && manifest.schemaVersion !== 1)
     throw new PluginError(
       'PLUGIN_SCHEMA_UNSUPPORTED',
       '不支持的插件 schemaVersion',
@@ -275,13 +309,13 @@ export async function parsePlugin(
     }[capability]
     if (
       data[capability] !== undefined ||
-      (format !== 'native' &&
+      (format !== PLUGIN_MANIFEST_FORMAT.NATIVE &&
         defaultPath &&
         (await exists(join(root, defaultPath))))
     ) {
       result.compatibility.push({
         capability,
-        status: 'unsupported',
+        status: PLUGIN_COMPATIBILITY_STATUS.UNSUPPORTED,
         message: `${capability} 暂不支持`,
       })
       if (['dependencies', 'apps', 'main'].includes(capability))
@@ -295,14 +329,14 @@ export async function parsePlugin(
         ? paths(definition[kind])
         : []
     const defaults =
-      format === 'native'
+      format === PLUGIN_MANIFEST_FORMAT.NATIVE
         ? []
         : kind === 'skills' || data[kind] === undefined
           ? [kind]
           : []
     // Claude root-source curation limits skills to explicitly named subdirectories.
     const defaultPaths: string[] =
-      format === 'claude' &&
+      format === PLUGIN_MANIFEST_FORMAT.CLAUDE &&
       kind === 'skills' &&
       definition?.source === './' &&
       declared.length
@@ -322,7 +356,7 @@ export async function parsePlugin(
       } catch {
         result.compatibility.push({
           capability: kind,
-          status: 'unsupported',
+          status: PLUGIN_COMPATIBILITY_STATUS.UNSUPPORTED,
           message: '声明路径不存在或越界',
         })
       }
@@ -330,7 +364,7 @@ export async function parsePlugin(
     if (result[kind].length)
       result.compatibility.push({
         capability: kind,
-        status: 'supported',
+        status: PLUGIN_COMPATIBILITY_STATUS.SUPPORTED,
         message:
           kind === 'skills'
             ? '支持技能和包内资源'
@@ -338,9 +372,13 @@ export async function parsePlugin(
       })
   }
   const configs: unknown[] = []
-  if (format !== 'native' && (await exists(join(root, '.mcp.json'))))
+  if (
+    format !== PLUGIN_MANIFEST_FORMAT.NATIVE &&
+    (await exists(join(root, '.mcp.json')))
+  )
     configs.push('./.mcp.json')
-  const declaredMcp = format === 'native' ? data.mcp : data.mcpServers
+  const declaredMcp =
+    format === PLUGIN_MANIFEST_FORMAT.NATIVE ? data.mcp : data.mcpServers
   if (declaredMcp !== undefined)
     configs.push(...(Array.isArray(declaredMcp) ? declaredMcp : [declaredMcp]))
   if (
@@ -361,15 +399,16 @@ export async function parsePlugin(
         if (!/^[\w.-]{1,100}$/.test(serverName) || servers.size >= 50)
           throw new PluginError('PLUGIN_MCP_INVALID', 'MCP 服务名或数量无效')
         const server = object(raw)
-        const transport = server.type ?? (server.url ? 'http' : 'stdio')
+        const transport =
+          server.type ?? (server.url ? MCP_TRANSPORT.HTTP : MCP_TRANSPORT.STDIO)
         if (
-          transport !== 'stdio' &&
-          transport !== 'http' &&
+          transport !== MCP_TRANSPORT.STDIO &&
+          transport !== MCP_TRANSPORT.HTTP &&
           transport !== 'streamable-http'
         ) {
           result.compatibility.push({
             capability: `mcp:${serverName}`,
-            status: 'unsupported',
+            status: PLUGIN_COMPATIBILITY_STATUS.UNSUPPORTED,
             message: '仅支持 stdio 和 Streamable HTTP',
           })
           continue
@@ -377,17 +416,17 @@ export async function parsePlugin(
         if (server.headersHelper || server.oauth || server.auth) {
           result.compatibility.push({
             capability: `mcp:${serverName}`,
-            status: 'needs-configuration',
+            status: PLUGIN_COMPATIBILITY_STATUS.NEEDS_CONFIGURATION,
             message: '专有认证配置不自动执行，请配置标准认证',
           })
         }
-        if (transport === 'stdio') {
+        if (transport === MCP_TRANSPORT.STDIO) {
           const command = textField(server.command, '', 8192)
           if (!command)
             throw new PluginError('PLUGIN_MCP_INVALID', 'stdio 缺少 command')
           servers.set(serverName, {
             name: serverName,
-            transport: 'stdio',
+            transport: MCP_TRANSPORT.STDIO,
             command,
             args: paths(server.args),
             env: stringMap(server.env),
@@ -397,21 +436,21 @@ export async function parsePlugin(
           if (!url) throw new PluginError('PLUGIN_MCP_INVALID', 'HTTP 缺少 url')
           servers.set(serverName, {
             name: serverName,
-            transport: 'http',
+            transport: MCP_TRANSPORT.HTTP,
             url,
             headers: stringMap(server.headers),
           })
         }
         result.compatibility.push({
           capability: `mcp:${serverName}`,
-          status: 'needs-configuration',
+          status: PLUGIN_COMPATIBILITY_STATUS.NEEDS_CONFIGURATION,
           message: '安装后显式配置并允许连接；认证与工具审批独立',
         })
       }
     } catch {
       result.compatibility.push({
         capability: 'mcp',
-        status: 'unsupported',
+        status: PLUGIN_COMPATIBILITY_STATUS.UNSUPPORTED,
         message: 'MCP 配置无效或路径越界',
       })
     }

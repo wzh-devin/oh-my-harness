@@ -5,6 +5,13 @@ import type {
   Usage,
 } from '@earendil-works/pi-ai'
 import { getSupportedThinkingLevels } from '@earendil-works/pi-ai'
+import {
+  AUTH_METHOD,
+  MESSAGE_ROLE,
+  MODEL_THINKING_LEVEL,
+  PROVIDER_AUTH_STATUS,
+  PROVIDER_CONFIG_STATUS,
+} from '@oh-my-harness/shared'
 
 import type { FileProviderConfigStore } from '../provider/provider-config-store.ts'
 import type {
@@ -28,10 +35,10 @@ function toMessage(
   request: CompletionRequest,
   api: string,
 ) {
-  if (message.role === 'user') {
+  if (message.role === MESSAGE_ROLE.USER) {
     return {
       content: message.content,
-      role: 'user' as const,
+      role: MESSAGE_ROLE.USER,
       timestamp: Date.now(),
     }
   }
@@ -40,7 +47,7 @@ function toMessage(
     content: [{ text: message.content, type: 'text' as const }],
     model: request.modelId,
     provider: request.providerId,
-    role: 'assistant' as const,
+    role: MESSAGE_ROLE.ASSISTANT,
     stopReason: 'stop' as const,
     timestamp: Date.now(),
     usage: emptyUsage,
@@ -79,15 +86,15 @@ export class ModelService {
         const selectedModels = configurations[provider.id]?.models ?? []
         return {
           authStatus: auth
-            ? ('authorized' as const)
-            : ('unauthorized' as const),
+            ? PROVIDER_AUTH_STATUS.AUTHORIZED
+            : PROVIDER_AUTH_STATUS.UNAUTHORIZED,
           authMethods: [
-            ...(provider.auth.apiKey ? (['api_key'] as const) : []),
-            ...(provider.auth.oauth ? (['oauth'] as const) : []),
+            ...(provider.auth.apiKey ? [AUTH_METHOD.API_KEY] : []),
+            ...(provider.auth.oauth ? [AUTH_METHOD.OAUTH] : []),
           ],
           configStatus: selectedModels.length
-            ? ('configured' as const)
-            : ('unconfigured' as const),
+            ? PROVIDER_CONFIG_STATUS.CONFIGURED
+            : PROVIDER_CONFIG_STATUS.UNCONFIGURED,
           configuredAuthMethod: auth?.type,
           displayName: provider.name,
           models: selectedModels.map((selectedModel) => {
@@ -96,7 +103,7 @@ export class ModelService {
               ...selectedModel,
               thinkingLevels: model
                 ? getSupportedThinkingLevels(model)
-                : ['off' as const],
+                : [MODEL_THINKING_LEVEL.OFF],
             }
           }),
           providerId: provider.id,
@@ -206,7 +213,7 @@ export class ModelService {
   async saveApiKey(providerId: string, apiKey: string) {
     const provider = this.models.getProvider(providerId)
     if (!provider?.auth.apiKey) throw new Error('Provider 不支持 API Key。')
-    await this.models.login(providerId, 'api_key', {
+    await this.models.login(providerId, AUTH_METHOD.API_KEY, {
       notify() {},
       async prompt() {
         return apiKey

@@ -1,4 +1,12 @@
 import type { ToolCallMessagePartStatus } from '@assistant-ui/react'
+import {
+  CHAT_ASSISTANT_STATUS,
+  CHAT_TOOL_KIND,
+  MESSAGE_PART_TYPE,
+  SESSION_TOOL_STATE,
+  TOOL_EXECUTION_STATE,
+  type ToolExecutionState,
+} from '@oh-my-harness/shared'
 import type {
   ChatAssistantStatus,
   ChatMessageActivityPart,
@@ -6,13 +14,13 @@ import type {
 } from '../../data/chat-types.ts'
 
 export type ToolActivityDisplayPart =
-  | Exclude<ChatMessageActivityPart, { type: 'tool' }>
-  | { tool: ChatMessageTool; type: 'tool' }
+  | Exclude<ChatMessageActivityPart, { type: typeof MESSAGE_PART_TYPE.TOOL }>
+  | { tool: ChatMessageTool; type: typeof MESSAGE_PART_TYPE.TOOL }
   | { tools: readonly ChatMessageTool[]; type: 'tool-group' }
 
 export interface ToolActivitySummary {
   label: string
-  state: 'complete' | 'failed' | 'running'
+  state: ToolExecutionState
 }
 
 interface ToolApprovalPresentation {
@@ -32,11 +40,11 @@ export const isToolActivityRunning = (
   hasEnded = false,
 ) =>
   !hasEnded &&
-  (status === 'streaming' ||
+  (status === CHAT_ASSISTANT_STATUS.STREAMING ||
     tools.some(
       (tool) =>
         tool.state === 'input-streaming' ||
-        tool.state === 'input-available' ||
+        tool.state === SESSION_TOOL_STATE.INPUT_AVAILABLE ||
         tool.state === 'requires-action',
     ))
 
@@ -70,18 +78,21 @@ export const getToolActivitySummary = (
   if (hasRunError) {
     return {
       label: durationLabel ? `运行失败 · ${durationLabel}` : '工具运行失败',
-      state: 'failed',
+      state: TOOL_EXECUTION_STATE.FAILED,
     }
   }
 
   const isRunning = isToolActivityRunning(tools, status, hasEnded)
   if (isRunning) {
-    return { label: durationLabel ?? '正在使用工具', state: 'running' }
+    return {
+      label: durationLabel ?? '正在使用工具',
+      state: TOOL_EXECUTION_STATE.RUNNING,
+    }
   }
 
   return {
     label: durationLabel ?? '工具活动',
-    state: 'complete',
+    state: TOOL_EXECUTION_STATE.COMPLETE,
   }
 }
 
@@ -92,13 +103,14 @@ export const groupConsecutiveToolParts = (
   const groupedParts: ToolActivityDisplayPart[] = []
   let tools: ChatMessageTool[] = []
   const flushTools = () => {
-    if (tools.length === 1) groupedParts.push({ tool: tools[0]!, type: 'tool' })
+    if (tools.length === 1)
+      groupedParts.push({ tool: tools[0]!, type: MESSAGE_PART_TYPE.TOOL })
     else if (tools.length > 1) groupedParts.push({ tools, type: 'tool-group' })
     tools = []
   }
 
   for (const part of parts) {
-    if (part.type === 'tool') tools.push(part.tool)
+    if (part.type === MESSAGE_PART_TYPE.TOOL) tools.push(part.tool)
     else {
       flushTools()
       groupedParts.push(part)
@@ -112,30 +124,31 @@ const TOOL_GROUP_LABELS: Record<
   NonNullable<ChatMessageTool['kind']>,
   string
 > = {
-  browser: '浏览了网页',
-  command: '运行了命令',
-  edit: '编辑了文件',
-  read: '读取文件',
-  search: '进行了搜索',
-  skill: '加载了工具',
-  tool: '调用了工具',
+  [CHAT_TOOL_KIND.BROWSER]: '浏览了网页',
+  [CHAT_TOOL_KIND.COMMAND]: '运行了命令',
+  [CHAT_TOOL_KIND.EDIT]: '编辑了文件',
+  [CHAT_TOOL_KIND.READ]: '读取文件',
+  [CHAT_TOOL_KIND.SEARCH]: '进行了搜索',
+  [CHAT_TOOL_KIND.SKILL]: '加载了工具',
+  [CHAT_TOOL_KIND.TOOL]: '调用了工具',
 }
 
 /** 按首次出现顺序汇总工具类别，生成 Codex 风格子组标题。 */
 export const getToolGroupLabel = (tools: readonly ChatMessageTool[]) => {
   const kinds = [
-    ...new Set(tools.map((tool) => tool.kind ?? ('tool' as const))),
+    ...new Set(tools.map((tool) => tool.kind ?? CHAT_TOOL_KIND.TOOL)),
   ]
   const label = kinds.map((kind) => TOOL_GROUP_LABELS[kind]).join('')
-  return kinds[0] === 'read' ? `已${label}` : label
+  return kinds[0] === CHAT_TOOL_KIND.READ ? `已${label}` : label
 }
 
 /** 将现有工具状态投影到 assistant-ui ToolFallback 状态。 */
 export const getToolStatus = (
   tool: ChatMessageTool,
 ): ToolCallMessagePartStatus => {
-  if (tool.state === 'output-available') return { type: 'complete' }
-  if (tool.state === 'output-error') {
+  if (tool.state === SESSION_TOOL_STATE.OUTPUT_AVAILABLE)
+    return { type: 'complete' }
+  if (tool.state === SESSION_TOOL_STATE.OUTPUT_ERROR) {
     return {
       error: tool.errorText ?? 'Tool call failed',
       reason: 'error',
@@ -158,7 +171,8 @@ export const getToolArgsText = (tool: ChatMessageTool) => {
 
 /** 直接使用结构化 Bash outcome 展示退出状态，不从输出文本反推。 */
 export const getBashOutcomeLabel = (tool: ChatMessageTool) => {
-  const outcome = tool.kind === 'command' ? tool.outcome : undefined
+  const outcome =
+    tool.kind === CHAT_TOOL_KIND.COMMAND ? tool.outcome : undefined
   if (!outcome) return
   if (outcome.outputExceeded) return '输出超过 256 KiB'
   if (outcome.timedOut) return '执行超时'
@@ -177,8 +191,8 @@ export const getToolFilePresentation = (
   tool: ChatMessageTool,
 ): ToolFilePresentation | undefined => {
   if (
-    tool.state !== 'output-available' ||
-    (tool.kind !== 'read' && tool.kind !== 'edit')
+    tool.state !== SESSION_TOOL_STATE.OUTPUT_AVAILABLE ||
+    (tool.kind !== CHAT_TOOL_KIND.READ && tool.kind !== CHAT_TOOL_KIND.EDIT)
   ) {
     return
   }
@@ -194,14 +208,17 @@ export const getToolFilePresentation = (
   ) {
     return
   }
-  return { label: tool.kind === 'read' ? '已读取' : '已编辑', path }
+  return {
+    label: tool.kind === CHAT_TOOL_KIND.READ ? '已读取' : '已编辑',
+    path,
+  }
 }
 
 /** 将待审批工具转换为用户可直接核对的操作、问题与目标。 */
 export const getToolApprovalPresentation = (
   tool: ChatMessageTool,
 ): ToolApprovalPresentation => {
-  if (tool.kind === 'command') {
+  if (tool.kind === CHAT_TOOL_KIND.COMMAND) {
     const command = inputField(tool.input, 'command')
 
     return {
@@ -214,9 +231,9 @@ export const getToolApprovalPresentation = (
     }
   }
 
-  if (tool.kind === 'edit' || tool.kind === 'read') {
+  if (tool.kind === CHAT_TOOL_KIND.EDIT || tool.kind === CHAT_TOOL_KIND.READ) {
     const path = inputField(tool.input, 'path')
-    const isRead = tool.kind === 'read'
+    const isRead = tool.kind === CHAT_TOOL_KIND.READ
     return {
       label: isRead ? '读取文件' : '编辑文件',
       question: `是否允许 oh-my-harness ${isRead ? '读取' : '编辑'}以下文件？`,

@@ -5,6 +5,10 @@ import type {
   SyntheticEvent,
 } from 'react'
 import { useEffect, useRef, useState } from 'react'
+import {
+  COMPOSER_CAPABILITY_KIND,
+  COMPOSER_MENU_MODE,
+} from '@oh-my-harness/shared'
 import type { ChatStatus } from '@agile-avocation/ui-pro/prompt-input'
 import { PromptInput } from '@agile-avocation/ui-pro/prompt-input'
 import { Bulb, Folder, Terminal } from '@gravity-ui/icons'
@@ -299,7 +303,7 @@ export function ChatComposer({
         (item) =>
           item.id !== id &&
           !(
-            removed?.kind === 'plugin' &&
+            removed?.kind === COMPOSER_CAPABILITY_KIND.PLUGIN &&
             [...skills, ...commands].some(
               (capability) =>
                 capability.id === item.sourceId &&
@@ -360,7 +364,7 @@ export function ChatComposer({
 
     if (next.value !== value) onValueChange(next.value)
 
-    if (capability.kind === 'attachment') {
+    if (capability.kind === COMPOSER_CAPABILITY_KIND.ATTACHMENT) {
       fileInputRef.current?.click()
       return
     }
@@ -382,7 +386,7 @@ export function ChatComposer({
         ? addComposerContextItem(nextItems, {
             id: `plugin-${plugin.id}`,
             sourceId: plugin.id,
-            kind: 'plugin',
+            kind: COMPOSER_CAPABILITY_KIND.PLUGIN,
             label: plugin.name,
             description: plugin.description,
             reference: `@${plugin.name}`,
@@ -406,7 +410,8 @@ export function ChatComposer({
       ) {
         event.preventDefault()
         const last = contextItems.at(-1)
-        if (last && last.kind !== 'command') handleRemoveContext(last.id)
+        if (last && last.kind !== COMPOSER_CAPABILITY_KIND.COMMAND)
+          handleRemoveContext(last.id)
       }
       return
     }
@@ -440,7 +445,7 @@ export function ChatComposer({
     }
 
     if (event.key === ' ') {
-      const triggerReference = `${menuState.mode === 'slash' ? '/' : '@'}${menuState.query}`
+      const triggerReference = `${menuState.mode === COMPOSER_MENU_MODE.SLASH ? '/' : '@'}${menuState.query}`
       const exactCapability = capabilities.find(
         (capability) =>
           capability.contextReference?.toLocaleLowerCase() ===
@@ -562,7 +567,9 @@ export function ChatComposer({
                 isOpen={Boolean(menuState)}
                 onOpenChange={(open) => {
                   setActiveCapabilityIndex(0)
-                  setMenuState(open ? { mode: 'plus', query: '' } : null)
+                  setMenuState(
+                    open ? { mode: COMPOSER_MENU_MODE.PLUS, query: '' } : null,
+                  )
                 }}
                 onSelect={handleCapabilitySelect}
               />

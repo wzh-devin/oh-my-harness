@@ -21,9 +21,9 @@ export const toolFilePath = (details: unknown): string | undefined => {
     path.split(/[\\/]/u).includes('..')
   )
     return
-  if (target.scope === FILE_SCOPE.external && isAbsolute(path)) return path
+  if (target.scope === FILE_SCOPE.EXTERNAL && isAbsolute(path)) return path
   if (
-    target.scope === FILE_SCOPE.workspace &&
+    target.scope === FILE_SCOPE.WORKSPACE &&
     !isAbsolute(path) &&
     !/^[a-z][a-z\d+.-]*:/iu.test(path)
   )

@@ -1,4 +1,16 @@
 import type { ToolActivityKind } from '@oh-my-harness/agent-runtime'
+import {
+  AGENT_TRAJECTORY_LANE,
+  AGENT_TRAJECTORY_RECORD_KIND,
+  MESSAGE_PART_TYPE,
+  type AgentContextKind,
+  type AgentTrajectoryLane,
+  type AgentTrajectoryRecordKind,
+  type AgentTrajectoryStatus,
+  type MessageRole,
+  type SessionToolState,
+  type TodoStatus,
+} from '@oh-my-harness/shared'
 export interface CreateAgentSessionDto {
   modelId: string
   name?: string
@@ -50,7 +62,7 @@ export interface AgentSessionMessageDto {
   entryId: string
   parts?: AgentSessionMessagePartDto[]
   reasoning?: string
-  role: 'assistant' | 'user'
+  role: MessageRole
   seq: number
   stopReason?: string
   timestamp: number
@@ -68,15 +80,15 @@ export interface AgentSessionToolDto {
     timedOut: boolean
   }
   output?: string
-  state: 'input-available' | 'output-available' | 'output-error'
+  state: SessionToolState
   toolCallId: string
   toolName: string
 }
 
 export type AgentSessionMessagePartDto =
-  | { reasoning: string; type: 'reasoning' }
-  | { text: string; type: 'text' }
-  | { tool: AgentSessionToolDto; type: 'tool' }
+  | { reasoning: string; type: typeof MESSAGE_PART_TYPE.REASONING }
+  | { text: string; type: typeof MESSAGE_PART_TYPE.TEXT }
+  | { tool: AgentSessionToolDto; type: typeof MESSAGE_PART_TYPE.TOOL }
 
 export interface AgentSessionMessagePageDto {
   items: AgentSessionMessageDto[]
@@ -86,7 +98,7 @@ export interface AgentSessionMessagePageDto {
 
 export interface AgentTodoItemDto {
   content: string
-  status: 'completed' | 'in_progress' | 'pending'
+  status: TodoStatus
 }
 
 export interface AgentSessionMessageAttachmentDto {
@@ -100,7 +112,7 @@ export interface AgentSessionMessageAttachmentDto {
 export interface AgentSessionMessageContextItemDto {
   description: string
   id: string
-  kind: 'command' | 'skill' | 'plugin'
+  kind: AgentContextKind
   label: string
   reference: string
   sourceId: string
@@ -118,26 +130,39 @@ interface AgentTrajectoryRecordDtoBase {
   completedAt?: number
   durationMs: number
   id: string
-  kind: 'assistant' | 'context' | 'request' | 'system' | 'tool' | 'user'
+  kind: AgentTrajectoryRecordKind
   label: string
-  lane: 'input' | 'model' | 'tools'
+  lane: AgentTrajectoryLane
   request?: number
   startedAt: number
-  status: 'aborted' | 'completed' | 'failed' | 'interrupted' | 'running'
+  status: AgentTrajectoryStatus
   summary: string
   turn: number
 }
 
 export type AgentTrajectoryRecordDto = AgentTrajectoryRecordDtoBase &
   (
-    | { kind: 'system' | 'context' | 'user'; lane: 'input' }
     | {
-        kind: 'request' | 'assistant'
-        lane: 'model'
+        kind:
+          | typeof AGENT_TRAJECTORY_RECORD_KIND.SYSTEM
+          | typeof AGENT_TRAJECTORY_RECORD_KIND.CONTEXT
+          | typeof AGENT_TRAJECTORY_RECORD_KIND.USER
+        lane: typeof AGENT_TRAJECTORY_LANE.INPUT
+      }
+    | {
+        kind:
+          | typeof AGENT_TRAJECTORY_RECORD_KIND.REQUEST
+          | typeof AGENT_TRAJECTORY_RECORD_KIND.ASSISTANT
+        lane: typeof AGENT_TRAJECTORY_LANE.MODEL
         request: number
         sourceRecordId: string
       }
-    | { kind: 'tool'; lane: 'tools'; request: number; sourceRecordId: string }
+    | {
+        kind: typeof AGENT_TRAJECTORY_RECORD_KIND.TOOL
+        lane: typeof AGENT_TRAJECTORY_LANE.TOOLS
+        request: number
+        sourceRecordId: string
+      }
   )
 
 export type AgentTrajectoryRecordDetailDto = AgentTrajectoryRecordDto & {

@@ -4,6 +4,11 @@ import {
   getFileTool,
   isToolPermission,
 } from '@oh-my-harness/agent-policy/contracts'
+import {
+  AGENT_RUN_EVENT_TYPE,
+  TODO_STATUS,
+  TOOL_ACTIVITY_KIND,
+} from '@oh-my-harness/shared'
 import { parseTraceUpdate } from '../../../trace/api/index.ts'
 import type {
   AgentRunEventVo,
@@ -125,15 +130,15 @@ const todoItems = (value: unknown): AgentTodoItemVo[] | undefined => {
       content !== item.content ||
       !content ||
       Array.from(content).length > 200 ||
-      (item.status !== 'pending' &&
-        item.status !== 'in_progress' &&
-        item.status !== 'completed') ||
+      (item.status !== TODO_STATUS.PENDING &&
+        item.status !== TODO_STATUS.IN_PROGRESS &&
+        item.status !== TODO_STATUS.COMPLETED) ||
       seen.has(content)
     ) {
       return
     }
     seen.add(content)
-    if (item.status === 'in_progress' && ++activeCount > 1) return
+    if (item.status === TODO_STATUS.IN_PROGRESS && ++activeCount > 1) return
     todos.push({ content, status: item.status })
   }
   return todos
@@ -201,7 +206,7 @@ const parseToolApproval = (
   if (!value || typeof value !== 'object' || Array.isArray(value)) return
   const event = value as Record<string, unknown>
   if (
-    event.type !== 'tool_approval_required' ||
+    event.type !== AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED ||
     typeof event.approvalId !== 'string' ||
     !event.approvalId ||
     typeof event.title !== 'string' ||
@@ -213,9 +218,12 @@ const parseToolApproval = (
     approvalId: event.approvalId,
     title: event.title,
     toolCallId: event.toolCallId,
-    type: 'tool_approval_required' as const,
+    type: AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED,
   }
-  if (event.kind === 'mcp' && event.toolName === POLICY_TOOL.mcp.toolName) {
+  if (
+    event.kind === TOOL_ACTIVITY_KIND.MCP &&
+    event.toolName === POLICY_TOOL.MCP.toolName
+  ) {
     if (
       !event.input ||
       typeof event.input !== 'object' ||
@@ -233,8 +241,8 @@ const parseToolApproval = (
       return
     return {
       ...common,
-      kind: 'mcp',
-      toolName: POLICY_TOOL.mcp.toolName,
+      kind: TOOL_ACTIVITY_KIND.MCP,
+      toolName: POLICY_TOOL.MCP.toolName,
       input: {
         connectionId: input.connectionId,
         tool: input.tool,
@@ -243,32 +251,38 @@ const parseToolApproval = (
     }
   }
   if (
-    event.kind === 'command' &&
-    event.toolName === POLICY_TOOL.bash.toolName
+    event.kind === TOOL_ACTIVITY_KIND.COMMAND &&
+    event.toolName === POLICY_TOOL.BASH.toolName
   ) {
     const input = bashInput(event.input)
     if (input)
       return {
         ...common,
-        kind: 'command',
-        toolName: POLICY_TOOL.bash.toolName,
+        kind: TOOL_ACTIVITY_KIND.COMMAND,
+        toolName: POLICY_TOOL.BASH.toolName,
         input,
       }
     return
   }
   if (typeof event.path !== 'string') return
   const fileTool = getFileTool(event.toolName)
-  if (fileTool?.effect === TOOL_EFFECT.read && event.kind === 'read')
+  if (
+    fileTool?.effect === TOOL_EFFECT.READ &&
+    event.kind === TOOL_ACTIVITY_KIND.READ
+  )
     return {
       ...common,
-      kind: 'read',
+      kind: TOOL_ACTIVITY_KIND.READ,
       toolName: fileTool.toolName,
       path: event.path,
     }
-  if (fileTool?.effect === TOOL_EFFECT.write && event.kind === 'edit')
+  if (
+    fileTool?.effect === TOOL_EFFECT.WRITE &&
+    event.kind === TOOL_ACTIVITY_KIND.EDIT
+  )
     return {
       ...common,
-      kind: 'edit',
+      kind: TOOL_ACTIVITY_KIND.EDIT,
       toolName: fileTool.toolName,
       path: event.path,
     }
@@ -284,12 +298,12 @@ function toRunEvent(value: unknown): AgentRunEventVo {
 
   const event = value as Record<string, unknown>
   switch (event.type) {
-    case 'trajectory_updated':
-    case 'trajectory_delta':
+    case AGENT_RUN_EVENT_TYPE.TRAJECTORY_UPDATED:
+    case AGENT_RUN_EVENT_TYPE.TRAJECTORY_DELTA:
       return parseTraceUpdate(event)
-    case 'trajectory_changed':
-      return { type: 'trajectory_changed' }
-    case 'start':
+    case AGENT_RUN_EVENT_TYPE.TRAJECTORY_CHANGED:
+      return { type: AGENT_RUN_EVENT_TYPE.TRAJECTORY_CHANGED }
+    case AGENT_RUN_EVENT_TYPE.START:
       if (
         typeof event.sessionId === 'string' &&
         isToolPermission(event.permission)
@@ -297,22 +311,22 @@ function toRunEvent(value: unknown): AgentRunEventVo {
         return {
           permission: event.permission,
           sessionId: event.sessionId,
-          type: 'start',
+          type: AGENT_RUN_EVENT_TYPE.START,
         }
       }
       break
-    case 'text_delta':
-    case 'reasoning_delta':
+    case AGENT_RUN_EVENT_TYPE.TEXT_DELTA:
+    case AGENT_RUN_EVENT_TYPE.REASONING_DELTA:
       if (typeof event.delta === 'string') {
         return { delta: event.delta, type: event.type }
       }
       break
-    case 'todo_updated': {
+    case AGENT_RUN_EVENT_TYPE.TODO_UPDATED: {
       const todos = todoItems(event.todos)
-      if (todos) return { todos, type: 'todo_updated' }
+      if (todos) return { todos, type: AGENT_RUN_EVENT_TYPE.TODO_UPDATED }
       break
     }
-    case 'tool_start':
+    case AGENT_RUN_EVENT_TYPE.TOOL_START:
       if (
         typeof event.toolCallId === 'string' &&
         typeof event.toolName === 'string' &&
@@ -323,11 +337,11 @@ function toRunEvent(value: unknown): AgentRunEventVo {
           toolCallId: event.toolCallId,
           toolName: event.toolName,
           kind: event.kind,
-          type: 'tool_start',
+          type: AGENT_RUN_EVENT_TYPE.TOOL_START,
         }
       }
       break
-    case 'tool_end':
+    case AGENT_RUN_EVENT_TYPE.TOOL_END:
       if (
         typeof event.toolCallId === 'string' &&
         typeof event.toolName === 'string' &&
@@ -339,23 +353,23 @@ function toRunEvent(value: unknown): AgentRunEventVo {
           ...(typeof event.filePath === 'string'
             ? { filePath: event.filePath }
             : {}),
-          ...(event.toolName === POLICY_TOOL.bash.toolName
+          ...(event.toolName === POLICY_TOOL.BASH.toolName
             ? { outcome: bashOutcome(event.outcome) }
             : {}),
           output: event.output,
           toolCallId: event.toolCallId,
           toolName: event.toolName,
           kind: event.kind,
-          type: 'tool_end',
+          type: AGENT_RUN_EVENT_TYPE.TOOL_END,
         }
       }
       break
-    case 'tool_approval_required': {
+    case AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED: {
       const approval = parseToolApproval(event)
       if (approval) return approval
       break
     }
-    case 'usage':
+    case AGENT_RUN_EVENT_TYPE.USAGE:
       if (
         ['cacheRead', 'cacheWrite', 'input', 'output', 'total'].every(
           (key) => typeof event[key] === 'number',
@@ -373,11 +387,11 @@ function toRunEvent(value: unknown): AgentRunEventVo {
           input: event.input as number,
           output: event.output as number,
           total: event.total as number,
-          type: 'usage',
+          type: AGENT_RUN_EVENT_TYPE.USAGE,
         }
       }
       break
-    case 'done':
+    case AGENT_RUN_EVENT_TYPE.DONE:
       if (
         typeof event.entryId === 'string' &&
         typeof event.stopReason === 'string'
@@ -385,13 +399,17 @@ function toRunEvent(value: unknown): AgentRunEventVo {
         return {
           entryId: event.entryId,
           stopReason: event.stopReason,
-          type: 'done',
+          type: AGENT_RUN_EVENT_TYPE.DONE,
         }
       }
       break
-    case 'error':
+    case AGENT_RUN_EVENT_TYPE.ERROR:
       if (typeof event.code === 'string' && typeof event.message === 'string') {
-        return { code: event.code, message: event.message, type: 'error' }
+        return {
+          code: event.code,
+          message: event.message,
+          type: AGENT_RUN_EVENT_TYPE.ERROR,
+        }
       }
       break
   }

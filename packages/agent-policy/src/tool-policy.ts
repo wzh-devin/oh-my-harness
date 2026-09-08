@@ -1,4 +1,9 @@
 import { randomUUID } from 'node:crypto'
+import {
+  APPROVAL_RESOLUTION_REASON,
+  TOOL_POLICY_ERROR_CODE,
+  type ToolPolicyErrorCode,
+} from '@oh-my-harness/shared'
 
 import {
   APPROVAL_DECISION,
@@ -27,12 +32,7 @@ interface PendingState {
   resolving: boolean
 }
 
-export type ToolPolicyErrorCode =
-  | 'APPROVAL_ALREADY_RESOLVED'
-  | 'APPROVAL_NOT_FOUND'
-  | 'TOOL_APPROVAL_AUDIT_FAILED'
-  | 'TOOL_APPROVAL_REJECTED'
-  | 'TOOL_PERMISSION_DENIED'
+export type { ToolPolicyErrorCode }
 
 export class ToolPolicyError extends Error {
   readonly code: ToolPolicyErrorCode
@@ -48,28 +48,29 @@ export class ToolPolicyError extends Error {
 export const evaluateToolPolicy = (
   request: ToolAuthorizationRequest,
 ): PolicyDecision => {
-  if (!isToolPermission(request.permission)) return POLICY_DECISION.deny
+  if (!isToolPermission(request.permission)) return POLICY_DECISION.DENY
   const tool = getPolicyTool(request.toolName)
-  if (!tool || request.effect !== tool.effect) return POLICY_DECISION.deny
-  if (request.effect === TOOL_EFFECT.mcp) return POLICY_DECISION.requireApproval
-  if (request.effect === TOOL_EFFECT.execute) {
-    return request.permission === TOOL_PERMISSION.fullAccess
-      ? POLICY_DECISION.allow
-      : POLICY_DECISION.requireApproval
+  if (!tool || request.effect !== tool.effect) return POLICY_DECISION.DENY
+  if (request.effect === TOOL_EFFECT.MCP)
+    return POLICY_DECISION.REQUIRE_APPROVAL
+  if (request.effect === TOOL_EFFECT.EXECUTE) {
+    return request.permission === TOOL_PERMISSION.FULL_ACCESS
+      ? POLICY_DECISION.ALLOW
+      : POLICY_DECISION.REQUIRE_APPROVAL
   }
   if (
-    request.scope !== FILE_SCOPE.workspace &&
-    request.scope !== FILE_SCOPE.external
+    request.scope !== FILE_SCOPE.WORKSPACE &&
+    request.scope !== FILE_SCOPE.EXTERNAL
   )
-    return POLICY_DECISION.deny
-  if (request.permission === TOOL_PERMISSION.fullAccess)
-    return POLICY_DECISION.allow
-  if (request.scope === FILE_SCOPE.external)
-    return POLICY_DECISION.requireApproval
-  return request.effect === TOOL_EFFECT.read ||
-    request.permission === TOOL_PERMISSION.workspaceWrite
-    ? POLICY_DECISION.allow
-    : POLICY_DECISION.requireApproval
+    return POLICY_DECISION.DENY
+  if (request.permission === TOOL_PERMISSION.FULL_ACCESS)
+    return POLICY_DECISION.ALLOW
+  if (request.scope === FILE_SCOPE.EXTERNAL)
+    return POLICY_DECISION.REQUIRE_APPROVAL
+  return request.effect === TOOL_EFFECT.READ ||
+    request.permission === TOOL_PERMISSION.WORKSPACE_WRITE
+    ? POLICY_DECISION.ALLOW
+    : POLICY_DECISION.REQUIRE_APPROVAL
 }
 
 /** 保存活跃 Run 的单次审批，不持久化会话级授权。 */
@@ -86,15 +87,18 @@ export class ToolPolicy {
     signal?: AbortSignal,
   ) {
     const decision = evaluateToolPolicy(request)
-    if (decision === POLICY_DECISION.allow) return
-    if (decision === POLICY_DECISION.deny) {
+    if (decision === POLICY_DECISION.ALLOW) return
+    if (decision === POLICY_DECISION.DENY) {
       throw new ToolPolicyError(
-        'TOOL_PERMISSION_DENIED',
+        TOOL_POLICY_ERROR_CODE.TOOL_PERMISSION_DENIED,
         '当前工具调用不在允许的能力范围内。',
       )
     }
     if (signal?.aborted) {
-      throw new ToolPolicyError('TOOL_APPROVAL_REJECTED', '工具调用已取消。')
+      throw new ToolPolicyError(
+        TOOL_POLICY_ERROR_CODE.TOOL_APPROVAL_REJECTED,
+        '工具调用已取消。',
+      )
     }
 
     const approval: PendingToolApproval = {
@@ -118,16 +122,18 @@ export class ToolPolicy {
     } catch (error) {
       this.pending.delete(approval.approvalId)
       throw new ToolPolicyError(
-        'TOOL_APPROVAL_AUDIT_FAILED',
+        TOOL_POLICY_ERROR_CODE.TOOL_APPROVAL_AUDIT_FAILED,
         '工具审批请求无法持久化。',
         error,
       )
     }
 
     const onAbort = () => {
-      void this.resolveState(state, APPROVAL_DECISION.reject, 'aborted').catch(
-        () => undefined,
-      )
+      void this.resolveState(
+        state,
+        APPROVAL_DECISION.REJECT,
+        APPROVAL_RESOLUTION_REASON.ABORTED,
+      ).catch(() => undefined)
     }
     signal?.addEventListener('abort', onAbort, { once: true })
     if (signal?.aborted) onAbort()
@@ -155,20 +161,23 @@ export class ToolPolicy {
     const resolved = this.resolved.get(approvalId)
     if (resolved?.sessionId === sessionId) {
       throw new ToolPolicyError(
-        'APPROVAL_ALREADY_RESOLVED',
+        TOOL_POLICY_ERROR_CODE.APPROVAL_ALREADY_RESOLVED,
         '工具审批已经处理。',
       )
     }
     if (!state || state.approval.sessionId !== sessionId) {
-      throw new ToolPolicyError('APPROVAL_NOT_FOUND', '待审批工具调用不存在。')
+      throw new ToolPolicyError(
+        TOOL_POLICY_ERROR_CODE.APPROVAL_NOT_FOUND,
+        '待审批工具调用不存在。',
+      )
     }
     if (state.resolving) {
       throw new ToolPolicyError(
-        'APPROVAL_ALREADY_RESOLVED',
+        TOOL_POLICY_ERROR_CODE.APPROVAL_ALREADY_RESOLVED,
         '工具审批已经处理。',
       )
     }
-    await this.resolveState(state, decision, 'user')
+    await this.resolveState(state, decision, APPROVAL_RESOLUTION_REASON.USER)
   }
 
   /** Run 结束后清理仅用于并发决议保护的审批墓碑。 */
@@ -189,7 +198,7 @@ export class ToolPolicy {
       await state.hooks.onResolved({ ...state.approval, decision, reason })
     } catch (error) {
       const policyError = new ToolPolicyError(
-        'TOOL_APPROVAL_AUDIT_FAILED',
+        TOOL_POLICY_ERROR_CODE.TOOL_APPROVAL_AUDIT_FAILED,
         '工具审批结果无法持久化。',
         error,
       )
@@ -203,13 +212,15 @@ export class ToolPolicy {
       runId: state.approval.runId,
       sessionId: state.approval.sessionId,
     })
-    if (decision === APPROVAL_DECISION.approveOnce) {
+    if (decision === APPROVAL_DECISION.APPROVE_ONCE) {
       state.complete()
     } else {
       state.complete(
         new ToolPolicyError(
-          'TOOL_APPROVAL_REJECTED',
-          reason === 'user' ? '用户拒绝了工具调用。' : '工具调用已取消。',
+          TOOL_POLICY_ERROR_CODE.TOOL_APPROVAL_REJECTED,
+          reason === APPROVAL_RESOLUTION_REASON.USER
+            ? '用户拒绝了工具调用。'
+            : '工具调用已取消。',
         ),
       )
     }

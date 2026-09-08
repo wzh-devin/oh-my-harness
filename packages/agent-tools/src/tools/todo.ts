@@ -1,13 +1,10 @@
 import { BUILTIN_TOOL_NAME } from '../tool-names.ts'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
+import { TODO_STATUS, type TodoStatus } from '@oh-my-harness/shared'
 
-export const TODO_STATUS = {
-  pending: 'pending',
-  inProgress: 'in_progress',
-  completed: 'completed',
-} as const
+export { TODO_STATUS }
 const todoStatuses = Object.values(TODO_STATUS)
-export type TodoStatus = (typeof todoStatuses)[number]
+export type { TodoStatus }
 
 export interface TodoItem {
   content: string
@@ -76,7 +73,7 @@ export const parseTodoWriteInput = (input: unknown): TodoItem[] => {
       throw new Error('Todo status is invalid.')
     }
     const status = item.status as TodoStatus
-    if (status === TODO_STATUS.inProgress && ++activeCount > 1) {
+    if (status === TODO_STATUS.IN_PROGRESS && ++activeCount > 1) {
       throw new Error('Only one todo can be in progress.')
     }
     return { content, status }
@@ -90,17 +87,17 @@ export const createTodoWriteTool = (
   description:
     'Create or replace the complete todo plan for a multi-step task. Keep at most one item in progress, update it as work advances, and pass an empty array to clear it.',
   label: 'update todo plan',
-  name: BUILTIN_TOOL_NAME.todoWrite,
+  name: BUILTIN_TOOL_NAME.TODO_WRITE,
   parameters,
   async execute(_toolCallId: string, input: unknown, signal?: AbortSignal) {
     signal?.throwIfAborted()
     const todos = parseTodoWriteInput(input)
     await onUpdated(todos)
     const completed = todos.filter(
-      (todo) => todo.status === TODO_STATUS.completed,
+      (todo) => todo.status === TODO_STATUS.COMPLETED,
     ).length
     const inProgress = todos.filter(
-      (todo) => todo.status === TODO_STATUS.inProgress,
+      (todo) => todo.status === TODO_STATUS.IN_PROGRESS,
     ).length
     const pending = todos.length - completed - inProgress
     return {

@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto'
 
 import type { AuthEvent, AuthPrompt, Models } from '@earendil-works/pi-ai'
+import {
+  AUTH_METHOD,
+  OAUTH_PROMPT_TYPE,
+  OAUTH_SESSION_STATUS,
+} from '@oh-my-harness/shared'
 
 import type { OAuthPrompt, OAuthSessionStatus } from './oauth-types.ts'
 
@@ -26,17 +31,17 @@ interface OAuthSession {
 }
 
 const terminalStatuses = new Set<OAuthSessionStatus['status']>([
-  'succeeded',
-  'failed',
-  'cancelled',
-  'expired',
+  OAUTH_SESSION_STATUS.SUCCEEDED,
+  OAUTH_SESSION_STATUS.FAILED,
+  OAUTH_SESSION_STATUS.CANCELLED,
+  OAUTH_SESSION_STATUS.EXPIRED,
 ])
 
 function publicPrompt(prompt: AuthPrompt): OAuthPrompt {
   return {
     message: prompt.message,
     options:
-      prompt.type === 'select'
+      prompt.type === OAUTH_PROMPT_TYPE.SELECT
         ? prompt.options.map((option) => ({
             label: option.label,
             value: option.id,
@@ -70,26 +75,30 @@ export class OAuthSessionService {
       preferredInput,
       providerId,
       sessionId,
-      status: 'awaiting_provider',
+      status: OAUTH_SESSION_STATUS.AWAITING_PROVIDER,
       timer: setTimeout(() => this.expire(sessionId), this.ttlMs),
     }
     session.timer.unref()
     this.sessions.set(sessionId, session)
 
     void this.models
-      .login(providerId, 'oauth', {
+      .login(providerId, AUTH_METHOD.OAUTH, {
         notify: (event) => this.notify(session, event),
         prompt: (prompt) => this.prompt(session, prompt),
         signal: controller.signal,
       })
       .then(() => {
-        if (!terminalStatuses.has(session.status)) session.status = 'succeeded'
+        if (!terminalStatuses.has(session.status))
+          session.status = OAUTH_SESSION_STATUS.SUCCEEDED
         session.pendingPrompt = undefined
       })
       .catch(() => {
-        if (session.status === 'cancelled' || session.status === 'expired')
+        if (
+          session.status === OAUTH_SESSION_STATUS.CANCELLED ||
+          session.status === OAUTH_SESSION_STATUS.EXPIRED
+        )
           return
-        session.status = 'failed'
+        session.status = OAUTH_SESSION_STATUS.FAILED
         session.error = {
           code: 'OAUTH_FAILED',
           message: 'OAuth 授权失败，请重试。',
@@ -115,7 +124,7 @@ export class OAuthSessionService {
     }
     const pending = session.pendingPrompt
     session.pendingPrompt = undefined
-    session.status = 'awaiting_provider'
+    session.status = OAUTH_SESSION_STATUS.AWAITING_PROVIDER
     pending.resolve(value)
     return this.toStatus(session)
   }
@@ -123,7 +132,7 @@ export class OAuthSessionService {
   cancel(sessionId: string) {
     const session = this.sessions.get(sessionId)
     if (!session) return
-    session.status = 'cancelled'
+    session.status = OAUTH_SESSION_STATUS.CANCELLED
     session.controller.abort()
     session.pendingPrompt?.reject(new Error('OAuth 授权已取消。'))
     session.pendingPrompt = undefined
@@ -145,7 +154,7 @@ export class OAuthSessionService {
     authPrompt: AuthPrompt,
   ): Promise<string> {
     if (
-      authPrompt.type === 'select' &&
+      authPrompt.type === OAUTH_PROMPT_TYPE.SELECT &&
       session.preferredInput &&
       authPrompt.options.some((option) => option.id === session.preferredInput)
     ) {
@@ -154,7 +163,7 @@ export class OAuthSessionService {
       return Promise.resolve(preferredInput)
     }
     const prompt = publicPrompt(authPrompt)
-    session.status = 'awaiting_user'
+    session.status = OAUTH_SESSION_STATUS.AWAITING_USER
     return new Promise((resolve, reject) => {
       session.pendingPrompt = { prompt, reject, resolve }
       if (authPrompt.signal?.aborted) {
@@ -167,7 +176,8 @@ export class OAuthSessionService {
         () => {
           if (session.pendingPrompt?.prompt.promptId !== prompt.promptId) return
           session.pendingPrompt = undefined
-          if (session.authorizationUrl) session.status = 'awaiting_provider'
+          if (session.authorizationUrl)
+            session.status = OAUTH_SESSION_STATUS.AWAITING_PROVIDER
           reject(new Error('OAuth 输入已取消。'))
         },
         { once: true },
@@ -178,13 +188,13 @@ export class OAuthSessionService {
   private notify(session: OAuthSession, event: AuthEvent) {
     if (event.type === 'auth_url') {
       session.authorizationUrl = event.url
-      session.status = 'awaiting_provider'
+      session.status = OAUTH_SESSION_STATUS.AWAITING_PROVIDER
     } else if (event.type === 'device_code') {
       session.deviceCode = {
         userCode: event.userCode,
         verificationUri: event.verificationUri,
       }
-      session.status = 'awaiting_provider'
+      session.status = OAUTH_SESSION_STATUS.AWAITING_PROVIDER
     } else {
       session.progress = event.message
     }
@@ -194,7 +204,7 @@ export class OAuthSessionService {
     const session = this.sessions.get(sessionId)
     if (!session) return
     if (!terminalStatuses.has(session.status)) {
-      session.status = 'expired'
+      session.status = OAUTH_SESSION_STATUS.EXPIRED
       session.controller.abort()
       session.pendingPrompt?.reject(new Error('OAuth 会话已过期。'))
     }

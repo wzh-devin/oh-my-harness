@@ -10,6 +10,11 @@ import {
 } from '@gravity-ui/icons'
 import { Button, Modal, ToggleButton, ToggleButtonGroup } from '@heroui/react'
 import {
+  PLUGIN_SETTINGS_TAB,
+  SETTINGS_SECTION,
+  type SettingsSection,
+} from '@oh-my-harness/shared'
+import {
   PERMISSION_OPTIONS,
   type PermissionId,
   usePermissionSettings,
@@ -35,10 +40,10 @@ interface SettingsDialogProps {
 }
 
 const SETTINGS_SECTIONS = [
-  { id: 'general', label: '通用设置', icon: Gear },
-  { id: 'models', label: '模型', icon: Database },
-  { id: 'plugins', label: '插件', icon: Puzzle },
-  { id: 'archived', label: '已归档对话', icon: Archive },
+  { id: SETTINGS_SECTION.GENERAL, label: '通用设置', icon: Gear },
+  { id: SETTINGS_SECTION.MODELS, label: '模型', icon: Database },
+  { id: SETTINGS_SECTION.PLUGINS, label: '插件', icon: Puzzle },
+  { id: SETTINGS_SECTION.ARCHIVED, label: '已归档对话', icon: Archive },
 ] as const
 
 const APPEARANCE_OPTIONS = [
@@ -47,13 +52,11 @@ const APPEARANCE_OPTIONS = [
   { id: 'system', label: '跟随系统', icon: Display },
 ] as const
 
-type SettingsSection = (typeof SETTINGS_SECTIONS)[number]['id']
-
 /** 展示应用级本地设置；当前选择只保留在页面会话中。 */
 export function SettingsDialog({
   archivedConversations,
-  initialPluginTab = 'skills',
-  initialSection = 'general',
+  initialPluginTab = PLUGIN_SETTINGS_TAB.SKILLS,
+  initialSection = SETTINGS_SECTION.GENERAL,
   isOpen,
   onArchivedConversationDelete,
   onArchivedConversationRestore,
@@ -116,7 +119,7 @@ export function SettingsDialog({
             </nav>
 
             <div className="min-h-0 overflow-y-auto px-5 pt-4 pb-5 sm:px-6 sm:pb-6 md:pt-[54px]">
-              {activeSection === 'general' ? (
+              {activeSection === SETTINGS_SECTION.GENERAL ? (
                 <div className="mx-auto max-w-2xl">
                   <SettingsSelect
                     label="权限"
@@ -169,18 +172,18 @@ export function SettingsDialog({
                 </div>
               ) : null}
 
-              <div hidden={activeSection !== 'models'}>
+              <div hidden={activeSection !== SETTINGS_SECTION.MODELS}>
                 <ModelsSettingsSection />
               </div>
 
-              <div hidden={activeSection !== 'plugins'}>
+              <div hidden={activeSection !== SETTINGS_SECTION.PLUGINS}>
                 <PluginsSettingsSection
                   activeTab={pluginTab}
                   onTabChange={setPluginTab}
                 />
               </div>
 
-              <div hidden={activeSection !== 'archived'}>
+              <div hidden={activeSection !== SETTINGS_SECTION.ARCHIVED}>
                 <ArchivedConversationsSection
                   conversations={archivedConversations}
                   onClear={onArchivedConversationsClear}

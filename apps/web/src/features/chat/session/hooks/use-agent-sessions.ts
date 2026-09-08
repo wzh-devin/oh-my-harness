@@ -1,4 +1,15 @@
 import { APPROVAL_DECISION } from '@oh-my-harness/agent-policy/contracts'
+import {
+  AGENT_RUN_EVENT_TYPE,
+  CAPABILITY_KIND,
+  CHAT_ASSISTANT_STATUS,
+  CHAT_TOOL_KIND,
+  MESSAGE_PART_TYPE,
+  MESSAGE_ROLE,
+  SESSION_TOOL_STATE,
+  TODO_STATUS,
+  TOOL_ACTIVITY_KIND,
+} from '@oh-my-harness/shared'
 import type { PermissionId } from '../../../settings/index.ts'
 import { publishTraceUpdate } from '../../../trace/api/index.ts'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -61,8 +72,8 @@ const toolOutputText = (output: unknown) => {
 const streamingAssistant = (id: string): ChatMessage => ({
   actions: 'full',
   id,
-  role: 'assistant',
-  status: 'streaming',
+  role: MESSAGE_ROLE.ASSISTANT,
+  status: CHAT_ASSISTANT_STATUS.STREAMING,
   text: '',
 })
 
@@ -90,9 +101,9 @@ const messageActivityParts = (
   const text = message.activity?.text ?? message.text
   const tools = message.activity?.tools ?? message.tools ?? []
   return [
-    ...(reasoning ? [{ reasoning, type: 'reasoning' as const }] : []),
+    ...(reasoning ? [{ reasoning, type: MESSAGE_PART_TYPE.REASONING }] : []),
     ...(text ? [{ text, type: 'text' as const }] : []),
-    ...tools.map((tool) => ({ tool, type: 'tool' as const })),
+    ...tools.map((tool) => ({ tool, type: MESSAGE_PART_TYPE.TOOL })),
   ]
 }
 
@@ -118,7 +129,7 @@ const appendReasoningPart = (
 ) => {
   const next = [...parts]
   const last = next.at(-1)
-  if (last?.type === 'reasoning') {
+  if (last?.type === MESSAGE_PART_TYPE.REASONING) {
     const steps = [...last.reasoning.steps]
     const lastStep = steps.at(-1)
     if (lastStep) {
@@ -139,7 +150,7 @@ const appendReasoningPart = (
         defaultExpanded: false,
         steps: [{ content: delta, label: '思考过程' }],
       },
-      type: 'reasoning',
+      type: MESSAGE_PART_TYPE.REASONING,
     })
   }
   return next
@@ -201,12 +212,14 @@ export const updateStreamingTool = (
   else tools[index] = { ...tools[index], ...tool }
   const parts = messageActivityParts(message)
   const partIndex = parts.findIndex(
-    (part) => part.type === 'tool' && part.tool.toolCallId === tool.toolCallId,
+    (part) =>
+      part.type === MESSAGE_PART_TYPE.TOOL &&
+      part.tool.toolCallId === tool.toolCallId,
   )
-  if (partIndex === -1) parts.push({ tool, type: 'tool' })
+  if (partIndex === -1) parts.push({ tool, type: MESSAGE_PART_TYPE.TOOL })
   else {
     const part = parts[partIndex]
-    if (part?.type === 'tool') {
+    if (part?.type === MESSAGE_PART_TYPE.TOOL) {
       parts[partIndex] = { ...part, tool: { ...part.tool, ...tool } }
     }
   }
@@ -364,42 +377,50 @@ export function useAgentSessions() {
         listAgentSessionMessages(sessionId),
         getPendingToolApproval(sessionId),
         reconnectAgentRun(sessionId, (event) => {
-          if (event.type === 'done' || event.type === 'error')
+          if (
+            event.type === AGENT_RUN_EVENT_TYPE.DONE ||
+            event.type === AGENT_RUN_EVENT_TYPE.ERROR
+          )
             reconnectedTerminal = true
           if (
-            event.type === 'trajectory_updated' ||
-            event.type === 'trajectory_delta'
+            event.type === AGENT_RUN_EVENT_TYPE.TRAJECTORY_UPDATED ||
+            event.type === AGENT_RUN_EVENT_TYPE.TRAJECTORY_DELTA
           ) {
             publishTraceUpdate(sessionId, event)
-          } else if (event.type === 'trajectory_changed') {
+          } else if (event.type === AGENT_RUN_EVENT_TYPE.TRAJECTORY_CHANGED) {
             bumpTrajectory(sessionId)
-          } else if (event.type === 'start') {
+          } else if (event.type === AGENT_RUN_EVENT_TYPE.START) {
             setRunPermissions((current) => ({
               ...current,
               [sessionId]: event.permission,
             }))
-          } else if (event.type === 'tool_approval_required') {
+          } else if (
+            event.type === AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED
+          ) {
             setPendingApprovals((current) => ({
               ...current,
               [sessionId]: event,
             }))
-          } else if (event.type === 'tool_end') {
+          } else if (event.type === AGENT_RUN_EVENT_TYPE.TOOL_END) {
             setPendingApprovals((current) =>
               current[sessionId]?.toolCallId === event.toolCallId
                 ? { ...current, [sessionId]: undefined }
                 : current,
             )
-          } else if (event.type === 'todo_updated') {
+          } else if (event.type === AGENT_RUN_EVENT_TYPE.TODO_UPDATED) {
             updateThread(sessionId, (thread) => ({
               ...thread,
               todos: event.todos.length ? event.todos : undefined,
             }))
-          } else if (event.type === 'usage' && event.contextUsage) {
+          } else if (
+            event.type === AGENT_RUN_EVENT_TYPE.USAGE &&
+            event.contextUsage
+          ) {
             updateThread(sessionId, (thread) => ({
               ...thread,
               contextUsage: event.contextUsage,
             }))
-          } else if (event.type === 'error') {
+          } else if (event.type === AGENT_RUN_EVENT_TYPE.ERROR) {
             setErrors((current) => ({
               ...current,
               [sessionId]: event.message,
@@ -625,9 +646,9 @@ export function useAgentSessions() {
       })
       const contextItems = payload.contextItems.filter(
         (item) =>
-          item.kind === 'command' ||
-          item.kind === 'skill' ||
-          item.kind === 'plugin',
+          item.kind === CAPABILITY_KIND.COMMAND ||
+          item.kind === CAPABILITY_KIND.SKILL ||
+          item.kind === CAPABILITY_KIND.PLUGIN,
       )
       const preview =
         payload.message || attachments[0]?.name || contextItems[0]?.label || ''
@@ -645,14 +666,16 @@ export function useAgentSessions() {
             attachments,
             contextItems,
             id: userId,
-            role: 'user',
+            role: MESSAGE_ROLE.USER,
             text: payload.message,
           },
           streamingAssistant(assistantId),
         ],
         preview,
         pluginIds: contextItems.flatMap((item) =>
-          item.kind === 'plugin' && item.sourceId ? [item.sourceId] : [],
+          item.kind === CAPABILITY_KIND.PLUGIN && item.sourceId
+            ? [item.sourceId]
+            : [],
         ),
         todos: undefined,
         updatedAt: '刚刚',
@@ -665,35 +688,40 @@ export function useAgentSessions() {
           sessionId,
           {
             attachments: payload.attachments,
-            commandId: contextItems.find((item) => item.kind === 'command')
-              ?.sourceId,
+            commandId: contextItems.find(
+              (item) => item.kind === CAPABILITY_KIND.COMMAND,
+            )?.sourceId,
             content: payload.message,
             pluginIds: contextItems.flatMap((item) =>
-              item.kind === 'plugin' && item.sourceId ? [item.sourceId] : [],
+              item.kind === CAPABILITY_KIND.PLUGIN && item.sourceId
+                ? [item.sourceId]
+                : [],
             ),
             permission: payload.permission,
             skillIds: contextItems.flatMap((item) =>
-              item.kind === 'skill' && item.sourceId ? [item.sourceId] : [],
+              item.kind === CAPABILITY_KIND.SKILL && item.sourceId
+                ? [item.sourceId]
+                : [],
             ),
             thinkingLevel: payload.thinkingLevel,
           },
           (event) => {
             switch (event.type) {
-              case 'trajectory_updated':
-              case 'trajectory_delta':
+              case AGENT_RUN_EVENT_TYPE.TRAJECTORY_UPDATED:
+              case AGENT_RUN_EVENT_TYPE.TRAJECTORY_DELTA:
                 publishTraceUpdate(sessionId, event)
                 break
-              case 'trajectory_changed':
+              case AGENT_RUN_EVENT_TYPE.TRAJECTORY_CHANGED:
                 bumpTrajectory(sessionId)
                 break
-              case 'start':
+              case AGENT_RUN_EVENT_TYPE.START:
                 setRunPermissions((current) => ({
                   ...current,
                   [sessionId]: event.permission,
                 }))
                 setStatus(sessionId, 'streaming')
                 break
-              case 'text_delta':
+              case AGENT_RUN_EVENT_TYPE.TEXT_DELTA:
                 updateThread(sessionId, (thread) => ({
                   ...thread,
                   messages: thread.messages.map((item) =>
@@ -703,7 +731,7 @@ export function useAgentSessions() {
                   ),
                 }))
                 break
-              case 'reasoning_delta':
+              case AGENT_RUN_EVENT_TYPE.REASONING_DELTA:
                 updateThread(sessionId, (thread) => ({
                   ...thread,
                   messages: thread.messages.map((item) =>
@@ -713,13 +741,13 @@ export function useAgentSessions() {
                   ),
                 }))
                 break
-              case 'todo_updated':
+              case AGENT_RUN_EVENT_TYPE.TODO_UPDATED:
                 updateThread(sessionId, (thread) => ({
                   ...thread,
                   todos: event.todos.length ? event.todos : undefined,
                 }))
                 break
-              case 'tool_start':
+              case AGENT_RUN_EVENT_TYPE.TOOL_START:
                 updateThread(sessionId, (thread) => ({
                   ...thread,
                   messages: thread.messages.map((item) =>
@@ -729,7 +757,7 @@ export function useAgentSessions() {
                           {
                             input: event.input,
                             kind: event.kind,
-                            state: 'input-available',
+                            state: SESSION_TOOL_STATE.INPUT_AVAILABLE,
                             toolCallId: event.toolCallId,
                             toolName: event.toolName,
                           },
@@ -739,7 +767,7 @@ export function useAgentSessions() {
                   ),
                 }))
                 break
-              case 'tool_end':
+              case AGENT_RUN_EVENT_TYPE.TOOL_END:
                 setPendingApprovals((current) =>
                   current[sessionId]?.toolCallId === event.toolCallId
                     ? { ...current, [sessionId]: undefined }
@@ -764,8 +792,8 @@ export function useAgentSessions() {
                             kind: event.kind,
                             outcome: event.outcome,
                             state: event.isError
-                              ? 'output-error'
-                              : 'output-available',
+                              ? SESSION_TOOL_STATE.OUTPUT_ERROR
+                              : SESSION_TOOL_STATE.OUTPUT_AVAILABLE,
                             toolCallId: event.toolCallId,
                             toolName: event.toolName,
                           },
@@ -775,7 +803,7 @@ export function useAgentSessions() {
                   ),
                 }))
                 break
-              case 'tool_approval_required':
+              case AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED:
                 setPendingApprovals((current) => ({
                   ...current,
                   [sessionId]: event,
@@ -803,7 +831,10 @@ export function useAgentSessions() {
                               'input' in event
                                 ? event.input
                                 : { path: event.path },
-                            kind: event.kind === 'mcp' ? 'tool' : event.kind,
+                            kind:
+                              event.kind === TOOL_ACTIVITY_KIND.MCP
+                                ? CHAT_TOOL_KIND.TOOL
+                                : event.kind,
                             state: 'requires-action',
                             toolCallId: event.toolCallId,
                             toolName: event.toolName,
@@ -814,7 +845,7 @@ export function useAgentSessions() {
                   ),
                 }))
                 break
-              case 'done':
+              case AGENT_RUN_EVENT_TYPE.DONE:
                 terminal = true
                 updateThread(sessionId, (thread) => ({
                   ...thread,
@@ -828,7 +859,7 @@ export function useAgentSessions() {
                   ),
                 }))
                 break
-              case 'error':
+              case AGENT_RUN_EVENT_TYPE.ERROR:
                 terminal = true
                 runError = visibleRunError(event.code, event.message)
                 updateThread(sessionId, (thread) => ({
@@ -846,13 +877,13 @@ export function useAgentSessions() {
                       : item,
                   ),
                   todos: thread.todos?.every(
-                    (todo) => todo.status === 'completed',
+                    (todo) => todo.status === TODO_STATUS.COMPLETED,
                   )
                     ? thread.todos
                     : undefined,
                 }))
                 break
-              case 'usage':
+              case AGENT_RUN_EVENT_TYPE.USAGE:
                 if (event.contextUsage) {
                   updateThread(sessionId, (thread) => ({
                     ...thread,
@@ -893,7 +924,9 @@ export function useAgentSessions() {
     async (sessionId: string) => {
       updateThread(sessionId, (thread) => ({
         ...thread,
-        todos: thread.todos?.every((todo) => todo.status === 'completed')
+        todos: thread.todos?.every(
+          (todo) => todo.status === TODO_STATUS.COMPLETED,
+        )
           ? thread.todos
           : undefined,
       }))
@@ -921,7 +954,7 @@ export function useAgentSessions() {
       if (!approval) return
       try {
         await resolveToolApproval(sessionId, approval.approvalId, decision)
-        if (decision === APPROVAL_DECISION.approveOnce) {
+        if (decision === APPROVAL_DECISION.APPROVE_ONCE) {
           const resumedAt = Date.now()
           updateThread(sessionId, (thread) => ({
             ...thread,
@@ -937,7 +970,7 @@ export function useAgentSessions() {
                     {
                       ...tool,
                       approval: undefined,
-                      state: 'input-available',
+                      state: SESSION_TOOL_STATE.INPUT_AVAILABLE,
                     },
                     resumedAt,
                   )

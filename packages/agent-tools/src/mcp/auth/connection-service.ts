@@ -13,6 +13,16 @@ import type {
   McpServerDefinition,
   PluginSnapshot,
 } from '@oh-my-harness/agent-plugins'
+import {
+  MCP_AUTH_STATUS,
+  MCP_OAUTH_STATUS,
+  MCP_RUNTIME_CONNECTION_STATUS,
+  MCP_TRANSPORT,
+  type McpAuthStatus,
+  type McpOAuthStatus,
+  type McpRuntimeConnectionStatus,
+  type McpTransport,
+} from '@oh-my-harness/shared'
 import { createMcpFetch, validateMcpUrl } from './network.ts'
 
 export type McpConnectionTarget = {
@@ -48,7 +58,7 @@ type OAuthSession = {
   connectionId: string
   generation: string
   state: string
-  status: 'pending' | 'authorized' | 'failed' | 'cancelled' | 'expired'
+  status: McpOAuthStatus
   authorizationUrl?: string
   expiresAt: number
   verifier?: string
@@ -60,18 +70,13 @@ export type McpConnectionStatus = {
   id: string
   installationId: string
   serverName: string
-  transport: 'stdio' | 'http'
+  transport: McpTransport
   endpoint?: string
   allowed: boolean
   configuredKeys: string[]
   requiredKeys: string[]
-  authStatus:
-    | 'not-required'
-    | 'disconnected'
-    | 'authorizing'
-    | 'authorized'
-    | 'reauth-required'
-  connectionStatus: 'disconnected' | 'connecting' | 'ready' | 'error'
+  authStatus: McpAuthStatus
+  connectionStatus: McpRuntimeConnectionStatus
   message?: string
 }
 
@@ -156,7 +161,10 @@ export class McpConnectionService {
   private revoke(id: string) {
     this.revoked.add(id)
     for (const session of this.sessions.values())
-      if (session.connectionId === id && session.status === 'pending')
+      if (
+        session.connectionId === id &&
+        session.status === MCP_OAUTH_STATUS.PENDING
+      )
         this.cancelOAuth(session.id)
     for (const abort of this.active.get(id) ?? []) abort()
   }
@@ -192,7 +200,7 @@ export class McpConnectionService {
     const pending = [...this.sessions.values()].some(
       (session) =>
         session.connectionId === target.id &&
-        this.sessionStatus(session) === 'pending',
+        this.sessionStatus(session) === MCP_OAUTH_STATUS.PENDING,
     )
     const url = target.definition.url
     let endpoint: string | undefined
@@ -214,20 +222,22 @@ export class McpConnectionService {
       configuredKeys: Object.keys(record?.settings.environment ?? {}),
       requiredKeys: [...new Set(vars)],
       authStatus:
-        target.definition.transport === 'stdio'
-          ? 'not-required'
+        target.definition.transport === MCP_TRANSPORT.STDIO
+          ? MCP_AUTH_STATUS.NOT_REQUIRED
           : pending
-            ? 'authorizing'
+            ? MCP_AUTH_STATUS.AUTHORIZING
             : record?.tokens
-              ? 'authorized'
+              ? MCP_AUTH_STATUS.AUTHORIZED
               : record?.discovery
-                ? 'reauth-required'
+                ? MCP_AUTH_STATUS.REAUTH_REQUIRED
                 : record?.authRequired === false
-                  ? 'not-required'
+                  ? MCP_AUTH_STATUS.NOT_REQUIRED
                   : record?.authRequired
-                    ? 'reauth-required'
-                    : 'disconnected',
-      ...(this.states.get(target.id) ?? { connectionStatus: 'disconnected' }),
+                    ? MCP_AUTH_STATUS.REAUTH_REQUIRED
+                    : MCP_AUTH_STATUS.DISCONNECTED,
+      ...(this.states.get(target.id) ?? {
+        connectionStatus: MCP_RUNTIME_CONNECTION_STATUS.DISCONNECTED,
+      }),
     }
   }
 
@@ -418,13 +428,16 @@ export class McpConnectionService {
   }
 
   async startOAuth(target: McpConnectionTarget) {
-    if (target.definition.transport !== 'http')
+    if (target.definition.transport !== MCP_TRANSPORT.HTTP)
       throw new Error('stdio 不使用 HTTP OAuth')
     for (const [id, session] of this.sessions)
       if (session.expiresAt < Date.now() - 60_000) this.sessions.delete(id)
     if (this.sessions.size >= 100) throw new Error('OAuth 会话过多，请稍后重试')
     for (const session of this.sessions.values())
-      if (session.connectionId === target.id && session.status === 'pending')
+      if (
+        session.connectionId === target.id &&
+        session.status === MCP_OAUTH_STATUS.PENDING
+      )
         this.cancelOAuth(session.id)
     return this.locked(target.id, async () => {
       const { config, generation } = await this.configuration(target)
@@ -434,7 +447,7 @@ export class McpConnectionService {
         connectionId: target.id,
         generation,
         state: randomUUID(),
-        status: 'pending',
+        status: MCP_OAUTH_STATUS.PENDING,
         expiresAt: Date.now() + 10 * 60_000,
         consumed: false,
         controller: new AbortController(),
@@ -456,11 +469,12 @@ export class McpConnectionService {
             }),
         })
         session.controller.signal.throwIfAborted()
-        if (result === 'AUTHORIZED') session.status = 'authorized'
+        if (result === 'AUTHORIZED')
+          session.status = MCP_OAUTH_STATUS.AUTHORIZED
       } catch {
         session.status = session.controller.signal.aborted
-          ? 'cancelled'
-          : 'failed'
+          ? MCP_OAUTH_STATUS.CANCELLED
+          : MCP_OAUTH_STATUS.FAILED
         session.verifier = undefined
       }
       return this.oauthStatus(session.id)
@@ -468,8 +482,11 @@ export class McpConnectionService {
   }
 
   private sessionStatus(session: OAuthSession) {
-    if (session.status === 'pending' && session.expiresAt < Date.now()) {
-      session.status = 'expired'
+    if (
+      session.status === MCP_OAUTH_STATUS.PENDING &&
+      session.expiresAt < Date.now()
+    ) {
+      session.status = MCP_OAUTH_STATUS.EXPIRED
       session.controller.abort()
       session.verifier = undefined
     }
@@ -484,7 +501,8 @@ export class McpConnectionService {
       connectionId: session.connectionId,
       status: this.sessionStatus(session),
       expiresAt: session.expiresAt,
-      ...(session.status === 'pending' && session.authorizationUrl
+      ...(session.status === MCP_OAUTH_STATUS.PENDING &&
+      session.authorizationUrl
         ? { authorizationUrl: session.authorizationUrl }
         : {}),
     }
@@ -492,8 +510,8 @@ export class McpConnectionService {
 
   cancelOAuth(id: string) {
     const session = this.sessions.get(id)
-    if (!session || session.status !== 'pending') return
-    session.status = 'cancelled'
+    if (!session || session.status !== MCP_OAUTH_STATUS.PENDING) return
+    session.status = MCP_OAUTH_STATUS.CANCELLED
     session.verifier = undefined
     session.controller.abort()
   }
@@ -504,13 +522,13 @@ export class McpConnectionService {
     )
     if (
       !session ||
-      this.sessionStatus(session) !== 'pending' ||
+      this.sessionStatus(session) !== MCP_OAUTH_STATUS.PENDING ||
       session.consumed
     )
       throw new Error('OAuth state 无效、已消费或过期')
     session.consumed = true
     if (denied || !code) {
-      session.status = 'failed'
+      session.status = MCP_OAUTH_STATUS.FAILED
       session.verifier = undefined
       return
     }
@@ -532,11 +550,14 @@ export class McpConnectionService {
           },
         )
         session.controller.signal.throwIfAborted()
-        session.status = result === 'AUTHORIZED' ? 'authorized' : 'failed'
+        session.status =
+          result === 'AUTHORIZED'
+            ? MCP_OAUTH_STATUS.AUTHORIZED
+            : MCP_OAUTH_STATUS.FAILED
       } catch {
         session.status = session.controller.signal.aborted
-          ? 'cancelled'
-          : 'failed'
+          ? MCP_OAUTH_STATUS.CANCELLED
+          : MCP_OAUTH_STATUS.FAILED
       } finally {
         session.verifier = undefined
         session.authorizationUrl = undefined
@@ -608,7 +629,7 @@ export class McpConnectionService {
           await this.store.write(target.id, record)
         })
         this.states.set(target.id, {
-          connectionStatus: 'error',
+          connectionStatus: MCP_RUNTIME_CONNECTION_STATUS.ERROR,
           message: '需要登录或重新授权；未自动重试调用',
         })
       } else if (response.ok && !token) {
@@ -640,7 +661,7 @@ export class McpConnectionService {
 
   setNetworkState(
     id: string,
-    state: 'disconnected' | 'connecting' | 'ready' | 'error',
+    state: McpRuntimeConnectionStatus,
     message?: string,
   ) {
     this.states.set(id, { connectionStatus: state, message })

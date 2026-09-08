@@ -21,6 +21,7 @@
     "@oh-my-harness/agent-runtime": "workspace:*",
     "@oh-my-harness/agent-tools": "workspace:*",
     "@oh-my-harness/llm": "workspace:*",
+    "@oh-my-harness/shared": "workspace:*",
     "hono": "4.13.5"
   },
   "devDependencies": {

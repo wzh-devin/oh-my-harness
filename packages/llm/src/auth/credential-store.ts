@@ -9,6 +9,7 @@ import type {
   CredentialInfo,
   CredentialStore,
 } from '@earendil-works/pi-ai'
+import { AUTH_METHOD } from '@oh-my-harness/shared'
 
 interface CredentialDocument {
   credentials: Record<string, Credential>
@@ -22,11 +23,11 @@ function throwIfAborted(options?: AuthOperationOptions) {
 function isCredential(value: unknown): value is Credential {
   if (!value || typeof value !== 'object') return false
   const credential = value as Record<string, unknown>
-  if (credential.type === 'api_key') {
+  if (credential.type === AUTH_METHOD.API_KEY) {
     return credential.key === undefined || typeof credential.key === 'string'
   }
   return (
-    credential.type === 'oauth' &&
+    credential.type === AUTH_METHOD.OAUTH &&
     typeof credential.access === 'string' &&
     typeof credential.refresh === 'string' &&
     typeof credential.expires === 'number'

@@ -1,34 +1,14 @@
-export const AgentTraceLane = {
-  INPUT: 'input',
-  MODEL: 'model',
-  TOOLS: 'tools',
-} as const
+import {
+  AGENT_TRAJECTORY_LANE,
+  AGENT_TRAJECTORY_RECORD_KIND,
+  type AgentTrajectoryLane,
+  type AgentTrajectoryRecordKind,
+  type AgentTrajectoryStatus,
+} from '@oh-my-harness/shared'
 
-export type AgentTraceLane =
-  (typeof AgentTraceLane)[keyof typeof AgentTraceLane]
-
-export const AgentTraceRecordKind = {
-  ASSISTANT: 'assistant',
-  CONTEXT: 'context',
-  REQUEST: 'request',
-  SYSTEM: 'system',
-  TOOL: 'tool',
-  USER: 'user',
-} as const
-
-export type AgentTraceRecordKind =
-  (typeof AgentTraceRecordKind)[keyof typeof AgentTraceRecordKind]
-
-export const AgentTraceStatus = {
-  ABORTED: 'aborted',
-  COMPLETED: 'completed',
-  FAILED: 'failed',
-  INTERRUPTED: 'interrupted',
-  RUNNING: 'running',
-} as const
-
-export type AgentTraceStatus =
-  (typeof AgentTraceStatus)[keyof typeof AgentTraceStatus]
+export type AgentTraceLane = AgentTrajectoryLane
+export type AgentTraceRecordKind = AgentTrajectoryRecordKind
+export type AgentTraceStatus = AgentTrajectoryStatus
 
 interface AgentTraceRecordBase {
   position: number
@@ -55,14 +35,27 @@ interface AgentTraceRecordBase {
 
 export type AgentTraceRecord = AgentTraceRecordBase &
   (
-    | { kind: 'system' | 'context' | 'user'; lane: 'input' }
     | {
-        kind: 'request' | 'assistant'
-        lane: 'model'
+        kind:
+          | typeof AGENT_TRAJECTORY_RECORD_KIND.SYSTEM
+          | typeof AGENT_TRAJECTORY_RECORD_KIND.CONTEXT
+          | typeof AGENT_TRAJECTORY_RECORD_KIND.USER
+        lane: typeof AGENT_TRAJECTORY_LANE.INPUT
+      }
+    | {
+        kind:
+          | typeof AGENT_TRAJECTORY_RECORD_KIND.REQUEST
+          | typeof AGENT_TRAJECTORY_RECORD_KIND.ASSISTANT
+        lane: typeof AGENT_TRAJECTORY_LANE.MODEL
         request: number
         sourceRecordId: string
       }
-    | { kind: 'tool'; lane: 'tools'; request: number; sourceRecordId: string }
+    | {
+        kind: typeof AGENT_TRAJECTORY_RECORD_KIND.TOOL
+        lane: typeof AGENT_TRAJECTORY_LANE.TOOLS
+        request: number
+        sourceRecordId: string
+      }
   )
 
 export type AgentTraceRecordDetail = AgentTraceRecord & {

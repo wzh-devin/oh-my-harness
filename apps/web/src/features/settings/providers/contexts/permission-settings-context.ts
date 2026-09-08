@@ -6,15 +6,15 @@ import {
 import { createContext, useContext } from 'react'
 
 const permissionPresentation = {
-  [TOOL_PERMISSION.readOnly]: {
+  [TOOL_PERMISSION.READ_ONLY]: {
     label: '请求批准',
     description: '文件修改、外部访问与命令均需批准',
   },
-  [TOOL_PERMISSION.workspaceWrite]: {
+  [TOOL_PERMISSION.WORKSPACE_WRITE]: {
     label: '帮我批准',
     description: '工作区文件自动处理，其他操作需批准',
   },
-  [TOOL_PERMISSION.fullAccess]: {
+  [TOOL_PERMISSION.FULL_ACCESS]: {
     label: '完全访问权限',
     description: '文件、命令与联网操作无需逐次批准',
   },

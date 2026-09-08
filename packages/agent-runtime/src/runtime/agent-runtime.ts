@@ -27,6 +27,15 @@ import {
 } from '@oh-my-harness/agent-tools'
 import { ModelServiceError, type ModelService } from '@oh-my-harness/llm'
 import {
+  AGENT_OPERATION_KIND,
+  AGENT_RUN_EVENT_TYPE,
+  CAPABILITY_KIND,
+  COMPLETION_EVENT_TYPE,
+  MESSAGE_ROLE,
+  TRAJECTORY_STREAM_BLOCK,
+  type AgentOperationKind,
+} from '@oh-my-harness/shared'
+import {
   Agent,
   buildSessionContext,
   createCustomMessage,
@@ -90,7 +99,7 @@ interface ActiveOperation {
   controller: AbortController
   events?: ActiveRunEventChannel
   finish(): void
-  kind: 'mutation' | 'run'
+  kind: AgentOperationKind
   settled: Promise<void>
 }
 
@@ -114,12 +123,15 @@ class ActiveRunEventChannel {
 
   subscribe(initialEvent?: AgentRuntimeEvent): AgentRun {
     const events = new EventStream<AgentRuntimeEvent, void>(
-      (event) => event.type === 'done' || event.type === 'error',
+      (event) =>
+        event.type === AGENT_RUN_EVENT_TYPE.DONE ||
+        event.type === AGENT_RUN_EVENT_TYPE.ERROR,
       () => undefined,
     )
     this.subscribers.add(events)
     if (initialEvent) events.push(initialEvent)
-    if (initialEvent) events.push({ type: 'trajectory_changed' })
+    if (initialEvent)
+      events.push({ type: AGENT_RUN_EVENT_TYPE.TRAJECTORY_CHANGED })
     return {
       detach: () => {
         this.subscribers.delete(events)
@@ -142,7 +154,7 @@ class ActiveRunEventChannel {
 function createUserMessage(content: string): UserMessage {
   return {
     content: [{ text: content, type: 'text' }],
-    role: 'user',
+    role: MESSAGE_ROLE.USER,
     timestamp: Date.now(),
   }
 }
@@ -168,7 +180,7 @@ const buildStructuredUserPrompt = (input: AgentRunInput) => {
 function toDurableMessage(message: AgentMessage, aborted: boolean) {
   // Pi Agent 0.84.3 会保留可选 undefined 字段，而 Session payload 只接受 JSON 值。
   const durable = JSON.parse(JSON.stringify(message)) as AgentMessage
-  if (durable.role === 'assistant' && aborted) {
+  if (durable.role === MESSAGE_ROLE.ASSISTANT && aborted) {
     durable.stopReason = 'aborted'
     delete durable.errorMessage
   }
@@ -177,14 +189,18 @@ function toDurableMessage(message: AgentMessage, aborted: boolean) {
 
 function runtimeEventError(
   error: unknown,
-): Extract<AgentRuntimeEvent, { type: 'error' }> {
+): Extract<AgentRuntimeEvent, { type: typeof AGENT_RUN_EVENT_TYPE.ERROR }> {
   if (error instanceof AgentRuntimeError) {
-    return { code: error.code, message: error.message, type: 'error' }
+    return {
+      code: error.code,
+      message: error.message,
+      type: AGENT_RUN_EVENT_TYPE.ERROR,
+    }
   }
   return {
     code: 'AGENT_RUN_FAILED',
     message: 'Agent 运行失败。',
-    type: 'error',
+    type: AGENT_RUN_EVENT_TYPE.ERROR,
   }
 }
 
@@ -221,6 +237,39 @@ function safeToolInput(input: unknown) {
 export class AgentRuntime {
   private readonly active = new Map<string, ActiveOperation>()
   private readonly capabilities?: AgentCapabilityService
+  private deletingSkill = false
+
+  /** 导入技能后使随后目录查询和 Run 使用新的能力快照。 */
+  refreshCapabilities() {
+    this.capabilities?.invalidate()
+  }
+
+  /** 返回用户或已启用插件技能的只读详情。 */
+  async getSkillDetail(id: string) {
+    this.assertOpen()
+    if (!this.capabilities)
+      throw new PluginError('SKILL_UNAVAILABLE', '技能服务不可用', 503)
+    return this.capabilities.detail(id)
+  }
+
+  /** 删除时保留运行中资源；同步占位防止异步文件操作期间新 Run 进入。 */
+  async deleteSkill(id: string) {
+    this.assertOpen()
+    if (this.deletingSkill || this.active.size)
+      throw new PluginError(
+        'SKILL_IN_USE',
+        '有对话正在运行，请结束运行后再删除技能',
+        409,
+      )
+    if (!this.capabilities)
+      throw new PluginError('SKILL_UNAVAILABLE', '技能服务不可用', 503)
+    this.deletingSkill = true
+    try {
+      await this.capabilities.remove(id)
+    } finally {
+      this.deletingSkill = false
+    }
+  }
   private readonly models: ModelService
   private readonly sessions: AgentSessionService
   private readonly toolOptions?: AgentRuntimeToolOptions
@@ -266,7 +315,7 @@ export class AgentRuntime {
 
   async renameSession(id: string, name: string | undefined) {
     this.assertOpen()
-    const operation = this.reserve(id, 'mutation')
+    const operation = this.reserve(id, AGENT_OPERATION_KIND.MUTATION)
     try {
       return await this.sessions.rename(id, name)
     } finally {
@@ -276,7 +325,7 @@ export class AgentRuntime {
 
   async archiveSession(id: string, archived: boolean) {
     this.assertOpen()
-    const operation = this.reserve(id, 'mutation')
+    const operation = this.reserve(id, AGENT_OPERATION_KIND.MUTATION)
     try {
       return await this.sessions.archive(id, archived)
     } finally {
@@ -289,7 +338,7 @@ export class AgentRuntime {
     input: { modelId: string; providerId: string },
   ) {
     this.assertOpen()
-    const operation = this.reserve(id, 'mutation')
+    const operation = this.reserve(id, AGENT_OPERATION_KIND.MUTATION)
     try {
       await this.models.resolveModel(input.providerId, input.modelId)
       return await this.sessions.updateModel(id, input)
@@ -311,7 +360,10 @@ export class AgentRuntime {
     this.assertOpen()
     const snapshot = this.active.get(id)?.trajectory?.snapshot
     if (snapshot) return snapshot
-    return this.sessions.trajectory(id, this.active.get(id)?.kind === 'run')
+    return this.sessions.trajectory(
+      id,
+      this.active.get(id)?.kind === AGENT_OPERATION_KIND.RUN,
+    )
   }
 
   async getTrajectoryRecord(id: string, recordId: string) {
@@ -323,7 +375,7 @@ export class AgentRuntime {
     return this.sessions.trajectoryRecord(
       id,
       recordId,
-      this.active.get(id)?.kind === 'run',
+      this.active.get(id)?.kind === AGENT_OPERATION_KIND.RUN,
     )
   }
 
@@ -352,7 +404,7 @@ export class AgentRuntime {
 
   async deleteSession(id: string) {
     this.assertOpen()
-    const operation = this.reserve(id, 'mutation')
+    const operation = this.reserve(id, AGENT_OPERATION_KIND.MUTATION)
     try {
       await this.sessions.delete(id)
     } finally {
@@ -373,7 +425,7 @@ export class AgentRuntime {
   prompt(
     id: string,
     input: AgentRunInput | string,
-    permission: ToolPermission = TOOL_PERMISSION.readOnly,
+    permission: ToolPermission = TOOL_PERMISSION.READ_ONLY,
   ) {
     return this.startRun(
       id,
@@ -382,7 +434,7 @@ export class AgentRuntime {
     )
   }
 
-  continue(id: string, permission: ToolPermission = TOOL_PERMISSION.readOnly) {
+  continue(id: string, permission: ToolPermission = TOOL_PERMISSION.READ_ONLY) {
     return this.startRun(id, permission)
   }
 
@@ -426,11 +478,11 @@ export class AgentRuntime {
   reconnect(id: string) {
     this.assertOpen()
     const operation = this.active.get(id)
-    return operation?.kind === 'run' && operation.events
+    return operation?.kind === AGENT_OPERATION_KIND.RUN && operation.events
       ? operation.events.subscribe({
           permission: operation.events.permission,
           sessionId: id,
-          type: 'start',
+          type: AGENT_RUN_EVENT_TYPE.START,
         })
       : undefined
   }
@@ -438,7 +490,7 @@ export class AgentRuntime {
   abort(id: string) {
     this.assertOpen()
     const operation = this.active.get(id)
-    if (!operation || operation.kind !== 'run') {
+    if (!operation || operation.kind !== AGENT_OPERATION_KIND.RUN) {
       throw new AgentRuntimeError(
         'NO_ACTIVE_RUN',
         '当前会话没有正在运行的任务。',
@@ -472,7 +524,7 @@ export class AgentRuntime {
         '运行权限无效。',
         400,
       )
-    const operation = this.reserve(id, 'run')
+    const operation = this.reserve(id, AGENT_OPERATION_KIND.RUN)
     const cleanups: (() => Promise<unknown>)[] = []
     const cleanup = async () => {
       await Promise.allSettled(cleanups.splice(0).map((dispose) => dispose()))
@@ -504,7 +556,7 @@ export class AgentRuntime {
         .filter(
           (entry) =>
             entry.type === 'custom' &&
-            entry.customType === SESSION_CUSTOM_TYPE.pluginSelection,
+            entry.customType === SESSION_CUSTOM_TYPE.PLUGIN_SELECTION,
         )
         .at(-1)
       const savedIds =
@@ -549,7 +601,7 @@ export class AgentRuntime {
         ...(resolved?.plugins ?? []).map((plugin) => ({
           description: plugin.activeRevision.descriptor.description,
           id: plugin.id,
-          kind: 'plugin' as const,
+          kind: CAPABILITY_KIND.PLUGIN,
           label: plugin.activeRevision.descriptor.name,
           reference: `@${plugin.activeRevision.descriptor.name}`,
           sourceId: plugin.id,
@@ -559,7 +611,7 @@ export class AgentRuntime {
               {
                 description: resolved.command.description,
                 id: resolved.command.id,
-                kind: 'command' as const,
+                kind: CAPABILITY_KIND.COMMAND,
                 label: resolved.command.name,
                 reference: `/${resolved.command.name}`,
                 sourceId: resolved.command.id,
@@ -571,7 +623,7 @@ export class AgentRuntime {
           .map((skill) => ({
             description: skill.description,
             id: skill.id,
-            kind: 'skill' as const,
+            kind: CAPABILITY_KIND.SKILL,
             label: skill.name,
             reference: `/${skill.name}`,
             sourceId: skill.id,
@@ -580,7 +632,7 @@ export class AgentRuntime {
       const incoming: AgentMessage | undefined = input
         ? structured
           ? createCustomMessage(
-              SESSION_CUSTOM_TYPE.userInput,
+              SESSION_CUSTOM_TYPE.USER_INPUT,
               structured.content,
               true,
               {
@@ -620,7 +672,7 @@ export class AgentRuntime {
         const last = context.messages.at(-1)
         if (
           !last ||
-          (last.role !== 'user' &&
+          (last.role !== MESSAGE_ROLE.USER &&
             last.role !== 'toolResult' &&
             last.role !== 'custom')
         ) {
@@ -715,14 +767,17 @@ export class AgentRuntime {
       const todoTool = createTodoWriteTool(async (todos) => {
         const snapshot = todos.map((todo) => ({ ...todo }))
         await opened.session.appendCustomEntry(
-          SESSION_CUSTOM_TYPE.todoUpdated,
+          SESSION_CUSTOM_TYPE.TODO_UPDATED,
           {
             schemaVersion: 1,
             todos: snapshot,
           },
         )
         this.sessions.changed(id)
-        events.push({ todos: snapshot, type: 'todo_updated' })
+        events.push({
+          todos: snapshot,
+          type: AGENT_RUN_EVENT_TYPE.TODO_UPDATED,
+        })
       })
       const tools = [
         ...(mcpTools?.tools ?? []),
@@ -732,7 +787,7 @@ export class AgentRuntime {
         todoTool,
       ]
       if (tools.length) {
-        await opened.session.appendCustomEntry(SESSION_CUSTOM_TYPE.runPolicy, {
+        await opened.session.appendCustomEntry(SESSION_CUSTOM_TYPE.RUN_POLICY, {
           activeToolNames: tools.map((tool) => tool.name),
           permission,
           runId,
@@ -756,7 +811,7 @@ export class AgentRuntime {
             .find(
               (message) =>
                 message.role === 'custom' &&
-                message.customType === SESSION_CUSTOM_TYPE.agentContext &&
+                message.customType === SESSION_CUSTOM_TYPE.AGENT_CONTEXT &&
                 (message.details as { source?: string } | undefined)?.source ===
                   source,
             )
@@ -766,7 +821,7 @@ export class AgentRuntime {
         if (content)
           contextMessages.push(
             createCustomMessage(
-              SESSION_CUSTOM_TYPE.agentContext,
+              SESSION_CUSTOM_TYPE.AGENT_CONTEXT,
               content,
               false,
               { source, snapshot },
@@ -813,7 +868,7 @@ export class AgentRuntime {
         .filter(
           (entry) =>
             entry.type === 'custom' &&
-            entry.customType === SESSION_CUSTOM_TYPE.llmRequestHeader,
+            entry.customType === SESSION_CUSTOM_TYPE.LLM_REQUEST_HEADER,
         )
         .at(-1)
       let headerJson =
@@ -822,9 +877,9 @@ export class AgentRuntime {
           : ''
       const agent = new Agent({
         beforeToolCall: async (call, signal) =>
-          call.toolCall.name === BUILTIN_TOOL_NAME.loadSkillResource ||
-          call.toolCall.name === BUILTIN_TOOL_NAME.viewAttachment ||
-          call.toolCall.name === BUILTIN_TOOL_NAME.todoWrite
+          call.toolCall.name === BUILTIN_TOOL_NAME.LOAD_SKILL_RESOURCE ||
+          call.toolCall.name === BUILTIN_TOOL_NAME.VIEW_ATTACHMENT ||
+          call.toolCall.name === BUILTIN_TOOL_NAME.TODO_WRITE
             ? undefined
             : mcpTools?.owns(call.toolCall.name)
               ? mcpTools.beforeToolCall(call, signal)
@@ -859,7 +914,7 @@ export class AgentRuntime {
           const serialized = JSON.stringify(header)
           if (serialized !== headerJson) {
             await opened.session.appendCustomEntry(
-              SESSION_CUSTOM_TYPE.llmRequestHeader,
+              SESSION_CUSTOM_TYPE.LLM_REQUEST_HEADER,
               JSON.parse(serialized),
             )
             headerJson = serialized
@@ -867,7 +922,7 @@ export class AgentRuntime {
           requestState.startedAt = Date.now()
           requestState.firstTokenAt = undefined
           requestState.id = await opened.session.appendCustomEntry(
-            SESSION_CUSTOM_TYPE.llmRequestStarted,
+            SESSION_CUSTOM_TYPE.LLM_REQUEST_STARTED,
             {
               api: streamModel.api,
               modelId: streamModel.id,
@@ -889,13 +944,13 @@ export class AgentRuntime {
       })
       operation.agent = agent
       await opened.session.appendCustomEntry(
-        SESSION_CUSTOM_TYPE.pluginSelection,
+        SESSION_CUSTOM_TYPE.PLUGIN_SELECTION,
         {
           pluginIds: resolved?.plugins.map((plugin) => plugin.id) ?? [],
           schemaVersion: 1,
         },
       )
-      await opened.session.appendCustomEntry(SESSION_CUSTOM_TYPE.runStarted, {
+      await opened.session.appendCustomEntry(SESSION_CUSTOM_TYPE.RUN_STARTED, {
         runId,
         startedAt: Date.now(),
         reason: incoming ? 'prompt' : 'continue',
@@ -960,8 +1015,14 @@ export class AgentRuntime {
     let finalMessage: AssistantMessage | undefined
     let persistenceError: unknown
     let runStatus = 'failed'
-    let terminal: Extract<AgentRuntimeEvent, { type: 'done' | 'error' }> = {
-      type: 'error',
+    let terminal: Extract<
+      AgentRuntimeEvent,
+      {
+        type:
+          typeof AGENT_RUN_EVENT_TYPE.DONE | typeof AGENT_RUN_EVENT_TYPE.ERROR
+      }
+    > = {
+      type: AGENT_RUN_EVENT_TYPE.ERROR,
       code: 'AGENT_RUN_FAILED',
       message: '运行失败。',
     }
@@ -970,7 +1031,7 @@ export class AgentRuntime {
     const completeRequest = async (message: AssistantMessage) => {
       if (!options.requestState.id) return
       await options.session.appendCustomEntry(
-        SESSION_CUSTOM_TYPE.llmRequestCompleted,
+        SESSION_CUSTOM_TYPE.LLM_REQUEST_COMPLETED,
         {
           completedAt: Date.now(),
           requestEntryId: options.requestState.id,
@@ -1005,7 +1066,7 @@ export class AgentRuntime {
         if (event.type === 'turn_start') {
           options.requestState.turn += 1
           await options.session.appendCustomEntry(
-            SESSION_CUSTOM_TYPE.turnStarted,
+            SESSION_CUSTOM_TYPE.TURN_STARTED,
             {
               runId: options.runId,
               turn: options.requestState.turn,
@@ -1017,7 +1078,7 @@ export class AgentRuntime {
         }
         if (event.type === 'turn_end') {
           await options.session.appendCustomEntry(
-            SESSION_CUSTOM_TYPE.turnCompleted,
+            SESSION_CUSTOM_TYPE.TURN_COMPLETED,
             {
               runId: options.runId,
               turn: options.requestState.turn,
@@ -1030,7 +1091,8 @@ export class AgentRuntime {
         if (
           event.type === 'message_update' &&
           options.requestState.firstTokenAt === undefined &&
-          (event.assistantMessageEvent.type === 'text_delta' ||
+          (event.assistantMessageEvent.type ===
+            COMPLETION_EVENT_TYPE.TEXT_DELTA ||
             event.assistantMessageEvent.type === 'thinking_delta' ||
             event.assistantMessageEvent.type === 'toolcall_delta')
         ) {
@@ -1039,19 +1101,21 @@ export class AgentRuntime {
         if (event.type === 'message_update' && options.requestState.id) {
           const update = event.assistantMessageEvent
           if (
-            update.type === 'text_delta' ||
+            update.type === COMPLETION_EVENT_TYPE.TEXT_DELTA ||
             update.type === 'thinking_delta'
           ) {
             options.trajectory.delta(
               options.requestState.id,
               update.delta,
-              update.type === 'text_delta' ? 'text' : 'thinking',
+              update.type === COMPLETION_EVENT_TYPE.TEXT_DELTA
+                ? TRAJECTORY_STREAM_BLOCK.TEXT
+                : TRAJECTORY_STREAM_BLOCK.THINKING,
             )
           }
         }
         if (event.type === 'tool_execution_start') {
           await options.session.appendCustomEntry(
-            SESSION_CUSTOM_TYPE.toolExecutionStarted,
+            SESSION_CUSTOM_TYPE.TOOL_EXECUTION_STARTED,
             {
               schemaVersion: 1,
               startedAt: Date.now(),
@@ -1064,7 +1128,7 @@ export class AgentRuntime {
         }
         if (event.type === 'tool_execution_end') {
           await options.session.appendCustomEntry(
-            SESSION_CUSTOM_TYPE.toolExecutionCompleted,
+            SESSION_CUSTOM_TYPE.TOOL_EXECUTION_COMPLETED,
             {
               completedAt: Date.now(),
               isError: event.isError,
@@ -1083,9 +1147,9 @@ export class AgentRuntime {
         )
         const entryId = await options.session.appendMessage(durableMessage)
         if (
-          durableMessage.role === 'user' ||
+          durableMessage.role === MESSAGE_ROLE.USER ||
           (durableMessage.role === 'custom' &&
-            durableMessage.customType === SESSION_CUSTOM_TYPE.userInput)
+            durableMessage.customType === SESSION_CUSTOM_TYPE.USER_INPUT)
         ) {
           await changed()
         } else if (
@@ -1094,7 +1158,7 @@ export class AgentRuntime {
         ) {
           await changed()
         }
-        if (durableMessage.role === 'assistant') {
+        if (durableMessage.role === MESSAGE_ROLE.ASSISTANT) {
           finalEntryId = entryId
           finalMessage = durableMessage
           await completeRequest(durableMessage)
@@ -1109,7 +1173,7 @@ export class AgentRuntime {
     options.events.push({
       permission: options.events.permission,
       sessionId: options.sessionId,
-      type: 'start',
+      type: AGENT_RUN_EVENT_TYPE.START,
     })
     try {
       if (options.incoming)
@@ -1140,7 +1204,7 @@ export class AgentRuntime {
         terminal = {
           code: 'AGENT_RUN_ABORTED',
           message: '运行已终止。',
-          type: 'error',
+          type: AGENT_RUN_EVENT_TYPE.ERROR,
         }
         return
       }
@@ -1148,7 +1212,7 @@ export class AgentRuntime {
         terminal = {
           code: 'AGENT_RUN_FAILED',
           message: '模型调用失败。',
-          type: 'error',
+          type: AGENT_RUN_EVENT_TYPE.ERROR,
         }
         return
       }
@@ -1165,7 +1229,7 @@ export class AgentRuntime {
       try {
         contextUsage = calculateContextUsage(options.agent.state)
         await options.session.appendCustomEntry(
-          SESSION_CUSTOM_TYPE.contextUsageSnapshot,
+          SESSION_CUSTOM_TYPE.CONTEXT_USAGE_SNAPSHOT,
           persistedContextUsageSnapshot(contextUsage),
         )
       } catch {
@@ -1178,12 +1242,12 @@ export class AgentRuntime {
         input: usage.input,
         output: usage.output,
         total: usage.totalTokens,
-        type: 'usage',
+        type: AGENT_RUN_EVENT_TYPE.USAGE,
       })
       terminal = {
         entryId: finalEntryId,
         stopReason: finalMessage.stopReason,
-        type: 'done',
+        type: AGENT_RUN_EVENT_TYPE.DONE,
       }
     } catch (error) {
       terminal = runtimeEventError(
@@ -1199,7 +1263,7 @@ export class AgentRuntime {
       try {
         if (!persistenceError) {
           await options.session.appendCustomEntry(
-            SESSION_CUSTOM_TYPE.runCompleted,
+            SESSION_CUSTOM_TYPE.RUN_COMPLETED,
             {
               runId: options.runId,
               completedAt: Date.now(),
@@ -1213,7 +1277,7 @@ export class AgentRuntime {
         await changed(false)
       } catch {
         terminal = {
-          type: 'error',
+          type: AGENT_RUN_EVENT_TYPE.ERROR,
           code: 'SESSION_PERSISTENCE_FAILED',
           message: '会话持久化操作失败。',
         }
@@ -1222,7 +1286,7 @@ export class AgentRuntime {
           await options.cleanupTools?.()
         } catch {
           terminal = {
-            type: 'error',
+            type: AGENT_RUN_EVENT_TYPE.ERROR,
             code: 'AGENT_RUN_CLEANUP_FAILED',
             message: '运行资源清理失败。',
           }
@@ -1236,10 +1300,16 @@ export class AgentRuntime {
   private forwardDelta(event: AgentEvent, events: ActiveRunEventChannel) {
     if (event.type === 'message_update') {
       const update = event.assistantMessageEvent
-      if (update.type === 'text_delta') {
-        events.push({ delta: update.delta, type: 'text_delta' })
+      if (update.type === COMPLETION_EVENT_TYPE.TEXT_DELTA) {
+        events.push({
+          delta: update.delta,
+          type: AGENT_RUN_EVENT_TYPE.TEXT_DELTA,
+        })
       } else if (update.type === 'thinking_delta') {
-        events.push({ delta: update.delta, type: 'reasoning_delta' })
+        events.push({
+          delta: update.delta,
+          type: AGENT_RUN_EVENT_TYPE.REASONING_DELTA,
+        })
       }
     } else if (event.type === 'tool_execution_start') {
       events.push({
@@ -1247,11 +1317,11 @@ export class AgentRuntime {
         toolCallId: event.toolCallId,
         toolName: event.toolName,
         kind: getToolActivityKind(event.toolName),
-        type: 'tool_start',
+        type: AGENT_RUN_EVENT_TYPE.TOOL_START,
       })
     } else if (event.type === 'tool_execution_end') {
       const outcome =
-        event.toolName === BUILTIN_TOOL_NAME.bash
+        event.toolName === BUILTIN_TOOL_NAME.BASH
           ? safeBashOutcome(event.result?.details)
           : undefined
       events.push({
@@ -1264,7 +1334,7 @@ export class AgentRuntime {
         toolCallId: event.toolCallId,
         toolName: event.toolName,
         kind: getToolActivityKind(event.toolName),
-        type: 'tool_end',
+        type: AGENT_RUN_EVENT_TYPE.TOOL_END,
       })
     }
   }
@@ -1273,7 +1343,7 @@ export class AgentRuntime {
     session: Awaited<ReturnType<AgentSessionService['open']>>['session'],
     approval: PendingToolApproval,
   ) {
-    await session.appendCustomEntry(SESSION_CUSTOM_TYPE.approvalRequested, {
+    await session.appendCustomEntry(SESSION_CUSTOM_TYPE.APPROVAL_REQUESTED, {
       approvalId: approval.approvalId,
       effect: approval.effect,
       ...('scope' in approval ? { scope: approval.scope } : {}),
@@ -1287,7 +1357,7 @@ export class AgentRuntime {
     session: Awaited<ReturnType<AgentSessionService['open']>>['session'],
     resolution: ApprovalResolution,
   ) {
-    await session.appendCustomEntry(SESSION_CUSTOM_TYPE.approvalResolved, {
+    await session.appendCustomEntry(SESSION_CUSTOM_TYPE.APPROVAL_RESOLVED, {
       approvalId: resolution.approvalId,
       decision: resolution.decision,
       reason: resolution.reason,
@@ -1312,7 +1382,7 @@ export class AgentRuntime {
       entries.flatMap((entry) => {
         if (
           entry.type !== 'custom' ||
-          entry.customType !== SESSION_CUSTOM_TYPE.approvalResolved ||
+          entry.customType !== SESSION_CUSTOM_TYPE.APPROVAL_RESOLVED ||
           !entry.data ||
           typeof entry.data !== 'object' ||
           Array.isArray(entry.data)
@@ -1327,7 +1397,7 @@ export class AgentRuntime {
     for (const entry of entries) {
       if (
         entry.type !== 'custom' ||
-        entry.customType !== SESSION_CUSTOM_TYPE.approvalRequested ||
+        entry.customType !== SESSION_CUSTOM_TYPE.APPROVAL_REQUESTED ||
         !entry.data ||
         typeof entry.data !== 'object' ||
         Array.isArray(entry.data)
@@ -1344,7 +1414,10 @@ export class AgentRuntime {
     }
     const interrupted: { id: string; name: string }[] = []
     for (const entry of entries) {
-      if (entry.type !== 'message' || entry.message.role !== 'assistant') {
+      if (
+        entry.type !== 'message' ||
+        entry.message.role !== MESSAGE_ROLE.ASSISTANT
+      ) {
         continue
       }
       for (const content of entry.message.content) {
@@ -1361,7 +1434,7 @@ export class AgentRuntime {
     for (const toolCall of interrupted) {
       const approvalId = approvalByToolCall.get(toolCall.id)
       if (approvalId && !resolvedApprovals.has(approvalId)) {
-        await session.appendCustomEntry(SESSION_CUSTOM_TYPE.approvalResolved, {
+        await session.appendCustomEntry(SESSION_CUSTOM_TYPE.APPROVAL_RESOLVED, {
           approvalId,
           decision: 'reject',
           reason: 'server-restarted',
@@ -1387,6 +1460,12 @@ export class AgentRuntime {
   }
 
   private reserve(id: string, kind: ActiveOperation['kind']) {
+    if (this.deletingSkill)
+      throw new AgentRuntimeError(
+        'AGENT_SESSION_BUSY',
+        '正在删除技能，请稍后重试。',
+        409,
+      )
     if (this.active.has(id)) {
       throw new AgentRuntimeError('SESSION_BUSY', '会话正在执行其他操作。', 409)
     }
@@ -1416,7 +1495,10 @@ export class AgentRuntime {
     const operations = new Map<string, ActiveOperation>()
     try {
       for (const session of sessions) {
-        operations.set(session.id, this.reserve(session.id, 'mutation'))
+        operations.set(
+          session.id,
+          this.reserve(session.id, AGENT_OPERATION_KIND.MUTATION),
+        )
       }
       for (const session of sessions) await this.sessions.delete(session.id)
       return sessions.length

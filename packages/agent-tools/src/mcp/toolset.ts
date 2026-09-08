@@ -1,4 +1,8 @@
 import { POLICY_TOOL } from '@oh-my-harness/agent-policy/contracts'
+import {
+  MCP_RUNTIME_CONNECTION_STATUS,
+  MCP_TRANSPORT,
+} from '@oh-my-harness/shared'
 import { createHash } from 'node:crypto'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv-provider.js'
@@ -67,7 +71,10 @@ export async function createMcpTools(options: {
         signal.removeEventListener('abort', abort)
         release()
         await client.close().catch(() => undefined)
-        options.connections.setNetworkState(target.id, 'disconnected')
+        options.connections.setNetworkState(
+          target.id,
+          MCP_RUNTIME_CONNECTION_STATUS.DISCONNECTED,
+        )
       }
       cleanups.push(cleanup)
       const initialToolCount = tools.length
@@ -77,9 +84,12 @@ export async function createMcpTools(options: {
         const watcher = options.connections.watch(target, generation, abort)
         release = watcher.release
         signal.addEventListener('abort', abort, { once: true })
-        options.connections.setNetworkState(target.id, 'connecting')
+        options.connections.setNetworkState(
+          target.id,
+          MCP_RUNTIME_CONNECTION_STATUS.CONNECTING,
+        )
         const transport =
-          config.transport === 'stdio'
+          config.transport === MCP_TRANSPORT.STDIO
             ? new StdioClientTransport({
                 command: config.command!,
                 args: config.args,
@@ -241,14 +251,17 @@ export async function createMcpTools(options: {
             },
           })
         }
-        options.connections.setNetworkState(target.id, 'ready')
+        options.connections.setNetworkState(
+          target.id,
+          MCP_RUNTIME_CONNECTION_STATUS.READY,
+        )
       } catch {
         for (const tool of tools.splice(initialToolCount))
           targets.delete(tool.name)
         await cleanup()
         options.connections.setNetworkState(
           target.id,
-          'error',
+          MCP_RUNTIME_CONNECTION_STATUS.ERROR,
           '需要配置、登录或连接失败，请检查插件设置',
         )
         diagnostics.push(
@@ -282,7 +295,7 @@ export async function createMcpTools(options: {
       try {
         await options.policy.authorize(
           {
-            ...POLICY_TOOL.mcp,
+            ...POLICY_TOOL.MCP,
             connectionId: mapping.target.id,
             remoteToolName: mapping.rawName,
             input: call.args as Record<string, unknown>,

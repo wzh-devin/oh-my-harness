@@ -1,4 +1,5 @@
 import { APPROVAL_DECISION } from '@oh-my-harness/agent-policy/contracts'
+import { CHAT_TOOL_KIND } from '@oh-my-harness/shared'
 import { useEffect } from 'react'
 import { Button, Kbd } from '@heroui/react'
 import { FileTextIcon, HandIcon, PencilIcon, TerminalIcon } from 'lucide-react'
@@ -17,11 +18,11 @@ export function ApprovalPrompt({ tool, onResolve }: ApprovalPromptProps) {
     const handleShortcut = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault()
-        onResolve(APPROVAL_DECISION.reject)
+        onResolve(APPROVAL_DECISION.REJECT)
       }
       if (event.key === 'Enter') {
         event.preventDefault()
-        onResolve(APPROVAL_DECISION.approveOnce)
+        onResolve(APPROVAL_DECISION.APPROVE_ONCE)
       }
     }
 
@@ -31,11 +32,11 @@ export function ApprovalPrompt({ tool, onResolve }: ApprovalPromptProps) {
 
   const presentation = getToolApprovalPresentation(tool)
   const ApprovalIcon =
-    tool.kind === 'command'
+    tool.kind === CHAT_TOOL_KIND.COMMAND
       ? TerminalIcon
-      : tool.kind === 'read'
+      : tool.kind === CHAT_TOOL_KIND.READ
         ? FileTextIcon
-        : tool.kind === 'edit'
+        : tool.kind === CHAT_TOOL_KIND.EDIT
           ? PencilIcon
           : HandIcon
 
@@ -67,7 +68,7 @@ export function ApprovalPrompt({ tool, onResolve }: ApprovalPromptProps) {
           className="h-9 min-h-0 rounded-full px-3.5 text-sm"
           type="button"
           variant="outline"
-          onPress={() => onResolve(APPROVAL_DECISION.reject)}
+          onPress={() => onResolve(APPROVAL_DECISION.REJECT)}
         >
           拒绝
           <Kbd className="ml-0.5 h-5 min-w-7 px-1 text-[10px]">Esc</Kbd>
@@ -76,7 +77,7 @@ export function ApprovalPrompt({ tool, onResolve }: ApprovalPromptProps) {
         <Button
           className="h-9 min-h-0 rounded-full bg-foreground px-3.5 text-sm text-background hover:bg-foreground/90"
           type="button"
-          onPress={() => onResolve(APPROVAL_DECISION.approveOnce)}
+          onPress={() => onResolve(APPROVAL_DECISION.APPROVE_ONCE)}
         >
           允许一次
           <Kbd className="ml-0.5 h-5 min-w-6 bg-background/10 px-1 text-[10px] text-background">

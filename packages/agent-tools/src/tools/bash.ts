@@ -102,7 +102,7 @@ export const createBashTool = (cwd: string, fullAccess = false): AgentTool => ({
       ? 'Calls are authorized by the full-access run policy.'
       : 'Every call requires user approval.'),
   label: 'bash',
-  name: BUILTIN_TOOL_NAME.bash,
+  name: BUILTIN_TOOL_NAME.BASH,
   parameters,
   async execute(_toolCallId, input, signal) {
     signal?.throwIfAborted()

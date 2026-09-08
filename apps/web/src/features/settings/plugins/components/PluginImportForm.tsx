@@ -1,6 +1,11 @@
 import { useRef } from 'react'
 import { Plus } from '@gravity-ui/icons'
 import { Button, Form, Input, Label, TextField } from '@heroui/react'
+import {
+  PLUGIN_IMPORT_KIND,
+  PLUGIN_IMPORT_STATUS,
+  type PluginImportKind,
+} from '@oh-my-harness/shared'
 import { SelectMenu } from '../../../../components/ui/index.ts'
 import { SettingsEditorCard } from '../../shared/components/SettingsEditorCard.tsx'
 import { SettingsEditorActions } from '../../shared/components/SettingsEditorActions.tsx'
@@ -16,7 +21,7 @@ export function PluginImportForm({
   onInstalled(): void
   onClose(): void
   replaceId?: string
-  replaceKind?: 'plugin' | 'marketplace'
+  replaceKind?: PluginImportKind
 }) {
   const input = useRef<HTMLInputElement>(null)
   const {
@@ -35,7 +40,7 @@ export function PluginImportForm({
     submit,
     install,
   } = usePluginImport(onInstalled, replaceId, replaceKind)
-  const ready = imported?.status === 'ready' && !!preview
+  const ready = imported?.status === PLUGIN_IMPORT_STATUS.READY && !!preview
   const disabled =
     busy ||
     (imported ? !ready || preview?.blocked === true : !source.trim() && !file)
@@ -102,12 +107,12 @@ export function PluginImportForm({
             </span>
           </div>
         </div>
-        {imported?.status === 'fetching' ? (
+        {imported?.status === PLUGIN_IMPORT_STATUS.FETCHING ? (
           <p role="status" className="text-sm text-muted">
             正在获取并检查文件…
           </p>
         ) : null}
-        {imported?.status === 'ready' ? (
+        {imported?.status === PLUGIN_IMPORT_STATUS.READY ? (
           <div className="flex flex-col gap-2">
             <span className="text-sm font-medium text-foreground">
               导入入口
@@ -121,7 +126,7 @@ export function PluginImportForm({
                 { id: '', label: '请选择入口' },
                 ...imported.candidates.map((item) => ({
                   id: item.key,
-                  label: `${item.kind === 'marketplace' ? '市场' : '插件'} · ${item.format} · ${item.root === '.' ? '根目录' : item.root}`,
+                  label: `${item.kind === PLUGIN_IMPORT_KIND.MARKETPLACE ? '市场' : '插件'} · ${item.format} · ${item.root === '.' ? '根目录' : item.root}`,
                 })),
               ]}
               onChange={(value) => {

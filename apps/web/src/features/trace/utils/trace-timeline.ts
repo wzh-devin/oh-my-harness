@@ -1,4 +1,5 @@
 import type { AgentTraceRange, AgentTraceRecord } from '../types/agent-trace.ts'
+import { AGENT_TRAJECTORY_RECORD_KIND } from '@oh-my-harness/shared'
 
 export interface TraceTimelineSlot extends AgentTraceRange {
   record: AgentTraceRecord
@@ -21,7 +22,8 @@ export const getTraceTimelineSlots = (
   const recordMap = new Map(records.map((record) => [record.id, record]))
   const requestsByResult = new Map(
     records.flatMap((record) =>
-      record.kind === 'request' && record.resultRecordId
+      record.kind === AGENT_TRAJECTORY_RECORD_KIND.REQUEST &&
+      record.resultRecordId
         ? [[record.resultRecordId, record] as const]
         : [],
     ),
@@ -31,16 +33,19 @@ export const getTraceTimelineSlots = (
   const turnSet = new Set<string>()
   for (const record of records) {
     if (
-      record.kind === 'request' &&
+      record.kind === AGENT_TRAJECTORY_RECORD_KIND.REQUEST &&
       record.resultRecordId &&
       recordMap.has(record.resultRecordId)
     )
       continue
     const request = requestsByResult.get(record.id)
-    const isRunStart = record.kind !== 'system' && previousRun !== record.runId
+    const isRunStart =
+      record.kind !== AGENT_TRAJECTORY_RECORD_KIND.SYSTEM &&
+      previousRun !== record.runId
     const turnKey = `${record.runId}:${record.turn}`
     const isTurnStart = record.turn > 0 && !turnSet.has(turnKey)
-    if (record.kind !== 'system') previousRun = record.runId
+    if (record.kind !== AGENT_TRAJECTORY_RECORD_KIND.SYSTEM)
+      previousRun = record.runId
     if (record.turn > 0) turnSet.add(turnKey)
     slots.push({
       record,

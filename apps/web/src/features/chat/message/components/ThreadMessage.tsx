@@ -1,4 +1,5 @@
 import { ChatLoader } from '@agile-avocation/ui-pro/chat-loader'
+import { CHAT_ASSISTANT_STATUS, MESSAGE_ROLE } from '@oh-my-harness/shared'
 import { ChatMessage as ChatMessagePrimitive } from '@agile-avocation/ui-pro/chat-message'
 import { ChatSources } from '@agile-avocation/ui-pro/chat-source'
 import { TextShimmer } from '@agile-avocation/ui-pro/text-shimmer'
@@ -19,7 +20,7 @@ interface ThreadMessageProps {
 
 /** 根据消息契约组合用户消息或助手消息。 */
 export function ThreadMessage({ compact, message }: ThreadMessageProps) {
-  if (message.role === 'user') {
+  if (message.role === MESSAGE_ROLE.USER) {
     return (
       <ChatMessagePrimitive.User>
         {message.contextItems?.length ? (
@@ -72,7 +73,7 @@ export function ThreadMessage({ compact, message }: ThreadMessageProps) {
         {message.reasoning ? (
           <ReasoningPanel
             reasoning={message.reasoning}
-            streaming={message.status === 'streaming'}
+            streaming={message.status === CHAT_ASSISTANT_STATUS.STREAMING}
           />
         ) : null}
 
@@ -80,18 +81,19 @@ export function ThreadMessage({ compact, message }: ThreadMessageProps) {
           <MessageTool key={`${tool.toolName}-${index}`} tool={tool} />
         ))}
 
-        {message.status === 'streaming' ? (
+        {message.status === CHAT_ASSISTANT_STATUS.STREAMING ? (
           <>
             {message.text ? <TextShimmer>{message.text}</TextShimmer> : null}
             <ChatLoader.Dots />
           </>
         ) : null}
 
-        {message.status === 'skeleton' ? (
+        {message.status === CHAT_ASSISTANT_STATUS.SKELETON ? (
           <ChatLoader.Skeleton label={message.loaderLabel ?? '正在加载回答'} />
         ) : null}
 
-        {message.status !== 'streaming' && message.status !== 'skeleton' ? (
+        {message.status !== CHAT_ASSISTANT_STATUS.STREAMING &&
+        message.status !== CHAT_ASSISTANT_STATUS.SKELETON ? (
           <>
             {message.markdown || message.text ? (
               <ChatMessagePrimitive.Content>

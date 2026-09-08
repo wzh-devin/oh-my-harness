@@ -6,6 +6,10 @@ import type {
   AgentTrajectory,
   AgentTrajectoryRecord,
 } from '@oh-my-harness/agent-runtime'
+import {
+  AGENT_TRAJECTORY_RECORD_KIND,
+  AGENT_TRAJECTORY_STATUS,
+} from '@oh-my-harness/shared'
 import type { Context } from 'hono'
 
 import type {
@@ -163,7 +167,8 @@ function messagePageDto(
 
 function trajectoryRecordDto(record: AgentTrajectoryRecord) {
   const { preview, raw: _raw, source, detail, ...summary } = record
-  return record.status === 'running' && record.kind === 'assistant'
+  return record.status === AGENT_TRAJECTORY_STATUS.RUNNING &&
+    record.kind === AGENT_TRAJECTORY_RECORD_KIND.ASSISTANT
     ? { ...summary, preview, source, detail }
     : summary
 }

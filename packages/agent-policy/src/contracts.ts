@@ -1,49 +1,44 @@
-export const TOOL_PERMISSION = {
-  readOnly: 'read-only',
-  workspaceWrite: 'workspace-write',
-  fullAccess: 'full-access',
-} as const
+import {
+  APPROVAL_DECISION,
+  BUILTIN_TOOL_NAME,
+  FILE_SCOPE,
+  POLICY_DECISION,
+  TOOL_EFFECT,
+  TOOL_PERMISSION,
+  type ApprovalDecision,
+  type ApprovalResolutionReason,
+  type FileScope,
+  type FileToolEffect,
+  type PolicyDecision,
+  type ToolEffect,
+  type ToolPermission,
+} from '@oh-my-harness/shared'
+
+export {
+  APPROVAL_DECISION,
+  FILE_SCOPE,
+  POLICY_DECISION,
+  TOOL_EFFECT,
+  TOOL_PERMISSION,
+}
+export type {
+  ApprovalDecision,
+  FileScope,
+  FileToolEffect,
+  PolicyDecision,
+  ToolEffect,
+  ToolPermission,
+}
+
 export const TOOL_PERMISSIONS: readonly ToolPermission[] =
   Object.values(TOOL_PERMISSION)
-export type ToolPermission =
-  (typeof TOOL_PERMISSION)[keyof typeof TOOL_PERMISSION]
-
-export const TOOL_EFFECT = {
-  read: 'read',
-  write: 'write',
-  execute: 'execute',
-  mcp: 'mcp',
-} as const
-export type ToolEffect = (typeof TOOL_EFFECT)[keyof typeof TOOL_EFFECT]
-export type FileToolEffect = typeof TOOL_EFFECT.read | typeof TOOL_EFFECT.write
-
-export const FILE_SCOPE = {
-  workspace: 'workspace',
-  external: 'external',
-} as const
-export type FileScope = (typeof FILE_SCOPE)[keyof typeof FILE_SCOPE]
-
-export const POLICY_DECISION = {
-  allow: 'allow',
-  deny: 'deny',
-  requireApproval: 'require-approval',
-} as const
-export type PolicyDecision =
-  (typeof POLICY_DECISION)[keyof typeof POLICY_DECISION]
-
-export const APPROVAL_DECISION = {
-  approveOnce: 'approve-once',
-  reject: 'reject',
-} as const
-export type ApprovalDecision =
-  (typeof APPROVAL_DECISION)[keyof typeof APPROVAL_DECISION]
 
 export const POLICY_TOOL = {
-  read: { toolName: 'read', effect: TOOL_EFFECT.read },
-  write: { toolName: 'write', effect: TOOL_EFFECT.write },
-  edit: { toolName: 'edit', effect: TOOL_EFFECT.write },
-  bash: { toolName: 'bash', effect: TOOL_EFFECT.execute },
-  mcp: { toolName: 'mcp', effect: TOOL_EFFECT.mcp },
+  READ: { toolName: BUILTIN_TOOL_NAME.READ, effect: TOOL_EFFECT.READ },
+  WRITE: { toolName: BUILTIN_TOOL_NAME.WRITE, effect: TOOL_EFFECT.WRITE },
+  EDIT: { toolName: BUILTIN_TOOL_NAME.EDIT, effect: TOOL_EFFECT.WRITE },
+  BASH: { toolName: BUILTIN_TOOL_NAME.BASH, effect: TOOL_EFFECT.EXECUTE },
+  MCP: { toolName: 'mcp', effect: TOOL_EFFECT.MCP },
 } as const
 export type PolicyToolDefinition =
   (typeof POLICY_TOOL)[keyof typeof POLICY_TOOL]
@@ -71,7 +66,7 @@ export const getPolicyTool = (
 /** 授权与执行共用文件工具描述，拒绝未知工具及非文件能力。 */
 export const getFileTool = (name: unknown): FileToolDefinition | undefined => {
   const tool = getPolicyTool(name)
-  return tool?.effect === TOOL_EFFECT.read || tool?.effect === TOOL_EFFECT.write
+  return tool?.effect === TOOL_EFFECT.READ || tool?.effect === TOOL_EFFECT.WRITE
     ? tool
     : undefined
 }
@@ -89,11 +84,11 @@ export type FileToolAuthorizationRequest = ToolAuthorizationBase &
     scope: FileScope
   }
 export type BashToolAuthorizationRequest = ToolAuthorizationBase &
-  typeof POLICY_TOOL.bash & {
+  typeof POLICY_TOOL.BASH & {
     command: string
   }
 export type McpToolAuthorizationRequest = ToolAuthorizationBase &
-  typeof POLICY_TOOL.mcp & {
+  typeof POLICY_TOOL.MCP & {
     connectionId: string
     remoteToolName: string
     input: Record<string, unknown>
@@ -107,5 +102,5 @@ export type PendingToolApproval = ToolAuthorizationRequest & {
 }
 export type ApprovalResolution = PendingToolApproval & {
   decision: ApprovalDecision
-  reason: 'aborted' | 'server-closed' | 'user'
+  reason: ApprovalResolutionReason
 }

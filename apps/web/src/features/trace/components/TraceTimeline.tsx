@@ -1,8 +1,8 @@
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { memo, useRef } from 'react'
+import { AGENT_TRAJECTORY_LANE } from '@oh-my-harness/shared'
 import { AGENT_TRACE_LANE_LABELS } from '../constants/agent-trace'
 import {
-  AgentTraceLane,
   type AgentTraceRange,
   type AgentTraceRecord,
 } from '../types/agent-trace'
@@ -15,9 +15,9 @@ import {
 import { TraceTimelineRecord } from './TraceTimelineRecord'
 
 const TIMELINE_LANES = [
-  AgentTraceLane.INPUT,
-  AgentTraceLane.MODEL,
-  AgentTraceLane.TOOLS,
+  AGENT_TRAJECTORY_LANE.INPUT,
+  AGENT_TRAJECTORY_LANE.MODEL,
+  AGENT_TRAJECTORY_LANE.TOOLS,
 ] as const
 
 interface TraceTimelineProps {

@@ -1,4 +1,8 @@
 import { Magnifier, Xmark } from '@gravity-ui/icons'
+import {
+  AGENT_TRAJECTORY_RECORD_KIND,
+  AGENT_TRAJECTORY_STATUS,
+} from '@oh-my-harness/shared'
 import { Popover } from '@heroui/react'
 import {
   AGENT_TRACE_KIND_LABELS,
@@ -59,21 +63,21 @@ function TraceFilterMenu<T extends string>({
 
 const KIND_OPTIONS = (
   [
-    'system',
-    'user',
-    'context',
-    'assistant',
-    'request',
-    'tool',
+    AGENT_TRAJECTORY_RECORD_KIND.SYSTEM,
+    AGENT_TRAJECTORY_RECORD_KIND.USER,
+    AGENT_TRAJECTORY_RECORD_KIND.CONTEXT,
+    AGENT_TRAJECTORY_RECORD_KIND.ASSISTANT,
+    AGENT_TRAJECTORY_RECORD_KIND.REQUEST,
+    AGENT_TRAJECTORY_RECORD_KIND.TOOL,
   ] as AgentTraceRecordKind[]
 ).map((id) => ({ id, label: AGENT_TRACE_KIND_LABELS[id] }))
 const STATUS_OPTIONS = (
   [
-    'running',
-    'completed',
-    'failed',
-    'aborted',
-    'interrupted',
+    AGENT_TRAJECTORY_STATUS.RUNNING,
+    AGENT_TRAJECTORY_STATUS.COMPLETED,
+    AGENT_TRAJECTORY_STATUS.FAILED,
+    AGENT_TRAJECTORY_STATUS.ABORTED,
+    AGENT_TRAJECTORY_STATUS.INTERRUPTED,
   ] as AgentTraceStatus[]
 ).map((id) => ({ id, label: AGENT_TRACE_STATUS_LABELS[id] }))
 

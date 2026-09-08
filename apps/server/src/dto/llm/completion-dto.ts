@@ -1,6 +1,8 @@
+import { COMPLETION_EVENT_TYPE, type MessageRole } from '@oh-my-harness/shared'
+
 export interface CompletionMessageDto {
   content: string
-  role: 'assistant' | 'user'
+  role: MessageRole
 }
 
 export interface CompletionStreamRequestDto {
@@ -11,9 +13,18 @@ export interface CompletionStreamRequestDto {
 }
 
 export type CompletionEventDto =
-  | { type: 'start' }
-  | { delta: string; type: 'text_delta' }
-  | { delta: string; type: 'reasoning_delta' }
-  | { input: number; output: number; total: number; type: 'usage' }
-  | { stopReason: string; type: 'done' }
-  | { code: string; message: string; type: 'error' }
+  | { type: typeof COMPLETION_EVENT_TYPE.START }
+  | { delta: string; type: typeof COMPLETION_EVENT_TYPE.TEXT_DELTA }
+  | { delta: string; type: typeof COMPLETION_EVENT_TYPE.REASONING_DELTA }
+  | {
+      input: number
+      output: number
+      total: number
+      type: typeof COMPLETION_EVENT_TYPE.USAGE
+    }
+  | { stopReason: string; type: typeof COMPLETION_EVENT_TYPE.DONE }
+  | {
+      code: string
+      message: string
+      type: typeof COMPLETION_EVENT_TYPE.ERROR
+    }

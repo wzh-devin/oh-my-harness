@@ -1,5 +1,11 @@
 import type { AgentRuntimeEvent } from '../execution/runtime-event.ts'
 import {
+  AGENT_RUN_EVENT_TYPE,
+  AGENT_TRAJECTORY_RECORD_KIND,
+  TRAJECTORY_STREAM_BLOCK,
+  type TrajectoryStreamBlock,
+} from '@oh-my-harness/shared'
+import {
   redactTrajectoryValue,
   type AgentTrajectory,
   type AgentTrajectoryRecord,
@@ -26,16 +32,17 @@ export class TrajectoryStream {
     this.snapshot = next
     const { records: _records, ...trajectory } = next
     this.send({
-      type: 'trajectory_updated',
+      type: AGENT_RUN_EVENT_TYPE.TRAJECTORY_UPDATED,
       trajectory,
       records: structuredClone(records),
     })
   }
 
-  delta(requestId: string, delta: string, block: 'text' | 'thinking') {
+  delta(requestId: string, delta: string, block: TrajectoryStreamBlock) {
     const snapshot = this.snapshot
     const request = snapshot?.records.find((record) => record.id === requestId)
-    if (!snapshot || request?.kind !== 'request') return
+    if (!snapshot || request?.kind !== AGENT_TRAJECTORY_RECORD_KIND.REQUEST)
+      return
     const id = `${requestId}:assistant`
     let record = snapshot.records.find((item) => item.id === id)
     if (!record) {
@@ -43,7 +50,7 @@ export class TrajectoryStream {
         ...request,
         id,
         position: snapshot.records.length,
-        kind: 'assistant',
+        kind: AGENT_TRAJECTORY_RECORD_KIND.ASSISTANT,
         label: 'Assistant 响应',
         sourceRecordId: requestId,
         source: request.source,
@@ -62,7 +69,7 @@ export class TrajectoryStream {
       }
       snapshot.cursor = trajectory.cursor
       this.send({
-        type: 'trajectory_updated',
+        type: AGENT_RUN_EVENT_TYPE.TRAJECTORY_UPDATED,
         trajectory,
         records: structuredClone([request, record]),
       })
@@ -72,7 +79,7 @@ export class TrajectoryStream {
       ...record.detail,
       [block]: String(record.detail?.[block] ?? '') + safeDelta,
     }
-    if (block === 'text') {
+    if (block === TRAJECTORY_STREAM_BLOCK.TEXT) {
       record.preview += safeDelta
       record.summary = record.preview.replace(/\s+/gu, ' ').slice(0, 320)
     }
@@ -81,7 +88,7 @@ export class TrajectoryStream {
       revision: snapshot.cursor.revision + 1,
     }
     this.send({
-      type: 'trajectory_delta',
+      type: AGENT_RUN_EVENT_TYPE.TRAJECTORY_DELTA,
       cursor: snapshot.cursor,
       id,
       block,
@@ -92,14 +99,14 @@ export class TrajectoryStream {
 
 export type TrajectoryUpdate =
   | {
-      type: 'trajectory_updated'
+      type: typeof AGENT_RUN_EVENT_TYPE.TRAJECTORY_UPDATED
       trajectory: Omit<AgentTrajectory, 'records'>
       records: AgentTrajectoryRecord[]
     }
   | {
-      type: 'trajectory_delta'
+      type: typeof AGENT_RUN_EVENT_TYPE.TRAJECTORY_DELTA
       cursor: AgentTrajectory['cursor']
       id: string
-      block: 'text' | 'thinking'
+      block: TrajectoryStreamBlock
       delta: string
     }

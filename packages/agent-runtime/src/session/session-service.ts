@@ -22,6 +22,15 @@ import type {
   ToolResultMessage,
   UserMessage,
 } from '@earendil-works/pi-ai'
+import {
+  MESSAGE_PART_TYPE,
+  ATTACHMENT_KIND,
+  MESSAGE_ROLE,
+  SESSION_TOOL_STATE,
+  TODO_STATUS,
+  type MessageRole,
+  type SessionToolState,
+} from '@oh-my-harness/shared'
 
 import { AgentRuntimeError } from '../error/agent-runtime-error.ts'
 import { toolFilePath } from '../execution/tool-file-path.ts'
@@ -99,7 +108,7 @@ export interface AgentSessionMessage {
   entryId: string
   parts?: AgentSessionMessagePart[]
   reasoning?: string
-  role: 'assistant' | 'user'
+  role: MessageRole
   seq: number
   stopReason?: string
   timestamp: number
@@ -112,15 +121,15 @@ export interface AgentSessionTool {
   kind: ToolActivityKind
   outcome?: import('@oh-my-harness/agent-tools').BashOutcome
   output?: string
-  state: 'input-available' | 'output-available' | 'output-error'
+  state: SessionToolState
   toolCallId: string
   toolName: string
 }
 
 export type AgentSessionMessagePart =
-  | { reasoning: string; type: 'reasoning' }
-  | { text: string; type: 'text' }
-  | { tool: AgentSessionTool; type: 'tool' }
+  | { reasoning: string; type: typeof MESSAGE_PART_TYPE.REASONING }
+  | { text: string; type: typeof MESSAGE_PART_TYPE.TEXT }
+  | { tool: AgentSessionTool; type: typeof MESSAGE_PART_TYPE.TOOL }
 
 export interface AgentSessionMessagePage {
   items: AgentSessionMessage[]
@@ -196,7 +205,7 @@ function archiveState(entry: Entry | undefined) {
   if (entry === undefined) return false
   if (
     entry.type !== 'custom' ||
-    entry.customType !== SESSION_CUSTOM_TYPE.sessionArchiveChanged ||
+    entry.customType !== SESSION_CUSTOM_TYPE.SESSION_ARCHIVE_CHANGED ||
     !entry.data ||
     typeof entry.data !== 'object' ||
     Array.isArray(entry.data) ||
@@ -208,7 +217,7 @@ function archiveState(entry: Entry | undefined) {
 }
 
 function messageText(message: AssistantMessage | UserMessage) {
-  if (message.role === 'user') {
+  if (message.role === MESSAGE_ROLE.USER) {
     return typeof message.content === 'string'
       ? message.content
       : message.content
@@ -264,7 +273,7 @@ function toSessionTool(
   const result = toolResults.get(toolCall.id)
   const output = result ? toolResultText(result) : undefined
   const outcome =
-    toolCall.name === BUILTIN_TOOL_NAME.bash
+    toolCall.name === BUILTIN_TOOL_NAME.BASH
       ? safeBashOutcome(result?.details)
       : undefined
   return {
@@ -277,9 +286,9 @@ function toSessionTool(
     ...(outcome ? { outcome } : {}),
     state: result
       ? result.isError
-        ? 'output-error'
-        : 'output-available'
-      : 'input-available',
+        ? SESSION_TOOL_STATE.OUTPUT_ERROR
+        : SESSION_TOOL_STATE.OUTPUT_AVAILABLE
+      : SESSION_TOOL_STATE.INPUT_AVAILABLE,
     toolCallId: toolCall.id,
     toolName: toolCall.name,
   }
@@ -298,13 +307,13 @@ const projectTodoState = (entries: readonly Entry[]) => {
     const entry = entries[index]!
     if (entry.type === 'message') {
       if (
-        entry.message.role === 'user' ||
+        entry.message.role === MESSAGE_ROLE.USER ||
         (entry.message.role === 'custom' &&
-          entry.message.customType === SESSION_CUSTOM_TYPE.userInput)
+          entry.message.customType === SESSION_CUSTOM_TYPE.USER_INPUT)
       ) {
         hasNewerUser = true
       } else if (
-        entry.message.role === 'assistant' &&
+        entry.message.role === MESSAGE_ROLE.ASSISTANT &&
         entry.message.stopReason !== 'toolUse'
       ) {
         hasNewerTerminalAssistant = true
@@ -313,7 +322,7 @@ const projectTodoState = (entries: readonly Entry[]) => {
     }
     if (
       entry.type !== 'custom' ||
-      entry.customType !== SESSION_CUSTOM_TYPE.todoUpdated ||
+      entry.customType !== SESSION_CUSTOM_TYPE.TODO_UPDATED ||
       !entry.data ||
       typeof entry.data !== 'object' ||
       Array.isArray(entry.data) ||
@@ -337,7 +346,9 @@ const projectTodoState = (entries: readonly Entry[]) => {
 export function projectCurrentTodos(entries: readonly Entry[]) {
   const state = projectTodoState(entries)
   if (!state?.todos.length || state.hasNewerUser) return undefined
-  const incomplete = state.todos.some((todo) => todo.status !== 'completed')
+  const incomplete = state.todos.some(
+    (todo) => todo.status !== TODO_STATUS.COMPLETED,
+  )
   if (incomplete && state.hasNewerTerminalAssistant) {
     return undefined
   }
@@ -350,7 +361,7 @@ export function projectRecoverableTodos(entries: readonly Entry[]) {
   if (
     !state?.todos.length ||
     state.hasNewerUser ||
-    state.todos.every((todo) => todo.status === 'completed')
+    state.todos.every((todo) => todo.status === TODO_STATUS.COMPLETED)
   ) {
     return undefined
   }
@@ -364,7 +375,7 @@ function toMessage(
   const { message } = entry
   if (
     message.role === 'custom' &&
-    message.customType === SESSION_CUSTOM_TYPE.userInput
+    message.customType === SESSION_CUSTOM_TYPE.USER_INPUT
   ) {
     const details = structuredMessageDetails(message.details)
     if (!details) return undefined
@@ -375,41 +386,54 @@ function toMessage(
       content: details.content,
       contextItems: details.contextItems,
       entryId: entry.id,
-      role: 'user' as const,
+      role: MESSAGE_ROLE.USER,
       seq: entry.seq,
       timestamp: message.timestamp,
     } satisfies AgentSessionMessage
   }
-  if (message.role !== 'user' && message.role !== 'assistant') return undefined
+  if (
+    message.role !== MESSAGE_ROLE.USER &&
+    message.role !== MESSAGE_ROLE.ASSISTANT
+  )
+    return undefined
   const parts: AgentSessionMessagePart[] =
-    message.role === 'assistant'
+    message.role === MESSAGE_ROLE.ASSISTANT
       ? message.content.flatMap<AgentSessionMessagePart>((content) => {
           if (content.type === 'text') {
-            return content.text ? [{ text: content.text, type: 'text' }] : []
+            return content.text
+              ? [{ text: content.text, type: MESSAGE_PART_TYPE.TEXT }]
+              : []
           }
           if (content.type === 'thinking') {
             return content.thinking
-              ? [{ reasoning: content.thinking, type: 'reasoning' }]
+              ? [
+                  {
+                    reasoning: content.thinking,
+                    type: MESSAGE_PART_TYPE.REASONING,
+                  },
+                ]
               : []
           }
           return [
             {
               tool: toSessionTool(content, toolResults),
-              type: 'tool',
+              type: MESSAGE_PART_TYPE.TOOL,
             },
           ]
         })
       : []
   const reasoning =
-    message.role === 'assistant'
+    message.role === MESSAGE_ROLE.ASSISTANT
       ? message.content
           .filter((content) => content.type === 'thinking')
           .map((content) => content.thinking)
           .join('')
       : ''
   const tools =
-    message.role === 'assistant'
-      ? parts.flatMap((part) => (part.type === 'tool' ? [part.tool] : []))
+    message.role === MESSAGE_ROLE.ASSISTANT
+      ? parts.flatMap((part) =>
+          part.type === MESSAGE_PART_TYPE.TOOL ? [part.tool] : [],
+        )
       : []
   return {
     content: messageText(message),
@@ -418,7 +442,9 @@ function toMessage(
     ...(reasoning ? { reasoning } : {}),
     role: message.role,
     seq: entry.seq,
-    ...(message.role === 'assistant' ? { stopReason: message.stopReason } : {}),
+    ...(message.role === MESSAGE_ROLE.ASSISTANT
+      ? { stopReason: message.stopReason }
+      : {}),
     timestamp: message.timestamp,
     ...(tools.length ? { tools } : {}),
   } satisfies AgentSessionMessage
@@ -528,7 +554,7 @@ export class AgentSessionService {
           type: 'model_change',
         }),
         session.findEntryOnBranch({
-          customType: SESSION_CUSTOM_TYPE.sessionArchiveChanged,
+          customType: SESSION_CUSTOM_TYPE.SESSION_ARCHIVE_CHANGED,
           order: 'newestFirst',
           type: 'custom',
         }),
@@ -573,12 +599,12 @@ export class AgentSessionService {
           opened.session.getName(),
           opened.session.getStats(),
           opened.session.findEntryOnBranch({
-            customType: SESSION_CUSTOM_TYPE.contextUsageSnapshot,
+            customType: SESSION_CUSTOM_TYPE.CONTEXT_USAGE_SNAPSHOT,
             order: 'newestFirst',
             type: 'custom',
           }),
           opened.session.findEntryOnBranch({
-            customType: SESSION_CUSTOM_TYPE.pluginSelection,
+            customType: SESSION_CUSTOM_TYPE.PLUGIN_SELECTION,
             order: 'newestFirst',
             type: 'custom',
           }),
@@ -663,7 +689,7 @@ export class AgentSessionService {
     const opened = await this.openSession(id)
     try {
       await opened.session.appendCustomEntry(
-        SESSION_CUSTOM_TYPE.sessionArchiveChanged,
+        SESSION_CUSTOM_TYPE.SESSION_ARCHIVE_CHANGED,
         { archived },
       )
       const info = toInfo(
@@ -774,7 +800,7 @@ export class AgentSessionService {
       if (
         entry?.type !== 'message' ||
         entry.message.role !== 'custom' ||
-        entry.message.customType !== SESSION_CUSTOM_TYPE.userInput ||
+        entry.message.customType !== SESSION_CUSTOM_TYPE.USER_INPUT ||
         !Array.isArray(entry.message.content)
       ) {
         throw new AgentRuntimeError('ATTACHMENT_NOT_FOUND', '附件不存在。', 404)
@@ -783,7 +809,7 @@ export class AgentSessionService {
       const attachment = details?.attachments.find(
         (candidate) => candidate.contentIndex === contentIndex,
       )
-      if (attachment?.kind !== 'image') {
+      if (attachment?.kind !== ATTACHMENT_KIND.IMAGE) {
         throw new AgentRuntimeError('ATTACHMENT_NOT_FOUND', '附件不存在。', 404)
       }
       return {
@@ -832,7 +858,7 @@ export class AgentSessionService {
           type: 'model_change',
         }),
         session.findEntryOnBranch({
-          customType: SESSION_CUSTOM_TYPE.sessionArchiveChanged,
+          customType: SESSION_CUSTOM_TYPE.SESSION_ARCHIVE_CHANGED,
           order: 'newestFirst',
           type: 'custom',
         }),

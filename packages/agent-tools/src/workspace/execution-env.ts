@@ -102,8 +102,8 @@ export class WorkspaceExecutionEnv extends NodeExecutionEnv {
         return {
           path: target,
           scope: isWithin(this.workspaceRoot, target)
-            ? FILE_SCOPE.workspace
-            : FILE_SCOPE.external,
+            ? FILE_SCOPE.WORKSPACE
+            : FILE_SCOPE.EXTERNAL,
         }
       }
       if (canonical.error.code !== 'not_found') throw canonical.error
@@ -129,7 +129,7 @@ export class WorkspaceExecutionEnv extends NodeExecutionEnv {
     const addressed = await this.resolveUserPath(path)
     if (!addressed.ok) throw addressed.error
     const guarded =
-      effect === TOOL_EFFECT.read
+      effect === TOOL_EFFECT.READ
         ? await this.guardExisting(addressed.value, true)
         : await this.guardWrite(addressed.value)
     if (!guarded.ok) throw guarded.error
@@ -364,7 +364,7 @@ export class WorkspaceExecutionEnv extends NodeExecutionEnv {
   }
 
   private async guardWrite(path: string): Promise<Result<string, FileError>> {
-    if (this.target?.effect === TOOL_EFFECT.read) return denied()
+    if (this.target?.effect === TOOL_EFFECT.READ) return denied()
     const syntactic = this.guardSyntactic(this.addressedPath(path))
     if (!syntactic.ok) return syntactic
     try {

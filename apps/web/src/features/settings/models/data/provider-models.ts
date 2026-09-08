@@ -5,8 +5,14 @@ import type {
   ProviderConfigStatusVo,
   ProviderInfoVo,
 } from '../types/provider-vo.ts'
+import {
+  API_PROTOCOL,
+  MODEL_THINKING_LEVEL,
+  type ApiProtocol,
+} from '@oh-my-harness/shared'
 
 export type { ModelThinkingLevel } from '../types/provider-vo.ts'
+export type { ApiProtocol } from '@oh-my-harness/shared'
 
 export interface ProviderModelConfig {
   id: string
@@ -20,12 +26,10 @@ export interface OAuthLoginOption {
 }
 
 export const API_PROTOCOL_OPTIONS = [
-  { id: 'openai-completions', label: 'openai-completions' },
-  { id: 'openai-responses', label: 'openai-responses' },
-  { id: 'anthropic-messages', label: 'anthropic-messages' },
+  { id: API_PROTOCOL.OPENAI_COMPLETIONS, label: 'openai-completions' },
+  { id: API_PROTOCOL.OPENAI_RESPONSES, label: 'openai-responses' },
+  { id: API_PROTOCOL.ANTHROPIC_MESSAGES, label: 'anthropic-messages' },
 ] as const
-
-export type ApiProtocol = (typeof API_PROTOCOL_OPTIONS)[number]['id']
 
 export interface ProviderConfiguration {
   apiProtocol?: ApiProtocol
@@ -106,7 +110,9 @@ export const getSelectableModelGroups = (
           id,
           key,
           name: model.name.trim() || id,
-          thinkingLevels: [...(model.thinkingLevels ?? ['off'])],
+          thinkingLevels: [
+            ...(model.thinkingLevels ?? [MODEL_THINKING_LEVEL.OFF]),
+          ],
         },
       ]
     })
@@ -121,7 +127,7 @@ export const getSelectableModelGroups = (
 export const resolveModelThinkingLevel = (
   levels: readonly ModelThinkingLevel[],
   current: ModelThinkingLevel,
-) => (levels.includes(current) ? current : 'off')
+) => (levels.includes(current) ? current : MODEL_THINKING_LEVEL.OFF)
 
 /** 保留有效选择，否则按初始模型 ID 或首个可用模型回退。 */
 export const resolveModelSelectionKey = (

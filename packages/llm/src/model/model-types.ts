@@ -1,6 +1,8 @@
+import type { MessageRole } from '@oh-my-harness/shared'
+
 export interface CompletionMessage {
   content: string
-  role: 'assistant' | 'user'
+  role: MessageRole
 }
 
 export interface CompletionRequest {

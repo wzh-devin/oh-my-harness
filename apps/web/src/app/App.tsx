@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { CHAT_ROUTE_KIND } from '@oh-my-harness/shared'
 import {
   type ChatActivePage,
   type ChatSubmitPayload,
@@ -70,14 +71,14 @@ export function App() {
     workspaces,
   } = useWorkspaces()
   const selectedThread =
-    route.kind === 'thread'
+    route.kind === CHAT_ROUTE_KIND.THREAD
       ? threads.find((thread) => thread.id === route.threadId)
       : undefined
 
   const activePage = useMemo<ChatActivePage>(() => {
-    if (route.kind === 'thread') {
+    if (route.kind === CHAT_ROUTE_KIND.THREAD) {
       return {
-        kind: 'thread',
+        kind: CHAT_ROUTE_KIND.THREAD,
         thread: selectedThread ?? createPendingChatThread(route.threadId),
       }
     }
@@ -116,7 +117,7 @@ export function App() {
       if (!path.startsWith('/') || path.startsWith('//')) return
 
       const nextRoute = resolveChatRoute(path)
-      if (nextRoute.kind === 'thread') {
+      if (nextRoute.kind === CHAT_ROUTE_KIND.THREAD) {
         const nextWorkspace = findWorkspaceByThreadId(
           visibleWorkspaces,
           nextRoute.threadId,
@@ -143,7 +144,7 @@ export function App() {
       setPathname(window.location.pathname)
 
       const nextRoute = resolveChatRoute(window.location.pathname)
-      if (nextRoute.kind === 'thread') {
+      if (nextRoute.kind === CHAT_ROUTE_KIND.THREAD) {
         const nextWorkspace = findWorkspaceByThreadId(
           visibleWorkspaces,
           nextRoute.threadId,
@@ -157,7 +158,7 @@ export function App() {
   }, [visibleWorkspaces])
 
   useEffect(() => {
-    if (route.kind === 'thread') void loadThread(route.threadId)
+    if (route.kind === CHAT_ROUTE_KIND.THREAD) void loadThread(route.threadId)
   }, [loadThread, route])
 
   const handleNewChatSubmit = useCallback(
@@ -245,11 +246,11 @@ export function App() {
 
   const page = (() => {
     switch (activePage.kind) {
-      case 'explore':
+      case CHAT_ROUTE_KIND.EXPLORE:
         return <ExplorePage onNavigate={navigate} />
-      case 'library':
+      case CHAT_ROUTE_KIND.LIBRARY:
         return <LibraryPage />
-      case 'thread':
+      case CHAT_ROUTE_KIND.THREAD:
         return (
           <ChatPage
             activePermission={runPermissions[activePage.thread.id]}
@@ -273,7 +274,7 @@ export function App() {
             }
           />
         )
-      case 'new':
+      case CHAT_ROUTE_KIND.NEW:
         return (
           <NewChatPage
             draft={draft}

@@ -334,7 +334,7 @@ export function createPluginController(
         connections,
         targets: [item],
         policy: new ToolPolicy(),
-        permission: TOOL_PERMISSION.readOnly,
+        permission: TOOL_PERMISSION.READ_ONLY,
         runId: 'connection-test',
         sessionId: 'connection-test',
         signal: AbortSignal.timeout(30_000),

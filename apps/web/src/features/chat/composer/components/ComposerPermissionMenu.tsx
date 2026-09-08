@@ -9,9 +9,9 @@ import {
 } from '../../../settings/index.ts'
 
 const PERMISSION_ICONS = {
-  [TOOL_PERMISSION.readOnly]: Hand,
-  [TOOL_PERMISSION.workspaceWrite]: ShieldCheck,
-  [TOOL_PERMISSION.fullAccess]: ShieldAlert,
+  [TOOL_PERMISSION.READ_ONLY]: Hand,
+  [TOOL_PERMISSION.WORKSPACE_WRITE]: ShieldCheck,
+  [TOOL_PERMISSION.FULL_ACCESS]: ShieldAlert,
 } satisfies Record<PermissionId, typeof Hand>
 interface ComposerPermissionMenuProps {
   activePermission?: PermissionId
@@ -29,7 +29,7 @@ export function ComposerPermissionMenu({
     PERMISSION_OPTIONS.find((option) => option.id === selectedId) ??
     PERMISSION_OPTIONS[1]
   const PermissionIcon = PERMISSION_ICONS[selectedPermission.id]
-  const fullAccess = selectedPermission.id === TOOL_PERMISSION.fullAccess
+  const fullAccess = selectedPermission.id === TOOL_PERMISSION.FULL_ACCESS
 
   return (
     <Dropdown>
@@ -62,7 +62,7 @@ export function ComposerPermissionMenu({
         >
           {PERMISSION_OPTIONS.map((option) => {
             const Icon = PERMISSION_ICONS[option.id]
-            const warning = option.id === TOOL_PERMISSION.fullAccess
+            const warning = option.id === TOOL_PERMISSION.FULL_ACCESS
             return (
               <Dropdown.Item
                 key={option.id}

@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import {
+  PLUGIN_IMPORT_KIND,
+  PLUGIN_IMPORT_STATUS,
+  type PluginImportKind,
+} from '@oh-my-harness/shared'
+import {
   pluginRequest,
   type ImportVo,
   type ImportPreviewVo,
@@ -9,7 +14,7 @@ import {
 export const usePluginImport = (
   onInstalled: () => void,
   replaceId?: string,
-  replaceKind?: 'plugin' | 'marketplace',
+  replaceKind?: PluginImportKind,
 ) => {
   const [source, setSource] = useState('')
   const [file, setFile] = useState<File | null>(null)
@@ -32,7 +37,7 @@ export const usePluginImport = (
     }
   }, [])
   useEffect(() => {
-    if (imported?.status !== 'fetching') return
+    if (imported?.status !== PLUGIN_IMPORT_STATUS.FETCHING) return
     const controller = new AbortController()
     const timer = window.setTimeout(() => {
       void pluginRequest<ImportVo>(`plugin-imports/${imported.id}`, {
@@ -54,7 +59,12 @@ export const usePluginImport = (
     }
   }, [imported])
   useEffect(() => {
-    if (!imported || imported.status !== 'ready' || !candidate) return
+    if (
+      !imported ||
+      imported.status !== PLUGIN_IMPORT_STATUS.READY ||
+      !candidate
+    )
+      return
     const controller = new AbortController()
     void pluginRequest<ImportPreviewVo>(
       `plugin-imports/${imported.id}/preview?${new URLSearchParams({ candidate })}`,
@@ -121,7 +131,7 @@ export const usePluginImport = (
     setError('')
     try {
       await pluginRequest(
-        chosen.kind === 'marketplace'
+        chosen.kind === PLUGIN_IMPORT_KIND.MARKETPLACE
           ? 'plugin-marketplaces'
           : 'plugin-installations',
         {

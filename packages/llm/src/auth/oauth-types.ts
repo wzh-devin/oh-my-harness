@@ -1,8 +1,10 @@
+import type { OAuthPromptType, OAuthSessionState } from '@oh-my-harness/shared'
+
 export interface OAuthPrompt {
   message: string
   options?: Array<{ label: string; value: string }>
   promptId: string
-  promptType: 'text' | 'secret' | 'select' | 'manual_code'
+  promptType: OAuthPromptType
 }
 
 export interface OAuthSessionStatus {
@@ -13,11 +15,5 @@ export interface OAuthSessionStatus {
   progress?: string
   prompt?: OAuthPrompt
   sessionId: string
-  status:
-    | 'awaiting_user'
-    | 'awaiting_provider'
-    | 'succeeded'
-    | 'failed'
-    | 'cancelled'
-    | 'expired'
+  status: OAuthSessionState
 }

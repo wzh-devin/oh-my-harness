@@ -1,4 +1,8 @@
 import { CodeBlock } from '@agile-avocation/ui-pro/code-block'
+import {
+  AGENT_TRAJECTORY_RECORD_KIND,
+  AGENT_TRAJECTORY_STATUS,
+} from '@oh-my-harness/shared'
 import { Markdown } from '@agile-avocation/ui-pro/markdown'
 import { Xmark } from '@gravity-ui/icons'
 import { Button, Tabs } from '@heroui/react'
@@ -93,7 +97,7 @@ export const TraceDetailPanel = memo(function TraceDetailPanel({
   onNavigate,
 }: TraceDetailPanelProps) {
   const [tab, setTab] = useState(
-    record.kind === 'system' ? 'system' : 'summary',
+    record.kind === AGENT_TRAJECTORY_RECORD_KIND.SYSTEM ? 'system' : 'summary',
   )
   const data = record.detail ?? {}
   const options = object(data.options)
@@ -143,7 +147,7 @@ export const TraceDetailPanel = memo(function TraceDetailPanel({
           'Total duration',
           ms(
             completed === undefined
-              ? record.status === 'running'
+              ? record.status === AGENT_TRAJECTORY_STATUS.RUNNING
                 ? record.durationMs
                 : undefined
               : completed - started,
@@ -185,10 +189,12 @@ export const TraceDetailPanel = memo(function TraceDetailPanel({
           <p className="mt-1 whitespace-pre-wrap break-words">{thinking}</p>
         </details>
       ) : null}
-      {record.kind === 'assistant' ? (
+      {record.kind === AGENT_TRAJECTORY_RECORD_KIND.ASSISTANT ? (
         <Markdown className="text-[13px]! leading-5! [&>*]:text-[13px]! [&>*]:leading-5! [&_li]:my-1!">
           {record.preview ||
-            (record.status === 'running' ? '等待模型输出…' : '无文本内容。')}
+            (record.status === AGENT_TRAJECTORY_STATUS.RUNNING
+              ? '等待模型输出…'
+              : '无文本内容。')}
         </Markdown>
       ) : (
         <p className="whitespace-pre-wrap break-words">
@@ -216,7 +222,8 @@ export const TraceDetailPanel = memo(function TraceDetailPanel({
           '来源节点',
           navigation(
             record.sourceRecordId,
-            record.kind === 'assistant' || record.kind === 'tool'
+            record.kind === AGENT_TRAJECTORY_RECORD_KIND.ASSISTANT ||
+              record.kind === AGENT_TRAJECTORY_RECORD_KIND.TOOL
               ? `Request #${record.request}`
               : 'System Prompt',
           ),
@@ -225,7 +232,7 @@ export const TraceDetailPanel = memo(function TraceDetailPanel({
     />
   )
   const summary =
-    record.kind === 'assistant' ? (
+    record.kind === AGENT_TRAJECTORY_RECORD_KIND.ASSISTANT ? (
       <>
         <div className="mb-5">
           <Fields
@@ -261,10 +268,10 @@ export const TraceDetailPanel = memo(function TraceDetailPanel({
           <Fields
             rows={[
               ['Status', AGENT_TRACE_STATUS_LABELS[record.status]],
-              ...(record.kind === 'request'
+              ...(record.kind === AGENT_TRAJECTORY_RECORD_KIND.REQUEST
                 ? []
                 : ([['Source', record.source]] as [string, ReactNode][])),
-              ...(record.kind === 'request'
+              ...(record.kind === AGENT_TRAJECTORY_RECORD_KIND.REQUEST
                 ? ([
                     ['Provider', text(options.provider)],
                     ['Model', text(options.model)],
@@ -278,7 +285,7 @@ export const TraceDetailPanel = memo(function TraceDetailPanel({
             ]}
           />
         </div>
-        {record.kind === 'request' ? (
+        {record.kind === AGENT_TRAJECTORY_RECORD_KIND.REQUEST ? (
           <>
             <Section title="Options" onOpen={() => setTab('options')}>
               <Json value={options} />
@@ -318,7 +325,7 @@ export const TraceDetailPanel = memo(function TraceDetailPanel({
     <p className="text-xs text-muted">本次请求没有工具。</p>
   )
   const tabs: { id: string; title: string; content: ReactNode }[] =
-    record.kind === 'system'
+    record.kind === AGENT_TRAJECTORY_RECORD_KIND.SYSTEM
       ? [
           { id: 'system', title: 'System Prompt', content: preview },
           { id: 'tools', title: 'Tools', content: tools },
@@ -343,7 +350,7 @@ export const TraceDetailPanel = memo(function TraceDetailPanel({
               ]
             : []),
         ]
-      : record.kind === 'request'
+      : record.kind === AGENT_TRAJECTORY_RECORD_KIND.REQUEST
         ? [
             { id: 'summary', title: 'Summary', content: summary },
             {
@@ -359,7 +366,7 @@ export const TraceDetailPanel = memo(function TraceDetailPanel({
               id: 'summary',
               title: 'Summary',
               content:
-                record.kind === 'tool' ? (
+                record.kind === AGENT_TRAJECTORY_RECORD_KIND.TOOL ? (
                   <>
                     <Section title="状态">
                       {AGENT_TRACE_STATUS_LABELS[record.status]} ·{' '}
@@ -390,16 +397,16 @@ export const TraceDetailPanel = memo(function TraceDetailPanel({
   return (
     <aside className="flex h-full min-h-0 flex-col bg-background">
       <div className="flex h-[42px] shrink-0 items-center gap-2 border-b border-separator pr-2 pl-3">
-        {record.kind === 'request' ? (
+        {record.kind === AGENT_TRAJECTORY_RECORD_KIND.REQUEST ? (
           <span aria-hidden>•</span>
         ) : (
           <TraceKindChip kind={record.kind} />
         )}
-        {record.kind === 'request' ? (
+        {record.kind === AGENT_TRAJECTORY_RECORD_KIND.REQUEST ? (
           <span className="text-xs font-medium">{record.label}</span>
         ) : null}
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted">
-          {record.kind === 'system'
+          {record.kind === AGENT_TRAJECTORY_RECORD_KIND.SYSTEM
             ? record.label
             : `Run ${record.runNumber}${record.turn ? ` · Turn ${record.turn}` : ''}`}
         </span>

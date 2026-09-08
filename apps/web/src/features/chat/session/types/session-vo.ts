@@ -1,5 +1,15 @@
 import type { POLICY_TOOL } from '@oh-my-harness/agent-policy/contracts'
 import type { PermissionId } from '../../../settings/index.ts'
+import {
+  AGENT_RUN_EVENT_TYPE,
+  MESSAGE_PART_TYPE,
+  TOOL_ACTIVITY_KIND,
+  type AgentContextKind,
+  type MessageRole,
+  type SessionToolState,
+  type TodoStatus,
+  type ToolActivityKind,
+} from '@oh-my-harness/shared'
 
 export interface AgentSessionVo {
   archived: boolean
@@ -40,7 +50,7 @@ export interface AgentSessionMessageVo {
   entryId: string
   parts?: AgentSessionMessagePartVo[]
   reasoning?: string
-  role: 'assistant' | 'user'
+  role: MessageRole
   seq: number
   stopReason?: string
   timestamp: number
@@ -50,10 +60,10 @@ export interface AgentSessionMessageVo {
 export interface AgentSessionToolVo {
   errorText?: string
   input: Record<string, unknown>
-  kind: 'command' | 'edit' | 'read' | 'skill' | 'tool'
+  kind: Exclude<ToolActivityKind, typeof TOOL_ACTIVITY_KIND.MCP>
   outcome?: BashOutcomeVo
   output?: string
-  state: 'input-available' | 'output-available' | 'output-error'
+  state: SessionToolState
   toolCallId: string
   toolName: string
 }
@@ -66,9 +76,9 @@ export interface BashOutcomeVo {
 }
 
 export type AgentSessionMessagePartVo =
-  | { reasoning: string; type: 'reasoning' }
-  | { text: string; type: 'text' }
-  | { tool: AgentSessionToolVo; type: 'tool' }
+  | { reasoning: string; type: typeof MESSAGE_PART_TYPE.REASONING }
+  | { text: string; type: typeof MESSAGE_PART_TYPE.TEXT }
+  | { tool: AgentSessionToolVo; type: typeof MESSAGE_PART_TYPE.TOOL }
 
 export interface AgentSessionMessagePageVo {
   items: AgentSessionMessageVo[]
@@ -78,21 +88,33 @@ export interface AgentSessionMessagePageVo {
 
 export interface AgentTodoItemVo {
   content: string
-  status: 'completed' | 'in_progress' | 'pending'
+  status: TodoStatus
 }
 
 export type AgentRunEventVo =
   | import('../../../trace/api/agent-trace-api.ts').AgentTraceUpdate
-  | { permission: PermissionId; sessionId: string; type: 'start' }
-  | { type: 'trajectory_changed' }
-  | { delta: string; type: 'text_delta' | 'reasoning_delta' }
-  | { todos: AgentTodoItemVo[]; type: 'todo_updated' }
+  | {
+      permission: PermissionId
+      sessionId: string
+      type: typeof AGENT_RUN_EVENT_TYPE.START
+    }
+  | { type: typeof AGENT_RUN_EVENT_TYPE.TRAJECTORY_CHANGED }
+  | {
+      delta: string
+      type:
+        | typeof AGENT_RUN_EVENT_TYPE.TEXT_DELTA
+        | typeof AGENT_RUN_EVENT_TYPE.REASONING_DELTA
+    }
+  | {
+      todos: AgentTodoItemVo[]
+      type: typeof AGENT_RUN_EVENT_TYPE.TODO_UPDATED
+    }
   | {
       input: unknown
       toolCallId: string
       toolName: string
       kind: AgentSessionToolVo['kind']
-      type: 'tool_start'
+      type: typeof AGENT_RUN_EVENT_TYPE.TOOL_START
     }
   | {
       isError: boolean
@@ -102,30 +124,33 @@ export type AgentRunEventVo =
       toolCallId: string
       toolName: string
       kind: AgentSessionToolVo['kind']
-      type: 'tool_end'
+      type: typeof AGENT_RUN_EVENT_TYPE.TOOL_END
     }
   | ({
       approvalId: string
       path: string
       title: string
       toolCallId: string
-      type: 'tool_approval_required'
+      type: typeof AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED
     } & (
-      | { kind: 'read'; toolName: typeof POLICY_TOOL.read.toolName }
       | {
-          kind: 'edit'
+          kind: typeof TOOL_ACTIVITY_KIND.READ
+          toolName: typeof POLICY_TOOL.READ.toolName
+        }
+      | {
+          kind: typeof TOOL_ACTIVITY_KIND.EDIT
           toolName:
-            typeof POLICY_TOOL.write.toolName | typeof POLICY_TOOL.edit.toolName
+            typeof POLICY_TOOL.WRITE.toolName | typeof POLICY_TOOL.EDIT.toolName
         }
     ))
   | {
       approvalId: string
       input: { command: string }
-      kind: 'command'
+      kind: typeof TOOL_ACTIVITY_KIND.COMMAND
       title: string
       toolCallId: string
-      toolName: typeof POLICY_TOOL.bash.toolName
-      type: 'tool_approval_required'
+      toolName: typeof POLICY_TOOL.BASH.toolName
+      type: typeof AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED
     }
   | {
       approvalId: string
@@ -134,11 +159,11 @@ export type AgentRunEventVo =
         tool: string
         arguments: Record<string, unknown>
       }
-      kind: 'mcp'
+      kind: typeof TOOL_ACTIVITY_KIND.MCP
       title: string
       toolCallId: string
-      toolName: typeof POLICY_TOOL.mcp.toolName
-      type: 'tool_approval_required'
+      toolName: typeof POLICY_TOOL.MCP.toolName
+      type: typeof AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED
     }
   | {
       cacheRead: number
@@ -147,14 +172,22 @@ export type AgentRunEventVo =
       input: number
       output: number
       total: number
-      type: 'usage'
+      type: typeof AGENT_RUN_EVENT_TYPE.USAGE
     }
-  | { entryId: string; stopReason: string; type: 'done' }
-  | { code: string; message: string; type: 'error' }
+  | {
+      entryId: string
+      stopReason: string
+      type: typeof AGENT_RUN_EVENT_TYPE.DONE
+    }
+  | {
+      code: string
+      message: string
+      type: typeof AGENT_RUN_EVENT_TYPE.ERROR
+    }
 
 export type PendingToolApprovalVo = Extract<
   AgentRunEventVo,
-  { type: 'tool_approval_required' }
+  { type: typeof AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED }
 >
 
 export interface AgentSessionMessageAttachmentVo {
@@ -168,7 +201,7 @@ export interface AgentSessionMessageAttachmentVo {
 export interface AgentSessionMessageContextItemVo {
   description: string
   id: string
-  kind: 'command' | 'skill' | 'plugin'
+  kind: AgentContextKind
   label: string
   reference: string
   sourceId: string

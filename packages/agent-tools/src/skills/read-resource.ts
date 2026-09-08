@@ -50,7 +50,7 @@ export const createSkillResourceTool = (
     description:
       'Read a file owned by an available skill. Use path "<skill-id>/<relative-path>"; use SKILL.md for the skill instructions.',
     label: 'load skill resource',
-    name: BUILTIN_TOOL_NAME.loadSkillResource,
+    name: BUILTIN_TOOL_NAME.LOAD_SKILL_RESOURCE,
     async execute(
       _toolCallId: string,
       parameters: unknown,

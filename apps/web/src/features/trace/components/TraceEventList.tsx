@@ -1,10 +1,8 @@
 import { EmptyState } from '@agile-avocation/ui-pro/empty-state'
 import { Magnifier } from '@gravity-ui/icons'
 import { memo, useEffect, useMemo, useRef } from 'react'
-import {
-  type AgentTraceRecord,
-  AgentTraceRecordKind,
-} from '../types/agent-trace'
+import { AGENT_TRAJECTORY_RECORD_KIND } from '@oh-my-harness/shared'
+import { type AgentTraceRecord } from '../types/agent-trace'
 import { TraceEventRow } from './TraceEventRow'
 
 interface TraceEventListItem {
@@ -22,17 +20,18 @@ function toTraceEventListItems(
     const hasTurn = record.turn > 0
 
     const isRunStart =
-      record.kind !== AgentTraceRecordKind.SYSTEM &&
+      record.kind !== AGENT_TRAJECTORY_RECORD_KIND.SYSTEM &&
       record.runId !== undefined &&
       record.runId !== previousRun
-    if (record.kind !== AgentTraceRecordKind.SYSTEM) previousRun = record.runId
+    if (record.kind !== AGENT_TRAJECTORY_RECORD_KIND.SYSTEM)
+      previousRun = record.runId
     return {
       isRunStart,
       isTurnStart:
         hasTurn &&
         (record.turn !== previous?.turn ||
           record.runId !== previous?.runId ||
-          (previous?.kind === AgentTraceRecordKind.REQUEST &&
+          (previous?.kind === AGENT_TRAJECTORY_RECORD_KIND.REQUEST &&
             (records[index - 2]?.turn !== record.turn ||
               records[index - 2]?.runId !== record.runId))),
       record,
@@ -111,8 +110,8 @@ export const TraceEventList = memo(function TraceEventList({
             nextRecord?.runId === record.runId &&
             nextRecord?.turn === record.turn &&
             nextRecord?.request === record.request &&
-            (nextRecord?.kind === AgentTraceRecordKind.ASSISTANT ||
-              nextRecord?.kind === AgentTraceRecordKind.TOOL)
+            (nextRecord?.kind === AGENT_TRAJECTORY_RECORD_KIND.ASSISTANT ||
+              nextRecord?.kind === AGENT_TRAJECTORY_RECORD_KIND.TOOL)
 
           return (
             <li key={record.id}>

@@ -1,6 +1,11 @@
 import { Fragment } from 'react'
 import { Puzzle, RefreshCw, Store } from 'lucide-react'
 import { Button, Input, TextField } from '@heroui/react'
+import {
+  PLUGIN_IMPORT_KIND,
+  PLUGIN_SETTINGS_TAB,
+  type PluginSettingsTab,
+} from '@oh-my-harness/shared'
 import { SettingsAddButton } from '../../shared/components/SettingsAddButton.tsx'
 import { SettingsItemCard } from '../../shared/components/SettingsItemCard.tsx'
 import { SettingsEditorCard } from '../../shared/components/SettingsEditorCard.tsx'
@@ -13,11 +18,13 @@ import { usePluginCatalog } from '../hooks/use-plugin-catalog.ts'
 export function PluginListPanel({
   searchQuery,
   onSearchQueryChange,
-  mode = 'plugins',
+  mode = PLUGIN_SETTINGS_TAB.PLUGINS,
+  initialSelectedId,
 }: {
   searchQuery: string
   onSearchQueryChange(query: string): void
-  mode?: 'plugins' | 'marketplaces'
+  mode?: Exclude<PluginSettingsTab, typeof PLUGIN_SETTINGS_TAB.SKILLS>
+  initialSelectedId?: string
 }) {
   const {
     plugins,
@@ -37,9 +44,9 @@ export function PluginListPanel({
     installEntry,
     reload,
     act,
-  } = usePluginCatalog()
+  } = usePluginCatalog(initialSelectedId)
   const activeMarket =
-    mode === 'marketplaces'
+    mode === PLUGIN_SETTINGS_TAB.MARKETPLACES
       ? markets.find((market) => market.id === selected)
       : undefined
   const openMarket = (id: string | null) => {
@@ -65,7 +72,9 @@ export function PluginListPanel({
   return (
     <section
       className="flex flex-col gap-3"
-      aria-label={mode === 'plugins' ? '已安装插件' : '插件市场'}
+      aria-label={
+        mode === PLUGIN_SETTINGS_TAB.PLUGINS ? '已安装插件' : '插件市场'
+      }
     >
       <div className="flex items-center gap-2">
         <TextField
@@ -78,7 +87,7 @@ export function PluginListPanel({
             placeholder={
               activeMarket
                 ? '搜索此市场的插件'
-                : mode === 'plugins'
+                : mode === PLUGIN_SETTINGS_TAB.PLUGINS
                   ? '搜索插件'
                   : '搜索市场或插件'
             }
@@ -114,7 +123,8 @@ export function PluginListPanel({
       {!loading &&
       !activeMarket &&
       query &&
-      !(mode === 'plugins' ? visiblePlugins : visibleMarkets).length ? (
+      !(mode === PLUGIN_SETTINGS_TAB.PLUGINS ? visiblePlugins : visibleMarkets)
+        .length ? (
         <p role="status" className="py-6 text-center text-sm text-muted">
           没有匹配的结果。
         </p>
@@ -123,7 +133,11 @@ export function PluginListPanel({
         <PluginImportForm
           key={replacement ?? 'new'}
           replaceId={replacement}
-          replaceKind={mode === 'plugins' ? 'plugin' : 'marketplace'}
+          replaceKind={
+            mode === PLUGIN_SETTINGS_TAB.PLUGINS
+              ? PLUGIN_IMPORT_KIND.PLUGIN
+              : PLUGIN_IMPORT_KIND.MARKETPLACE
+          }
           onClose={() => setImporting(false)}
           onInstalled={() => {
             setImporting(false)
@@ -132,7 +146,7 @@ export function PluginListPanel({
           }}
         />
       ) : null}
-      {mode === 'plugins' ? (
+      {mode === PLUGIN_SETTINGS_TAB.PLUGINS ? (
         <>
           {!loading && !plugins.length ? (
             <p className="py-6 text-center text-sm text-muted">
@@ -312,7 +326,9 @@ export function PluginListPanel({
       )}
       {!importing && !activeMarket ? (
         <SettingsAddButton
-          label={mode === 'plugins' ? '导入插件' : '添加插件市场'}
+          label={
+            mode === PLUGIN_SETTINGS_TAB.PLUGINS ? '导入插件' : '添加插件市场'
+          }
           onPress={() => {
             setReplacement(undefined)
             setImporting(true)

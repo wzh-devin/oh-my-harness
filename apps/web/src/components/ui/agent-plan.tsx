@@ -1,10 +1,11 @@
 import type { AgentPlanProps, PlanStepState } from '../../types/agent-plan.ts'
+import { PLAN_STEP_STATE } from '@oh-my-harness/shared'
 
 const markClassName =
   'mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border'
 
 function Mark({ state }: { state: PlanStepState }) {
-  if (state === 'done') {
+  if (state === PLAN_STEP_STATE.DONE) {
     return (
       <span
         aria-hidden="true"
@@ -26,7 +27,7 @@ function Mark({ state }: { state: PlanStepState }) {
     )
   }
 
-  if (state === 'active') {
+  if (state === PLAN_STEP_STATE.ACTIVE) {
     return (
       <span
         aria-hidden="true"
@@ -37,7 +38,7 @@ function Mark({ state }: { state: PlanStepState }) {
     )
   }
 
-  if (state === 'failed') {
+  if (state === PLAN_STEP_STATE.FAILED) {
     return (
       <span
         aria-hidden="true"
@@ -58,7 +59,7 @@ function Mark({ state }: { state: PlanStepState }) {
     )
   }
 
-  if (state === 'skipped') {
+  if (state === PLAN_STEP_STATE.SKIPPED) {
     return (
       <span
         aria-hidden="true"
@@ -105,9 +106,9 @@ export function AgentPlan({ className = '', steps }: AgentPlanProps) {
               <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
                 <span
                   className={`text-sm leading-5 ${
-                    step.state === 'skipped'
+                    step.state === PLAN_STEP_STATE.SKIPPED
                       ? 'text-muted line-through decoration-divider'
-                      : step.state === 'done'
+                      : step.state === PLAN_STEP_STATE.DONE
                         ? 'text-muted'
                         : 'text-foreground'
                   }`}

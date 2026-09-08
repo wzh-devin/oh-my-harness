@@ -7,6 +7,7 @@ import { Transform } from 'node:stream'
 import { promisify } from 'node:util'
 import yauzl from 'yauzl'
 import type { PluginSource } from '../manifest/types.ts'
+import { PLUGIN_SOURCE_TYPE } from '@oh-my-harness/shared'
 import { PluginError } from '../manifest/types.ts'
 import {
   contained,
@@ -22,7 +23,7 @@ const exec = promisify(execFile)
 export function normalizeGitSource(
   input: string,
   allowedHosts: string[] = ['github.com', 'gitlab.com', 'bitbucket.org'],
-): Extract<PluginSource, { type: 'git' }> {
+): Extract<PluginSource, { type: typeof PLUGIN_SOURCE_TYPE.GIT }> {
   const value = /^[\w.-]+\/[\w.-]+$/.test(input)
     ? `https://github.com/${input}.git`
     : input
@@ -56,17 +57,17 @@ export function normalizeGitSource(
     parts.length >= 4
   ) {
     return {
-      type: 'git',
+      type: PLUGIN_SOURCE_TYPE.GIT,
       url: `https://github.com/${parts[0]}/${parts[1]}.git`,
       ref: decodeURIComponent(parts[3]),
       path: parts.slice(4).map(decodeURIComponent).join('/') || '.',
     }
   }
-  return { type: 'git', url: url.href }
+  return { type: PLUGIN_SOURCE_TYPE.GIT, url: url.href }
 }
 
 export async function fetchGit(
-  source: Extract<PluginSource, { type: 'git' }>,
+  source: Extract<PluginSource, { type: typeof PLUGIN_SOURCE_TYPE.GIT }>,
   destination: string,
   signal: AbortSignal,
   allowedHosts?: string[],
