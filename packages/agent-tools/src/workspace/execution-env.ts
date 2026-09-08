@@ -52,21 +52,28 @@ interface FileTarget {
 export class WorkspaceExecutionEnv extends NodeExecutionEnv {
   private readonly protectedRoots: string[]
   private readonly workspaceRoot: string
+  private readonly attachmentRoot?: string
 
   private readonly target?: FileTarget & { effect: FileToolEffect }
 
   private constructor(
     workspaceRoot: string,
     protectedRoots: string[],
+    attachmentRoot?: string,
     target?: FileTarget & { effect: FileToolEffect },
   ) {
     super({ cwd: workspaceRoot })
     this.target = target
     this.workspaceRoot = workspaceRoot
     this.protectedRoots = protectedRoots
+    this.attachmentRoot = attachmentRoot
   }
 
-  static async create(cwd: string, protectedRoots: readonly string[] = []) {
+  static async create(
+    cwd: string,
+    protectedRoots: readonly string[] = [],
+    attachmentRoot?: string,
+  ) {
     const base = new NodeExecutionEnv({ cwd })
     const root = await base.canonicalPath(cwd)
     if (!root.ok) throw root.error
@@ -75,7 +82,14 @@ export class WorkspaceExecutionEnv extends NodeExecutionEnv {
       const canonical = await base.canonicalPath(protectedRoot)
       if (canonical.ok) canonicalProtectedRoots.push(canonical.value)
     }
-    return new WorkspaceExecutionEnv(root.value, canonicalProtectedRoots)
+    const canonicalAttachmentRoot = attachmentRoot
+      ? await base.canonicalPath(attachmentRoot)
+      : undefined
+    return new WorkspaceExecutionEnv(
+      root.value,
+      canonicalProtectedRoots,
+      canonicalAttachmentRoot?.ok ? canonicalAttachmentRoot.value : undefined,
+    )
   }
 
   /** 仅解析资源，不授予权限；缺失文件使用最近真实父目录固定目标。 */
@@ -101,9 +115,11 @@ export class WorkspaceExecutionEnv extends NodeExecutionEnv {
           throw new FileError('permission_denied', 'Protected tool path.')
         return {
           path: target,
-          scope: isWithin(this.workspaceRoot, target)
-            ? FILE_SCOPE.WORKSPACE
-            : FILE_SCOPE.EXTERNAL,
+          scope: this.isAttachment(target)
+            ? FILE_SCOPE.ATTACHMENT
+            : isWithin(this.workspaceRoot, target)
+              ? FILE_SCOPE.WORKSPACE
+              : FILE_SCOPE.EXTERNAL,
         }
       }
       if (canonical.error.code !== 'not_found') throw canonical.error
@@ -115,10 +131,12 @@ export class WorkspaceExecutionEnv extends NodeExecutionEnv {
 
   /** 为已获准的一次工具执行创建独立环境，不扩大共享工作区权限。 */
   forTarget(target: FileTarget, effect: FileToolEffect) {
-    return new WorkspaceExecutionEnv(this.workspaceRoot, this.protectedRoots, {
-      ...target,
-      effect,
-    })
+    return new WorkspaceExecutionEnv(
+      this.workspaceRoot,
+      this.protectedRoots,
+      this.attachmentRoot,
+      { ...target, effect },
+    )
   }
 
   /** 审批前生成工作区相对资源；执行时文件方法仍会重复校验。 */
@@ -337,7 +355,7 @@ export class WorkspaceExecutionEnv extends NodeExecutionEnv {
     if (
       (this.target
         ? path !== this.target.path
-        : !isWithin(this.workspaceRoot, path)) ||
+        : !isWithin(this.workspaceRoot, path) && !this.isAttachment(path)) ||
       this.isProtected(path)
     ) {
       return denied()
@@ -365,6 +383,7 @@ export class WorkspaceExecutionEnv extends NodeExecutionEnv {
 
   private async guardWrite(path: string): Promise<Result<string, FileError>> {
     if (this.target?.effect === TOOL_EFFECT.READ) return denied()
+    if (this.isAttachment(this.addressedPath(path))) return denied()
     const syntactic = this.guardSyntactic(this.addressedPath(path))
     if (!syntactic.ok) return syntactic
     try {
@@ -381,9 +400,14 @@ export class WorkspaceExecutionEnv extends NodeExecutionEnv {
   }
 
   private isProtected(path: string) {
+    if (this.isAttachment(path)) return false
     return this.protectedRoots.some(
       (protectedRoot) =>
         isWithin(protectedRoot, path) || path === protectedRoot,
     )
+  }
+
+  private isAttachment(path: string) {
+    return Boolean(this.attachmentRoot && isWithin(this.attachmentRoot, path))
   }
 }

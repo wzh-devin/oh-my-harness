@@ -1,14 +1,12 @@
 import type {
   AgentContextKind,
-  AttachmentKind,
   ModelThinkingLevel,
 } from '@oh-my-harness/shared'
 
 export type { ModelThinkingLevel } from '@oh-my-harness/shared'
 
 export interface AgentRunAttachment {
-  content: string
-  kind: AttachmentKind
+  data: Uint8Array
   mimeType: string
   name: string
   size: number
@@ -24,7 +22,6 @@ export interface AgentRunInput {
 }
 
 export interface AgentMessageAttachment {
-  contentIndex: number
   id: string
   mimeType: string
   name: string

@@ -151,16 +151,10 @@ function messagePageDto(
     ...page,
     items: page.items.map((message) => ({
       ...message,
-      attachments: message.attachments?.map(
-        ({ contentIndex, ...attachment }) => ({
-          ...attachment,
-          ...(attachment.mimeType.startsWith('image/')
-            ? {
-                src: `/api/agent/sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(message.entryId)}/${contentIndex}`,
-              }
-            : {}),
-        }),
-      ),
+      attachments: message.attachments?.map((attachment) => ({
+        ...attachment,
+        src: `/api/agent/sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(attachment.id)}`,
+      })),
     })),
   }
 }
@@ -341,17 +335,17 @@ export function createAgentSessionController(
       }
     },
     attachment: async (context: Context) => {
-      const contentIndex = Number(context.req.param('contentIndex'))
       try {
         const attachment = await runtime.getAttachment(
           context.req.param('id')!,
-          context.req.param('entryId')!,
-          contentIndex,
+          context.req.param('attachmentId')!,
         )
-        const data = Buffer.from(attachment.data, 'base64')
-        return context.body(data, 200, {
+        return context.body(attachment.data, 200, {
           'cache-control': 'private, no-store',
-          'content-length': String(data.byteLength),
+          'content-disposition': attachment.mimeType.startsWith('image/')
+            ? 'inline'
+            : `attachment; filename*=UTF-8''${encodeURIComponent(attachment.name)}`,
+          'content-length': String(attachment.data.byteLength),
           'content-type': attachment.mimeType,
           'x-content-type-options': 'nosniff',
         })

@@ -24,7 +24,6 @@ import type {
 } from '@earendil-works/pi-ai'
 import {
   MESSAGE_PART_TYPE,
-  ATTACHMENT_KIND,
   MESSAGE_ROLE,
   SESSION_TOOL_STATE,
   TODO_STATUS,
@@ -381,7 +380,7 @@ function toMessage(
     if (!details) return undefined
     return {
       attachments: details.attachments.map(
-        ({ content: _content, kind: _kind, ...attachment }) => attachment,
+        ({ path: _path, ...attachment }) => attachment,
       ),
       content: details.content,
       contextItems: details.contextItems,
@@ -784,39 +783,26 @@ export class AgentSessionService {
     return record
   }
 
-  async attachment(id: string, entryId: string, contentIndex: number) {
-    if (!Number.isSafeInteger(contentIndex) || contentIndex < 0) {
-      throw new AgentRuntimeError(
-        'INVALID_SESSION_REQUEST',
-        '附件参数无效。',
-        400,
-      )
-    }
+  async attachment(id: string, attachmentId: string) {
     const opened = await this.openSession(id)
     try {
-      const entry = (
-        await opened.session.findEntriesOnBranch({ order: 'oldestFirst' })
-      ).find((candidate) => candidate.id === entryId)
-      if (
-        entry?.type !== 'message' ||
-        entry.message.role !== 'custom' ||
-        entry.message.customType !== SESSION_CUSTOM_TYPE.USER_INPUT ||
-        !Array.isArray(entry.message.content)
-      ) {
-        throw new AgentRuntimeError('ATTACHMENT_NOT_FOUND', '附件不存在。', 404)
+      // ponytail: 会话内线性查找避免第二份附件索引；超长会话下载不达标时再加索引。
+      for (const entry of await opened.session.findEntriesOnBranch({
+        order: 'newestFirst',
+      })) {
+        if (
+          entry.type !== 'message' ||
+          entry.message.role !== 'custom' ||
+          entry.message.customType !== SESSION_CUSTOM_TYPE.USER_INPUT
+        ) {
+          continue
+        }
+        const attachment = structuredMessageDetails(
+          entry.message.details,
+        )?.attachments.find((candidate) => candidate.id === attachmentId)
+        if (attachment) return attachment
       }
-      const details = structuredMessageDetails(entry.message.details)
-      const attachment = details?.attachments.find(
-        (candidate) => candidate.contentIndex === contentIndex,
-      )
-      if (attachment?.kind !== ATTACHMENT_KIND.IMAGE) {
-        throw new AgentRuntimeError('ATTACHMENT_NOT_FOUND', '附件不存在。', 404)
-      }
-      return {
-        data: attachment.content,
-        mimeType: attachment.mimeType,
-        name: attachment.name,
-      }
+      throw new AgentRuntimeError('ATTACHMENT_NOT_FOUND', '附件不存在。', 404)
     } catch (error) {
       return sessionFailure(error)
     }

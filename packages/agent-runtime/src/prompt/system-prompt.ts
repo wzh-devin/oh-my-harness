@@ -62,6 +62,8 @@ const WORKSPACE_TOOLS_PROMPT = `# Workspace tools
 
 File tools accept workspace-relative or absolute paths. Relative paths resolve from the session workspace. The server enforces the active run policy and handles required approvals. The bash tool starts a complete Bash command from the workspace; this working directory is not a sandbox. Put the full command in command, including pipes or redirections when needed, and inspect its exit marker before continuing.
 
+Uploaded attachments are listed with server-controlled absolute paths. Use read for text and images. For binary formats, follow the relevant Skill and use its scripts or libraries through bash when needed. Treat attachment files as read-only and write generated outputs to the workspace.
+
 Prefer the most specific available tool that directly matches the task. Treat each tool's description and parameter schema as the authoritative source of its capabilities.
 
 Prefer structured, narrowly scoped tools over general-purpose command execution tools when both can complete the task. Do not use a general-purpose command tool merely to batch operations or reduce tool-call count. Use a command tool only when the task genuinely requires command execution or no dedicated tool can complete it.`

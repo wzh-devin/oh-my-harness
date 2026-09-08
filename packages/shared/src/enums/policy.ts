@@ -16,6 +16,7 @@ export type ToolEffect = (typeof TOOL_EFFECT)[keyof typeof TOOL_EFFECT]
 export type FileToolEffect = typeof TOOL_EFFECT.READ | typeof TOOL_EFFECT.WRITE
 
 export const FILE_SCOPE = {
+  ATTACHMENT: 'attachment',
   WORKSPACE: 'workspace',
   EXTERNAL: 'external',
 } as const

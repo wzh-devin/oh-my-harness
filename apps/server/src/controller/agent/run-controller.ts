@@ -12,7 +12,7 @@ import {
 } from '@oh-my-harness/agent-runtime'
 import type { Context } from 'hono'
 import { streamSSE } from 'hono/streaming'
-import { ATTACHMENT_KIND, MODEL_THINKING_LEVEL } from '@oh-my-harness/shared'
+import { MODEL_THINKING_LEVEL } from '@oh-my-harness/shared'
 
 import type {
   AgentRunEventDto,
@@ -21,44 +21,10 @@ import type {
 import { agentErrorResponse } from './error-response.ts'
 
 const MAX_ATTACHMENTS = 5
-const MAX_IMAGE_BYTES = 10 * 1024 * 1024
-const MAX_TEXT_BYTES = 1024 * 1024
 const MAX_TOTAL_BYTES = 20 * 1024 * 1024
-const MAX_TEXT_CHARACTERS = 200_000
 const thinkingLevels = new Set<ModelThinkingLevel>(
   Object.values(MODEL_THINKING_LEVEL),
 )
-const textExtensions = new Set([
-  'c',
-  'cc',
-  'conf',
-  'cpp',
-  'css',
-  'csv',
-  'go',
-  'h',
-  'hpp',
-  'html',
-  'ini',
-  'java',
-  'js',
-  'json',
-  'jsx',
-  'log',
-  'md',
-  'mjs',
-  'py',
-  'rs',
-  'sh',
-  'sql',
-  'toml',
-  'ts',
-  'tsx',
-  'txt',
-  'xml',
-  'yaml',
-  'yml',
-])
 
 function parseMessage(
   value: unknown,
@@ -131,22 +97,6 @@ function parseMessage(
   }
 }
 
-const declaredText = (file: File) => {
-  const extension = file.name.split('.').at(-1)?.toLocaleLowerCase() ?? ''
-  return (
-    file.type.startsWith('text/') ||
-    [
-      'application/json',
-      'application/javascript',
-      'application/toml',
-      'application/xml',
-      'application/x-yaml',
-      'application/yaml',
-    ].includes(file.type) ||
-    textExtensions.has(extension)
-  )
-}
-
 const detectedImageMimeType = (bytes: Uint8Array) => {
   if (
     bytes[0] === 0x89 &&
@@ -169,15 +119,29 @@ const detectedImageMimeType = (bytes: Uint8Array) => {
   return undefined
 }
 
+const safeDeclaredMimeType = (value: string) =>
+  value.length <= 255 &&
+  /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/iu.test(value) &&
+  !value.toLocaleLowerCase().startsWith('image/')
+    ? value
+    : 'application/octet-stream'
+
+const safeAttachmentName = (value: string) =>
+  Boolean(value) &&
+  value.length <= 255 &&
+  ![...value].some((character) => {
+    const code = character.charCodeAt(0)
+    return character === '/' || character === '\\' || code < 32 || code === 127
+  })
+
 async function parseAttachments(files: File[]) {
   if (files.length > MAX_ATTACHMENTS) {
     throw new AgentRuntimeError('REQUEST_TOO_LARGE', '附件数量过多。', 413)
   }
   let totalBytes = 0
-  let totalCharacters = 0
   const attachments: AgentRunAttachment[] = []
   for (const file of files) {
-    if (!file.name || file.name.length > 255 || /[\\/\0]/u.test(file.name)) {
+    if (!safeAttachmentName(file.name)) {
       return undefined
     }
     totalBytes += file.size
@@ -186,42 +150,9 @@ async function parseAttachments(files: File[]) {
     }
     const bytes = new Uint8Array(await file.arrayBuffer())
     const imageMimeType = detectedImageMimeType(bytes)
-    if (imageMimeType) {
-      if (file.size > MAX_IMAGE_BYTES) {
-        throw new AgentRuntimeError('REQUEST_TOO_LARGE', '图片附件过大。', 413)
-      }
-      attachments.push({
-        content: Buffer.from(bytes).toString('base64'),
-        kind: ATTACHMENT_KIND.IMAGE,
-        mimeType: imageMimeType,
-        name: file.name,
-        size: file.size,
-      })
-      continue
-    }
-    if (!declaredText(file)) return undefined
-    if (file.size > MAX_TEXT_BYTES) {
-      throw new AgentRuntimeError('REQUEST_TOO_LARGE', '文本附件过大。', 413)
-    }
-    let content: string
-    try {
-      content = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
-    } catch {
-      return undefined
-    }
-    if (content.includes('\0')) return undefined
-    totalCharacters += content.length
-    if (totalCharacters > MAX_TEXT_CHARACTERS) {
-      throw new AgentRuntimeError(
-        'REQUEST_TOO_LARGE',
-        '附件提取文本过长。',
-        413,
-      )
-    }
     attachments.push({
-      content,
-      kind: ATTACHMENT_KIND.TEXT,
-      mimeType: file.type || 'text/plain',
+      data: bytes,
+      mimeType: imageMimeType || safeDeclaredMimeType(file.type),
       name: file.name,
       size: file.size,
     })

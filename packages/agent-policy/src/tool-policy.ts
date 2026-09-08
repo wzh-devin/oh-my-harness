@@ -58,6 +58,10 @@ export const evaluateToolPolicy = (
       ? POLICY_DECISION.ALLOW
       : POLICY_DECISION.REQUIRE_APPROVAL
   }
+  if (request.scope === FILE_SCOPE.ATTACHMENT)
+    return request.effect === TOOL_EFFECT.READ
+      ? POLICY_DECISION.ALLOW
+      : POLICY_DECISION.DENY
   if (
     request.scope !== FILE_SCOPE.WORKSPACE &&
     request.scope !== FILE_SCOPE.EXTERNAL

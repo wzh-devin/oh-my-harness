@@ -1,38 +1,18 @@
-import {
-  convertToLlm,
-  type AgentMessage,
-  type Entry,
-} from '@earendil-works/pi-agent-core'
-import {
-  ATTACHMENT_KIND,
-  CAPABILITY_KIND,
-  type AttachmentKind,
-} from '@oh-my-harness/shared'
+import { CAPABILITY_KIND } from '@oh-my-harness/shared'
 
 import type {
   AgentMessageAttachment,
   AgentMessageContextItem,
 } from './run-input.ts'
-import { SESSION_CUSTOM_TYPE } from '../session/session-custom-type.ts'
-
 export interface StoredAttachment extends AgentMessageAttachment {
-  content: string
-  kind: AttachmentKind
+  path: string
 }
 
 export interface StructuredMessageDetails {
   attachments: StoredAttachment[]
   content: string
   contextItems: AgentMessageContextItem[]
-  schemaVersion: 2
-}
-
-export interface SessionAttachmentResource {
-  content: string
-  id: string
-  kind: AttachmentKind
-  mimeType: string
-  name: string
+  schemaVersion: 1
 }
 
 const escapeXml = (value: string) =>
@@ -44,13 +24,13 @@ const escapeXml = (value: string) =>
     .replaceAll("'", '&apos;')
 
 export const attachmentManifest = (
-  attachments: readonly AgentMessageAttachment[],
+  attachments: readonly StoredAttachment[],
 ) => ({
   text: [
     '<attachments>',
     ...attachments.map(
       (attachment) =>
-        `  <attachment id="${escapeXml(attachment.id)}" name="${escapeXml(attachment.name)}" mime_type="${escapeXml(attachment.mimeType)}" size="${attachment.size}" />`,
+        `  <attachment id="${escapeXml(attachment.id)}" name="${escapeXml(attachment.name)}" mime_type="${escapeXml(attachment.mimeType)}" size="${attachment.size}" path="${escapeXml(attachment.path)}" />`,
     ),
     '</attachments>',
   ].join('\n'),
@@ -65,7 +45,7 @@ export function structuredMessageDetails(
   }
   const details = value as Record<string, unknown>
   if (
-    details.schemaVersion !== 2 ||
+    details.schemaVersion !== 1 ||
     typeof details.content !== 'string' ||
     !Array.isArray(details.attachments) ||
     !Array.isArray(details.contextItems)
@@ -88,23 +68,18 @@ export function structuredMessageDetails(
         typeof item.name !== 'string' ||
         typeof item.mimeType !== 'string' ||
         typeof item.size !== 'number' ||
-        !Number.isSafeInteger(item.contentIndex) ||
-        (item.contentIndex as number) < 0 ||
-        typeof item.content !== 'string' ||
-        (item.kind !== ATTACHMENT_KIND.IMAGE &&
-          item.kind !== ATTACHMENT_KIND.TEXT)
+        typeof item.path !== 'string' ||
+        !item.path
       ) {
         return []
       }
       return [
         {
-          contentIndex: item.contentIndex as number,
           id: item.id,
           mimeType: item.mimeType,
           name: item.name,
           size: item.size,
-          content: item.content,
-          kind: item.kind,
+          path: item.path,
         },
       ]
     },
@@ -148,71 +123,4 @@ export function structuredMessageDetails(
     contextItems,
     schemaVersion,
   }
-}
-
-export const modelSafeAttachmentMessage = (
-  message: AgentMessage,
-): AgentMessage => {
-  if (
-    message.role !== 'custom' ||
-    message.customType !== SESSION_CUSTOM_TYPE.USER_INPUT
-  ) {
-    return message
-  }
-  const details = structuredMessageDetails(message.details)
-  if (!details) {
-    return {
-      ...message,
-      content: [
-        {
-          text: '[Structured user input could not be restored safely.]',
-          type: 'text',
-        },
-      ],
-    }
-  }
-  return message
-}
-
-export const convertAttachmentMessagesToLlm = (messages: AgentMessage[]) =>
-  convertToLlm(messages.map(modelSafeAttachmentMessage))
-
-export const modelSafeAttachmentEntries = (entries: Entry[]) =>
-  entries.map((entry) =>
-    entry.type === 'message'
-      ? { ...entry, message: modelSafeAttachmentMessage(entry.message) }
-      : entry,
-  ) as Entry[]
-
-export const attachmentResourcesFromEntries = (
-  entries: readonly Entry[],
-  incoming?: AgentMessage,
-) => {
-  const messages = [
-    ...entries.flatMap((entry) =>
-      entry.type === 'message' ? [entry.message] : [],
-    ),
-    ...(incoming ? [incoming] : []),
-  ]
-  const resources = new Map<string, SessionAttachmentResource>()
-  for (const message of messages) {
-    if (
-      message.role !== 'custom' ||
-      message.customType !== SESSION_CUSTOM_TYPE.USER_INPUT
-    ) {
-      continue
-    }
-    const details = structuredMessageDetails(message.details)
-    if (!details) continue
-    for (const attachment of details.attachments) {
-      resources.set(attachment.id, {
-        content: attachment.content,
-        id: attachment.id,
-        kind: attachment.kind,
-        mimeType: attachment.mimeType,
-        name: attachment.name,
-      })
-    }
-  }
-  return [...resources.values()]
 }

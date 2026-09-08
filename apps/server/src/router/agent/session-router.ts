@@ -21,7 +21,7 @@ export function createAgentSessionRouter(
   router.post('/', sessionBodyLimit, controller.create)
   router.get('/', controller.list)
   router.delete('/archived', controller.clearArchived)
-  router.get('/:id/attachments/:entryId/:contentIndex', controller.attachment)
+  router.get('/:id/attachments/:attachmentId', controller.attachment)
   router.get('/:id/messages', controller.messages)
   router.get('/:id/trajectory', controller.trajectory)
   router.get('/:id/trajectory/search', controller.trajectorySearch)

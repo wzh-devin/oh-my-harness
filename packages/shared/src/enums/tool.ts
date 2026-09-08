@@ -4,7 +4,6 @@ export const BUILTIN_TOOL_NAME = {
   EDIT: 'edit',
   BASH: 'bash',
   LOAD_SKILL_RESOURCE: 'load_skill_resource',
-  VIEW_ATTACHMENT: 'view_attachment',
   TODO_WRITE: 'todo_write',
 } as const
 export type BuiltinToolName =

@@ -17,7 +17,6 @@ import {
 } from '@oh-my-harness/agent-policy'
 import {
   BUILTIN_TOOL_NAME,
-  createAttachmentTool,
   createSkillResourceTool,
   createTodoWriteTool,
   createWorkspaceTools,
@@ -38,6 +37,7 @@ import {
 import {
   Agent,
   buildSessionContext,
+  convertToLlm,
   createCustomMessage,
   type AgentEvent,
   type AgentMessage,
@@ -51,13 +51,13 @@ import {
 } from '@earendil-works/pi-ai'
 
 import { AgentCapabilityService } from '../capability/capability-service.ts'
+import { AttachmentStore } from '../attachment/attachment-store.ts'
 import { compactSessionIfNeeded } from '../compaction/session-compaction.ts'
 import { AgentRuntimeError } from '../error/agent-runtime-error.ts'
 import { toolFilePath } from '../execution/tool-file-path.ts'
 import {
   attachmentManifest,
-  attachmentResourcesFromEntries,
-  convertAttachmentMessagesToLlm,
+  type StoredAttachment,
 } from '../execution/attachment-message.ts'
 import { safeBashOutcome } from '../execution/bash-outcome.ts'
 import {
@@ -79,9 +79,7 @@ import {
 import { TrajectoryStream } from '../trajectory/trajectory-stream.ts'
 import type { AgentRun, AgentRuntimeEvent } from '../execution/runtime-event.ts'
 import type {
-  AgentMessageAttachment,
   AgentMessageContextItem,
-  AgentRunAttachment,
   AgentRunInput,
 } from '../execution/run-input.ts'
 import {
@@ -159,19 +157,13 @@ function createUserMessage(content: string): UserMessage {
   }
 }
 
-const buildStructuredUserPrompt = (input: AgentRunInput) => {
+const buildStructuredUserPrompt = (
+  input: AgentRunInput,
+  attachments: readonly StoredAttachment[],
+) => {
   const content: TextContent[] = []
   if (input.content) {
     content.push({ text: input.content, type: 'text' })
-  }
-  const attachments: (AgentMessageAttachment & AgentRunAttachment)[] = []
-  for (const attachment of input.attachments ?? []) {
-    const contentIndex = attachments.length
-    attachments.push({
-      ...attachment,
-      contentIndex,
-      id: randomUUID(),
-    })
   }
   if (attachments.length) content.push(attachmentManifest(attachments))
   return { attachments, content }
@@ -207,12 +199,6 @@ function runtimeEventError(
 function safeToolInput(input: unknown) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return {}
   const values = input as Record<string, unknown>
-  const attachmentId = values.attachmentId
-  if (typeof attachmentId === 'string') {
-    return attachmentId && !attachmentId.includes('\0')
-      ? { attachmentId }
-      : { attachmentId: '[blocked id]' }
-  }
   if (typeof values.command === 'string') {
     return values.command &&
       !values.command.includes('\0') &&
@@ -237,6 +223,7 @@ function safeToolInput(input: unknown) {
 export class AgentRuntime {
   private readonly active = new Map<string, ActiveOperation>()
   private readonly capabilities?: AgentCapabilityService
+  private readonly attachments?: AttachmentStore
   private deletingSkill = false
 
   /** 导入技能后使随后目录查询和 Run 使用新的能力快照。 */
@@ -284,6 +271,9 @@ export class AgentRuntime {
     this.models = models
     this.sessions = new AgentSessionService(repository, projection)
     this.toolOptions = toolOptions
+    this.attachments = toolOptions?.dataDirectory
+      ? new AttachmentStore(toolOptions.dataDirectory)
+      : undefined
     this.capabilities = toolOptions?.dataDirectory
       ? new AgentCapabilityService(
           toolOptions.dataDirectory,
@@ -397,9 +387,21 @@ export class AgentRuntime {
     )
   }
 
-  async getAttachment(id: string, entryId: string, contentIndex: number) {
+  async getAttachment(id: string, attachmentId: string) {
     this.assertOpen()
-    return this.sessions.attachment(id, entryId, contentIndex)
+    if (!this.attachments) {
+      throw new AgentRuntimeError('ATTACHMENT_NOT_FOUND', '附件不存在。', 404)
+    }
+    const attachment = await this.sessions.attachment(id, attachmentId)
+    try {
+      return {
+        data: await this.attachments.read(id, attachment),
+        mimeType: attachment.mimeType,
+        name: attachment.name,
+      }
+    } catch {
+      throw new AgentRuntimeError('ATTACHMENT_NOT_FOUND', '附件不存在。', 404)
+    }
   }
 
   async deleteSession(id: string) {
@@ -407,6 +409,7 @@ export class AgentRuntime {
     const operation = this.reserve(id, AGENT_OPERATION_KIND.MUTATION)
     try {
       await this.sessions.delete(id)
+      await this.attachments?.deleteSession(id)
     } finally {
       this.release(id, operation)
     }
@@ -526,6 +529,7 @@ export class AgentRuntime {
       )
     const operation = this.reserve(id, AGENT_OPERATION_KIND.RUN)
     const cleanups: (() => Promise<unknown>)[] = []
+    let storedAttachments: StoredAttachment[] = []
     const cleanup = async () => {
       await Promise.allSettled(cleanups.splice(0).map((dispose) => dispose()))
     }
@@ -574,6 +578,16 @@ export class AgentRuntime {
         pluginIds,
       })
       if (resolved) cleanups.push(resolved.release)
+      if (input?.attachments?.length) {
+        if (!this.attachments) {
+          throw new AgentRuntimeError(
+            'ATTACHMENT_STORAGE_UNAVAILABLE',
+            '附件存储不可用。',
+            500,
+          )
+        }
+        storedAttachments = await this.attachments.save(id, input.attachments)
+      }
       if (
         input &&
         (input.commandId || input.skillIds?.length) &&
@@ -595,7 +609,7 @@ export class AgentRuntime {
       )
       const structured =
         input && hasStructuredInput
-          ? buildStructuredUserPrompt(input)
+          ? buildStructuredUserPrompt(input, storedAttachments)
           : undefined
       const contextItems: AgentMessageContextItem[] = [
         ...(resolved?.plugins ?? []).map((plugin) => ({
@@ -639,7 +653,7 @@ export class AgentRuntime {
                 attachments: structured.attachments,
                 content: input.content,
                 contextItems,
-                schemaVersion: 2,
+                schemaVersion: 1,
               },
               Date.now(),
             )
@@ -720,6 +734,7 @@ export class AgentRuntime {
             permission,
             policy: this.toolOptions.policy,
             protectedRoots: this.toolOptions.protectedRoots,
+            attachmentRoot: this.attachments?.sessionDirectory(id),
             runId,
             sessionId: id,
           })
@@ -754,16 +769,6 @@ export class AgentRuntime {
             })),
           )
         : undefined
-      const attachmentResources = attachmentResourcesFromEntries(
-        entries,
-        incoming,
-      )
-      const attachmentTool = attachmentResources.length
-        ? createAttachmentTool(
-            attachmentResources,
-            model.input.includes('image'),
-          )
-        : undefined
       const todoTool = createTodoWriteTool(async (todos) => {
         const snapshot = todos.map((todo) => ({ ...todo }))
         await opened.session.appendCustomEntry(
@@ -783,7 +788,6 @@ export class AgentRuntime {
         ...(mcpTools?.tools ?? []),
         ...(workspaceTools?.tools ?? []),
         ...(skillResourceTool ? [skillResourceTool] : []),
-        ...(attachmentTool ? [attachmentTool] : []),
         todoTool,
       ]
       if (tools.length) {
@@ -878,7 +882,6 @@ export class AgentRuntime {
       const agent = new Agent({
         beforeToolCall: async (call, signal) =>
           call.toolCall.name === BUILTIN_TOOL_NAME.LOAD_SKILL_RESOURCE ||
-          call.toolCall.name === BUILTIN_TOOL_NAME.VIEW_ATTACHMENT ||
           call.toolCall.name === BUILTIN_TOOL_NAME.TODO_WRITE
             ? undefined
             : mcpTools?.owns(call.toolCall.name)
@@ -891,7 +894,7 @@ export class AgentRuntime {
           thinkingLevel,
           tools,
         },
-        convertToLlm: convertAttachmentMessagesToLlm,
+        convertToLlm,
         sessionId: id,
         streamFn: async (streamModel, streamContext, options) => {
           const header = redactTrajectoryValue({
@@ -971,6 +974,7 @@ export class AgentRuntime {
       }).finally(() => this.release(id, operation))
       return run
     } catch (error) {
+      await this.attachments?.remove(storedAttachments).catch(() => undefined)
       await cleanup()
       this.release(id, operation)
       if (error instanceof PluginError)
@@ -1500,7 +1504,10 @@ export class AgentRuntime {
           this.reserve(session.id, AGENT_OPERATION_KIND.MUTATION),
         )
       }
-      for (const session of sessions) await this.sessions.delete(session.id)
+      for (const session of sessions) {
+        await this.sessions.delete(session.id)
+        await this.attachments?.deleteSession(session.id)
+      }
       return sessions.length
     } finally {
       for (const [id, operation] of operations) this.release(id, operation)

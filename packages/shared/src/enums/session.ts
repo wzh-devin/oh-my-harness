@@ -21,13 +21,6 @@ export const SESSION_CUSTOM_TYPE = {
 export type SessionCustomType =
   (typeof SESSION_CUSTOM_TYPE)[keyof typeof SESSION_CUSTOM_TYPE]
 
-export const ATTACHMENT_KIND = {
-  IMAGE: 'image',
-  TEXT: 'text',
-} as const
-export type AttachmentKind =
-  (typeof ATTACHMENT_KIND)[keyof typeof ATTACHMENT_KIND]
-
 export const MESSAGE_PART_TYPE = {
   REASONING: 'reasoning',
   TEXT: 'text',

@@ -24,6 +24,7 @@ import { createWriteTool } from '../tools/write.ts'
 import { WorkspaceExecutionEnv } from './execution-env.ts'
 
 interface WorkspaceToolsOptions {
+  attachmentRoot?: string
   cwd: string
   onApprovalRequested(approval: PendingToolApproval): Promise<void>
   onApprovalResolved(resolution: ApprovalResolution): Promise<void>
@@ -48,6 +49,7 @@ export const createWorkspaceTools = async (options: WorkspaceToolsOptions) => {
   const env = await WorkspaceExecutionEnv.create(
     options.cwd,
     options.protectedRoots,
+    options.attachmentRoot,
   )
   const authorized = new Map<string, AuthorizedCall>()
   const fileToolMap = {
