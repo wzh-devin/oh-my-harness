@@ -87,6 +87,7 @@ export interface ChatMessageSourceGroup {
 export interface ChatMessageAttachment {
   mimeType?: string
   name: string
+  size?: number
   src?: string
 }
 

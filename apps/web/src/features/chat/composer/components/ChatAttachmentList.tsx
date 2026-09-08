@@ -1,10 +1,16 @@
-import { FileText, Xmark } from '@gravity-ui/icons'
+import {
+  ChatAttachment,
+  ChatAttachmentGroup,
+  formatChatAttachmentSize,
+} from '@agile-avocation/ui-pro/chat-attachment'
+import { Xmark } from '@gravity-ui/icons'
 import { Button } from '@heroui/react'
 
 interface ChatAttachmentListItem {
   id?: string
   mimeType?: string
   name: string
+  size?: number
   src?: string
 }
 
@@ -13,9 +19,6 @@ interface ChatAttachmentListProps {
   className?: string
   onRemove?: (attachment: ChatAttachmentListItem) => void
 }
-
-const isImageAttachment = (attachment: ChatAttachmentListItem) =>
-  Boolean(attachment.src && attachment.mimeType?.startsWith('image/'))
 
 /** 渲染消息或草稿中的附件，并在允许时提供移除操作。 */
 export function ChatAttachmentList({
@@ -26,25 +29,26 @@ export function ChatAttachmentList({
   if (attachments.length === 0) return null
 
   return (
-    <div className={`flex flex-wrap gap-2 ${className}`}>
+    <ChatAttachmentGroup className={className}>
       {attachments.map((attachment, index) => (
-        <div
+        <ChatAttachment
           key={attachment.id ?? `${attachment.name}-${index}`}
-          className="flex h-10 max-w-64 min-w-0 items-center gap-2 rounded-lg border border-border bg-default/60 px-1.5 pr-2 text-foreground"
+          className="!flex !h-14 !w-56 !max-w-full items-center gap-2 !overflow-hidden !px-2"
+          mimeType={attachment.mimeType}
+          name={attachment.name}
+          size={attachment.size}
+          src={attachment.src}
         >
-          {isImageAttachment(attachment) ? (
-            <img
-              alt=""
-              className="size-7 shrink-0 rounded-md object-cover"
-              src={attachment.src}
-            />
-          ) : (
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-background text-muted">
-              <FileText className="size-4" />
+          <ChatAttachment.Preview className="!size-9 !shrink-0 !rounded-md" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium">
+              {attachment.name}
             </span>
-          )}
-          <span className="min-w-0 flex-1 truncate text-sm">
-            {attachment.name}
+            {attachment.size == null ? null : (
+              <span className="block text-xs text-muted tabular-nums">
+                {formatChatAttachmentSize(attachment.size)}
+              </span>
+            )}
           </span>
           {onRemove ? (
             <Button
@@ -58,8 +62,8 @@ export function ChatAttachmentList({
               <Xmark className="size-3.5" />
             </Button>
           ) : null}
-        </div>
+        </ChatAttachment>
       ))}
-    </div>
+    </ChatAttachmentGroup>
   )
 }

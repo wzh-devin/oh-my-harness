@@ -642,7 +642,7 @@ export function useAgentSessions() {
           ? URL.createObjectURL(file)
           : undefined
         if (src) previewUrls.push(src)
-        return { mimeType: file.type, name: file.name, src }
+        return { mimeType: file.type, name: file.name, size: file.size, src }
       })
       const contextItems = payload.contextItems.filter(
         (item) =>

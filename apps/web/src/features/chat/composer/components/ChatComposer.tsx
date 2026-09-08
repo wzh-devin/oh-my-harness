@@ -1,5 +1,6 @@
 import type {
   ChangeEvent,
+  ClipboardEvent,
   CompositionEvent,
   KeyboardEvent,
   SyntheticEvent,
@@ -9,6 +10,10 @@ import {
   COMPOSER_CAPABILITY_KIND,
   COMPOSER_MENU_MODE,
 } from '@oh-my-harness/shared'
+import {
+  ChatAttachmentInput,
+  inferChatAttachmentFileKind,
+} from '@agile-avocation/ui-pro/chat-attachment'
 import type { ChatStatus } from '@agile-avocation/ui-pro/prompt-input'
 import { PromptInput } from '@agile-avocation/ui-pro/prompt-input'
 import { Bulb, Folder, Terminal } from '@gravity-ui/icons'
@@ -45,12 +50,14 @@ import { ComposerPermissionMenu } from './ComposerPermissionMenu.tsx'
 import { ChatAttachmentList } from './ChatAttachmentList.tsx'
 import { ContextUsageMeter } from './ContextUsageMeter.tsx'
 import type { ChatContextUsage } from '../../data/index.ts'
+import { getNonImageClipboardFiles } from '../utils/clipboard-files.ts'
 
 interface PendingAttachment {
   file: File
   id: string
   mimeType: string
   name: string
+  size: number
   src?: string
 }
 
@@ -267,25 +274,37 @@ export function ChatComposer({
     if (!accepted) setModelKey(previousKey)
   }
 
+  /** 将文件选择、拖拽和粘贴统一转换为 Composer 草稿附件。 */
+  const appendAttachments = (files: readonly File[]) => {
+    if (files.length === 0) return
+
+    const nextAttachments = files.map((file) => ({
+      file,
+      id: createAttachmentId(file),
+      mimeType: file.type,
+      name: file.name,
+      size: file.size,
+      src:
+        inferChatAttachmentFileKind(file.type, file.name) === 'image'
+          ? URL.createObjectURL(file)
+          : undefined,
+    }))
+    setAttachments((current) => [...current, ...nextAttachments])
+  }
+
   const handleFileInputChange = (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.currentTarget.files ?? [])
-
-    if (files.length > 0) {
-      setAttachments((current) => [
-        ...current,
-        ...files.map((file) => ({
-          file,
-          id: createAttachmentId(file),
-          mimeType: file.type,
-          name: file.name,
-          src: file.type.startsWith('image/')
-            ? URL.createObjectURL(file)
-            : undefined,
-        })),
-      ])
-    }
-
+    appendAttachments(files)
     event.currentTarget.value = ''
+  }
+
+  /** 补充 ui-pro 当前未提取的非图片系统剪贴板文件。 */
+  const handleClipboardFiles = (event: ClipboardEvent<HTMLDivElement>) => {
+    const files = getNonImageClipboardFiles(event.clipboardData.files)
+    if (files.length === 0) return
+
+    event.preventDefault()
+    appendAttachments(files)
   }
 
   const handleRemoveAttachment = (id: string) => {
@@ -487,135 +506,165 @@ export function ChatComposer({
         </div>
       ) : null}
 
-      <PromptInput
-        className="w-full"
-        status={status}
-        value={value}
-        variant="primary"
-        onStop={handleStop}
-        onSubmit={handleSubmit}
-        onValueChange={onValueChange}
+      <ChatAttachmentInput
+        disabled={isDisabled || isGenerating || isModelUpdating}
+        multiple
+        onFilesSelected={appendAttachments}
       >
-        <PromptInput.Shell ref={promptInputShellRef} className="min-h-[7.5rem]">
-          <PromptInput.Content>
-            {attachments.length > 0 ? (
-              <PromptInput.Attachments>
-                <ChatAttachmentList
-                  attachments={attachments}
-                  onRemove={(attachment) => {
-                    if (attachment.id) handleRemoveAttachment(attachment.id)
-                  }}
-                />
-              </PromptInput.Attachments>
-            ) : null}
+        <PromptInput
+          className="w-full"
+          status={status}
+          value={value}
+          variant="primary"
+          onStop={handleStop}
+          onSubmit={handleSubmit}
+          onValueChange={onValueChange}
+        >
+          <ChatAttachmentInput.Dropzone
+            onPasteCapture={handleClipboardFiles}
+            render={(dropzoneProps) => (
+              <PromptInput.Shell
+                {...dropzoneProps}
+                ref={promptInputShellRef}
+                className="relative min-h-[7.5rem] transition-colors data-[dragging]:border-accent data-[dragging]:bg-accent/5 data-[dragging]:ring-2 data-[dragging]:ring-accent/30"
+              >
+                {dropzoneProps['data-dragging'] ? (
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-[inherit] bg-background/80 text-sm font-medium text-accent backdrop-blur-xs"
+                  >
+                    松开即可添加文件
+                  </div>
+                ) : null}
+                <PromptInput.Content>
+                  {attachments.length > 0 ? (
+                    <PromptInput.Attachments>
+                      <ChatAttachmentList
+                        attachments={attachments}
+                        onRemove={(attachment) => {
+                          if (attachment.id)
+                            handleRemoveAttachment(attachment.id)
+                        }}
+                      />
+                    </PromptInput.Attachments>
+                  ) : null}
 
-            {hasUnavailableContext ? (
-              <p className="px-4 pt-1 text-xs text-danger" role="status">
-                移除或重新启用不可用的上下文后再发送。
-              </p>
-            ) : null}
+                  {hasUnavailableContext ? (
+                    <p className="px-4 pt-1 text-xs text-danger" role="status">
+                      移除或重新启用不可用的上下文后再发送。
+                    </p>
+                  ) : null}
 
-            {error ? (
-              <p className="px-4 pt-1 text-xs text-danger" role="alert">
-                {error}
-              </p>
-            ) : null}
+                  {error ? (
+                    <p className="px-4 pt-1 text-xs text-danger" role="alert">
+                      {error}
+                    </p>
+                  ) : null}
 
-            <div
-              className={`flex min-w-0 items-start gap-2 px-4 pb-3 ${attachments.length > 0 || hasUnavailableContext ? 'pt-1' : 'pt-4'}`}
-            >
-              <ComposerContextBar
-                className="max-w-[55%] shrink-0 sm:max-w-[60%]"
-                isDisabled={isGenerating}
-                items={transientContextItems}
-                onRemove={handleRemoveContext}
-              />
-              <PromptInput.TextArea
-                aria-label="消息输入"
-                className="!m-0 !min-h-7 min-w-24 flex-1 !rounded-none !px-0 !pt-0 !pb-0 !text-base !leading-7"
-                disabled={isDisabled}
-                placeholder="你想了解什么？"
-                onCompositionEnd={handleCompositionEnd}
-                onCompositionStart={() => {
-                  isComposingRef.current = true
-                  setMenuState(null)
-                }}
-                onInput={handleTextAreaEvent}
-                onKeyDown={handleComposerKeyDown}
-                onSelect={handleTextAreaEvent}
-              />
-            </div>
-          </PromptInput.Content>
+                  <div
+                    className={`flex min-w-0 items-start gap-2 px-4 pb-3 ${attachments.length > 0 || hasUnavailableContext ? 'pt-1' : 'pt-4'}`}
+                  >
+                    <ComposerContextBar
+                      className="max-w-[55%] shrink-0 sm:max-w-[60%]"
+                      isDisabled={isGenerating}
+                      items={transientContextItems}
+                      onRemove={handleRemoveContext}
+                    />
+                    <PromptInput.TextArea
+                      aria-label="消息输入"
+                      className="!m-0 !min-h-7 min-w-24 flex-1 !rounded-none !px-0 !pt-0 !pb-0 !text-base !leading-7"
+                      disabled={isDisabled}
+                      placeholder="你想了解什么？"
+                      onCompositionEnd={handleCompositionEnd}
+                      onCompositionStart={() => {
+                        isComposingRef.current = true
+                        setMenuState(null)
+                      }}
+                      onInput={handleTextAreaEvent}
+                      onKeyDown={handleComposerKeyDown}
+                      onSelect={handleTextAreaEvent}
+                    />
+                  </div>
+                </PromptInput.Content>
 
-          <PromptInput.Toolbar className="!static !items-end gap-2 px-4 pt-2 pb-3 @sm:gap-4">
-            <PromptInput.ToolbarStart className="min-w-0 flex-1 flex-wrap !gap-1 @sm:!gap-2">
-              <input
-                ref={fileInputRef}
-                aria-hidden
-                multiple
-                className="sr-only"
-                disabled={isGenerating}
-                tabIndex={-1}
-                type="file"
-                onChange={handleFileInputChange}
-              />
-              <ComposerCapabilityMenu
-                activeId={activeCapability?.id}
-                anchorRef={promptInputShellRef}
-                groups={capabilityGroups}
-                isDisabled={isGenerating}
-                isOpen={Boolean(menuState)}
-                onOpenChange={(open) => {
-                  setActiveCapabilityIndex(0)
-                  setMenuState(
-                    open ? { mode: COMPOSER_MENU_MODE.PLUS, query: '' } : null,
-                  )
-                }}
-                onSelect={handleCapabilitySelect}
-              />
-              <ComposerPermissionMenu
-                activePermission={activePermission}
-                isDisabled={isGenerating || isDisabled}
-              />
-              <ComposerModelMenu
-                groups={modelGroups}
-                isDisabled={isDisabled || isGenerating || isModelUpdating}
-                selectedKey={selectedModelKey}
-                selectedName={selectedModel?.name}
-                selectedThinkingLevel={selectedThinkingLevel}
-                onChange={(key) => void handleModelChange(key)}
-                onThinkingLevelChange={setThinkingLevel}
-              />
-              {activeMode ? (
-                <Button
-                  aria-label={`关闭${activeMode.label}`}
-                  className="h-8 min-w-0 shrink-0 gap-1.5 rounded-lg bg-transparent px-2 text-sm font-normal text-muted hover:bg-surface-secondary hover:text-foreground"
-                  isDisabled={isGenerating}
-                  size="sm"
-                  variant="ghost"
-                  onPress={() => handleRemoveContext(activeMode.id)}
-                >
-                  <ActiveModeIcon className="size-3.5 shrink-0" />
-                  <span className="max-w-24 truncate">{activeMode.label}</span>
-                </Button>
-              ) : null}
-            </PromptInput.ToolbarStart>
+                <PromptInput.Toolbar className="!static !items-end gap-2 px-4 pt-2 pb-3 @sm:gap-4">
+                  <PromptInput.ToolbarStart className="min-w-0 flex-1 flex-wrap !gap-1 @sm:!gap-2">
+                    <input
+                      ref={fileInputRef}
+                      aria-hidden
+                      multiple
+                      className="sr-only"
+                      disabled={isDisabled || isGenerating || isModelUpdating}
+                      tabIndex={-1}
+                      type="file"
+                      onChange={handleFileInputChange}
+                    />
+                    <ComposerCapabilityMenu
+                      activeId={activeCapability?.id}
+                      anchorRef={promptInputShellRef}
+                      groups={capabilityGroups}
+                      isDisabled={isGenerating}
+                      isOpen={Boolean(menuState)}
+                      onOpenChange={(open) => {
+                        setActiveCapabilityIndex(0)
+                        setMenuState(
+                          open
+                            ? { mode: COMPOSER_MENU_MODE.PLUS, query: '' }
+                            : null,
+                        )
+                      }}
+                      onSelect={handleCapabilitySelect}
+                    />
+                    <ComposerPermissionMenu
+                      activePermission={activePermission}
+                      isDisabled={isGenerating || isDisabled}
+                    />
+                    <ComposerModelMenu
+                      groups={modelGroups}
+                      isDisabled={isDisabled || isGenerating || isModelUpdating}
+                      selectedKey={selectedModelKey}
+                      selectedName={selectedModel?.name}
+                      selectedThinkingLevel={selectedThinkingLevel}
+                      onChange={(key) => void handleModelChange(key)}
+                      onThinkingLevelChange={setThinkingLevel}
+                    />
+                    {activeMode ? (
+                      <Button
+                        aria-label={`关闭${activeMode.label}`}
+                        className="h-8 min-w-0 shrink-0 gap-1.5 rounded-lg bg-transparent px-2 text-sm font-normal text-muted hover:bg-surface-secondary hover:text-foreground"
+                        isDisabled={isGenerating}
+                        size="sm"
+                        variant="ghost"
+                        onPress={() => handleRemoveContext(activeMode.id)}
+                      >
+                        <ActiveModeIcon className="size-3.5 shrink-0" />
+                        <span className="max-w-24 truncate">
+                          {activeMode.label}
+                        </span>
+                      </Button>
+                    ) : null}
+                  </PromptInput.ToolbarStart>
 
-            <PromptInput.ToolbarEnd className="shrink-0 gap-2">
-              {visibleContextUsage ? (
-                <ContextUsageMeter usage={visibleContextUsage} />
-              ) : null}
-              <PromptInput.Send
-                aria-label={isGenerating ? '停止生成' : '发送消息'}
-                className="size-9 min-h-9 min-w-9"
-                isDisabled={!canSend && !isGenerating}
-              />
-            </PromptInput.ToolbarEnd>
-          </PromptInput.Toolbar>
-        </PromptInput.Shell>
+                  <PromptInput.ToolbarEnd className="shrink-0 gap-2">
+                    {visibleContextUsage ? (
+                      <ContextUsageMeter usage={visibleContextUsage} />
+                    ) : null}
+                    <PromptInput.Send
+                      aria-label={isGenerating ? '停止生成' : '发送消息'}
+                      className="size-9 min-h-9 min-w-9"
+                      isDisabled={!canSend && !isGenerating}
+                    />
+                  </PromptInput.ToolbarEnd>
+                </PromptInput.Toolbar>
+              </PromptInput.Shell>
+            )}
+          />
 
-        <PromptInput.Footer>AI 可能会出错，请核对重要信息。</PromptInput.Footer>
-      </PromptInput>
+          <PromptInput.Footer>
+            AI 可能会出错，请核对重要信息。
+          </PromptInput.Footer>
+        </PromptInput>
+      </ChatAttachmentInput>
     </div>
   )
 }
