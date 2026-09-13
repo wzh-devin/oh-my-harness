@@ -38,6 +38,7 @@ export type CapabilityScope =
 export const CAPABILITY_KIND = {
   COMMAND: 'command',
   SKILL: 'skill',
+  MCP: 'mcp',
 } as const
 export type CapabilityKind =
   (typeof CAPABILITY_KIND)[keyof typeof CAPABILITY_KIND]

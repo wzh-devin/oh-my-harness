@@ -388,6 +388,11 @@ export function useAgentSessions() {
           } else if (event.type === AGENT_RUN_EVENT_TYPE.TRAJECTORY_CHANGED) {
             bumpTrajectory(sessionId)
           } else if (event.type === AGENT_RUN_EVENT_TYPE.START) {
+            if (event.mcpUnavailable?.length)
+              setErrors((current) => ({
+                ...current,
+                [sessionId]: `本轮 MCP 不可用：${event.mcpUnavailable?.join('、')}。其他能力继续运行。`,
+              }))
             setRunPermissions((current) => ({
               ...current,
               [sessionId]: event.permission,
@@ -630,7 +635,11 @@ export function useAgentSessions() {
   }, [forgetSessions, refreshSessions, threads])
 
   const sendMessage = useCallback(
-    async (sessionId: string, payload: ChatSubmitPayload) => {
+    async (
+      sessionId: string,
+      payload: ChatSubmitPayload,
+      onAccepted?: (accepted: boolean) => void,
+    ) => {
       const startedAt = Date.now()
       const userId = `pending-user-${crypto.randomUUID()}`
       const assistantId = `pending-assistant-${crypto.randomUUID()}`
@@ -645,10 +654,12 @@ export function useAgentSessions() {
       const contextItems = payload.contextItems.filter(
         (item) =>
           item.kind === CAPABILITY_KIND.COMMAND ||
-          item.kind === CAPABILITY_KIND.SKILL,
+          item.kind === CAPABILITY_KIND.SKILL ||
+          item.kind === CAPABILITY_KIND.MCP,
       )
       const preview =
         payload.message || attachments[0]?.name || contextItems[0]?.label || ''
+      setGlobalError('')
       setErrors((current) => ({ ...current, [sessionId]: '' }))
       setRunPermissions((current) => ({
         ...current,
@@ -674,6 +685,7 @@ export function useAgentSessions() {
       }))
 
       let terminal = false
+      let accepted = false
       let runError = ''
       try {
         await streamAgentMessage(
@@ -685,6 +697,11 @@ export function useAgentSessions() {
             )?.sourceId,
             content: payload.message,
             permission: payload.permission,
+            mcpServerIds: contextItems.flatMap((item) =>
+              item.kind === CAPABILITY_KIND.MCP && item.sourceId
+                ? [item.sourceId]
+                : [],
+            ),
             skillIds: contextItems.flatMap((item) =>
               item.kind === CAPABILITY_KIND.SKILL && item.sourceId
                 ? [item.sourceId]
@@ -702,6 +719,13 @@ export function useAgentSessions() {
                 bumpTrajectory(sessionId)
                 break
               case AGENT_RUN_EVENT_TYPE.START:
+                accepted = true
+                onAccepted?.(true)
+                if (event.mcpUnavailable?.length)
+                  setErrors((current) => ({
+                    ...current,
+                    [sessionId]: `本轮 MCP 不可用：${event.mcpUnavailable?.join('、')}。其他能力继续运行。`,
+                  }))
                 setRunPermissions((current) => ({
                   ...current,
                   [sessionId]: event.permission,
@@ -747,6 +771,7 @@ export function useAgentSessions() {
                             state: SESSION_TOOL_STATE.INPUT_AVAILABLE,
                             toolCallId: event.toolCallId,
                             toolName: event.toolName,
+                            label: 'label' in event ? event.label : undefined,
                           },
                           startedAt,
                         )
@@ -783,6 +808,7 @@ export function useAgentSessions() {
                               : SESSION_TOOL_STATE.OUTPUT_AVAILABLE,
                             toolCallId: event.toolCallId,
                             toolName: event.toolName,
+                            label: 'label' in event ? event.label : undefined,
                           },
                           startedAt,
                         )
@@ -822,6 +848,7 @@ export function useAgentSessions() {
                             state: 'requires-action',
                             toolCallId: event.toolCallId,
                             toolName: event.toolName,
+                            label: 'label' in event ? event.label : undefined,
                           },
                           startedAt,
                         )
@@ -881,6 +908,10 @@ export function useAgentSessions() {
         if (!terminal) runError = '连接已中断，已重新加载持久化消息。'
       } catch (error) {
         runError = errorMessage(error)
+      }
+      if (!accepted) {
+        setGlobalError(runError || '消息未发送，请重试。')
+        onAccepted?.(false)
       }
 
       try {

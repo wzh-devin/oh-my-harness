@@ -33,7 +33,7 @@ interface ChatPageProps {
     selection: Pick<ChatSubmitPayload, 'modelId' | 'providerId'>,
   ) => Promise<boolean>
   onRestore: () => Promise<string>
-  onSubmit: (payload: ChatSubmitPayload) => boolean
+  onSubmit: (payload: ChatSubmitPayload) => boolean | Promise<boolean>
 }
 
 /** 保留完整会话工作台，并消费当前 Session 的真实消息与运行状态。 */
@@ -74,6 +74,7 @@ export function ChatPage({
         state: 'requires-action' as const,
         toolCallId: pendingApproval.toolCallId,
         toolName: pendingApproval.toolName,
+        label: 'label' in pendingApproval ? pendingApproval.label : undefined,
       }
     : undefined
 

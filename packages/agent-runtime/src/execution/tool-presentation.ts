@@ -36,6 +36,16 @@ export const toToolApprovalEvent = (approval: PendingToolApproval) => {
     toolCallId: approval.toolCallId,
     type: AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED,
   }
+  if (approval.effect === TOOL_EFFECT.MCP_CALL)
+    return {
+      ...common,
+      kind: TOOL_ACTIVITY_KIND.TOOL,
+      input: approval.input,
+      serverId: approval.serverId,
+      label: `${approval.serverName} · ${approval.originalToolName}`,
+      title: `允许 AI 助手调用 ${approval.serverName} 的 ${approval.originalToolName} 吗？`,
+      toolName: approval.toolName,
+    }
   if (approval.effect === TOOL_EFFECT.EXECUTE)
     return {
       ...common,

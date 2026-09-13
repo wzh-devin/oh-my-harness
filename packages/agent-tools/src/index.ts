@@ -14,3 +14,7 @@ export {
   type TodoStatus,
 } from './tools/todo.ts'
 export { WorkspaceExecutionEnv } from './workspace/execution-env.ts'
+export { McpService } from './mcp/service.ts'
+export type { McpServerInfo } from './mcp/service.ts'
+export { createMcpTools } from './mcp/toolset.ts'
+export { McpError, parseMcpJson } from './mcp/config.ts'

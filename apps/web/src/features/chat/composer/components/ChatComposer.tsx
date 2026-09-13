@@ -51,6 +51,7 @@ import { ChatAttachmentList } from './ChatAttachmentList.tsx'
 import { ContextUsageMeter } from './ContextUsageMeter.tsx'
 import type { ChatContextUsage } from '../../data/index.ts'
 import { getNonImageClipboardFiles } from '../utils/clipboard-files.ts'
+import { useMcpServers } from '../../../settings/mcp/hooks/use-mcp-servers.ts'
 
 interface PendingAttachment {
   file: File
@@ -122,6 +123,10 @@ export function ChatComposer({
   const { providers, setThinkingLevel, thinkingLevel } = useModelSettings()
   const { permission } = usePermissionSettings()
   const { commands, skills } = useCapabilitySettings()
+  const mcp = useMcpServers(
+    Boolean(menuState) ||
+      contextItems.some((item) => item.kind === COMPOSER_CAPABILITY_KIND.MCP),
+  )
   const { onWorkspaceSelect, selectedWorkspaceId, workspaces } =
     useChatWorkspace()
   const composerWorkspace = resolveComposerWorkspace(
@@ -132,6 +137,7 @@ export function ChatComposer({
   const composerRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const isComposingRef = useRef(false)
+  const lastMenuInputRef = useRef('')
   const promptInputShellRef = useRef<HTMLDivElement>(null)
   const submitPendingRef = useRef(false)
   const modelGroups = getSelectableModelGroups(providers)
@@ -163,9 +169,13 @@ export function ChatComposer({
         skills,
         commands,
         menuState.query,
+        mcp.servers,
+        mcp.message,
       )
     : []
-  const capabilities = capabilityGroups.flatMap((group) => group.items)
+  const capabilities = capabilityGroups
+    .flatMap((group) => group.items)
+    .filter((item) => !item.unavailableReason)
   const activeCapability = capabilities.length
     ? capabilities[activeCapabilityIndex % capabilities.length]
     : undefined
@@ -175,6 +185,8 @@ export function ChatComposer({
       item,
       skills,
       commands,
+      mcp.servers,
+      mcp.message,
     ),
   }))
   const hasUnavailableContext = contextDisplayItems.some(
@@ -324,6 +336,14 @@ export function ChatComposer({
 
   const updateMenuFromTextArea = (textArea: HTMLTextAreaElement) => {
     if (isComposingRef.current) return
+    // 同一输入/选区的 select 通知不能重新打开刚关闭的菜单。
+    const input = JSON.stringify([
+      textArea.value,
+      textArea.selectionStart,
+      textArea.selectionEnd,
+    ])
+    if (lastMenuInputRef.current === input) return
+    lastMenuInputRef.current = input
 
     const trigger = findComposerTrigger(
       textArea.value,
@@ -354,6 +374,7 @@ export function ChatComposer({
   }
 
   const handleCapabilitySelect = (capability: ComposerCapability) => {
+    if (capability.unavailableReason) return
     setMenuState(null)
 
     const textArea = getTextArea()
@@ -466,7 +487,7 @@ export function ChatComposer({
             className="max-w-full"
             options={workspaces}
             startContent={<Folder className="size-4 shrink-0" />}
-            triggerClassName="h-8 max-w-56 bg-transparent pl-1 text-sm hover:bg-surface-secondary"
+            triggerClassName="h-8 max-w-56 rounded-full bg-transparent pl-1 text-sm hover:bg-surface-secondary"
             value={composerWorkspace.workspaceId}
             onChange={onWorkspaceSelect}
           />

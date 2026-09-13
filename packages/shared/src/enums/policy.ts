@@ -7,6 +7,7 @@ export type ToolPermission =
   (typeof TOOL_PERMISSION)[keyof typeof TOOL_PERMISSION]
 
 export const TOOL_EFFECT = {
+  MCP_CALL: 'mcp-call',
   READ: 'read',
   WRITE: 'write',
   EXECUTE: 'execute',

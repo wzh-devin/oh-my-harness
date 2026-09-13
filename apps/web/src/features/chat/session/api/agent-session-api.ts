@@ -58,6 +58,7 @@ export interface StreamAgentMessageInput {
   content: string
   permission: PermissionId
   skillIds: readonly string[]
+  mcpServerIds?: readonly string[]
   thinkingLevel: ModelThinkingLevel
 }
 
@@ -220,6 +221,25 @@ const parseToolApproval = (
     type: AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED,
   }
   if (
+    event.kind === TOOL_ACTIVITY_KIND.TOOL &&
+    typeof event.serverId === 'string' &&
+    event.serverId &&
+    typeof event.label === 'string' &&
+    typeof event.toolName === 'string' &&
+    event.toolName &&
+    event.input &&
+    typeof event.input === 'object' &&
+    !Array.isArray(event.input)
+  )
+    return {
+      ...common,
+      kind: TOOL_ACTIVITY_KIND.TOOL,
+      serverId: event.serverId,
+      label: event.label,
+      toolName: event.toolName,
+      input: event.input as Record<string, unknown>,
+    }
+  if (
     event.kind === TOOL_ACTIVITY_KIND.COMMAND &&
     event.toolName === POLICY_TOOL.BASH.toolName
   ) {
@@ -279,6 +299,10 @@ function toRunEvent(value: unknown): AgentRunEventVo {
       ) {
         return {
           permission: event.permission,
+          ...(Array.isArray(event.mcpUnavailable) &&
+          event.mcpUnavailable.every((item) => typeof item === 'string')
+            ? { mcpUnavailable: event.mcpUnavailable as string[] }
+            : {}),
           sessionId: event.sessionId,
           type: AGENT_RUN_EVENT_TYPE.START,
         }
@@ -303,6 +327,7 @@ function toRunEvent(value: unknown): AgentRunEventVo {
       ) {
         return {
           input: event.input,
+          ...(typeof event.label === 'string' ? { label: event.label } : {}),
           toolCallId: event.toolCallId,
           toolName: event.toolName,
           kind: event.kind,
@@ -326,6 +351,7 @@ function toRunEvent(value: unknown): AgentRunEventVo {
             ? { outcome: bashOutcome(event.outcome) }
             : {}),
           output: event.output,
+          ...(typeof event.label === 'string' ? { label: event.label } : {}),
           toolCallId: event.toolCallId,
           toolName: event.toolName,
           kind: event.kind,
@@ -576,6 +602,7 @@ export async function streamAgentMessage(
     content: input.content,
     permission: input.permission,
     ...(input.skillIds.length ? { skillIds: input.skillIds } : {}),
+    ...(input.mcpServerIds?.length ? { mcpServerIds: input.mcpServerIds } : {}),
     thinkingLevel: input.thinkingLevel,
   }
   const body = input.attachments.length

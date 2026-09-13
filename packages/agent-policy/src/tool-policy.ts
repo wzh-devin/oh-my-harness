@@ -18,6 +18,7 @@ import {
   type PendingToolApproval,
   type PolicyDecision,
   type ToolAuthorizationRequest,
+  type McpToolIdentity,
 } from './contracts.ts'
 
 interface ApprovalHooks {
@@ -47,8 +48,23 @@ export class ToolPolicyError extends Error {
 /** 对固定工具矩阵做无副作用决策，未知权限或能力组合一律拒绝。 */
 export const evaluateToolPolicy = (
   request: ToolAuthorizationRequest,
+  mcpTools?: ReadonlyMap<string, McpToolIdentity>,
 ): PolicyDecision => {
   if (!isToolPermission(request.permission)) return POLICY_DECISION.DENY
+  if (request.effect === TOOL_EFFECT.MCP_CALL) {
+    const tool = mcpTools?.get(request.toolName)
+    if (
+      !tool ||
+      tool.serverId !== request.serverId ||
+      tool.originalToolName !== request.originalToolName ||
+      tool.revision !== request.revision ||
+      tool.toolVersion !== request.toolVersion
+    )
+      return POLICY_DECISION.DENY
+    return request.permission === TOOL_PERMISSION.FULL_ACCESS
+      ? POLICY_DECISION.ALLOW
+      : POLICY_DECISION.REQUIRE_APPROVAL
+  }
   const tool = getPolicyTool(request.toolName)
   if (!tool || request.effect !== tool.effect) return POLICY_DECISION.DENY
   if (request.effect === TOOL_EFFECT.EXECUTE) {
@@ -87,8 +103,9 @@ export class ToolPolicy {
     request: ToolAuthorizationRequest,
     hooks: ApprovalHooks,
     signal?: AbortSignal,
+    mcpTools?: ReadonlyMap<string, McpToolIdentity>,
   ) {
-    const decision = evaluateToolPolicy(request)
+    const decision = evaluateToolPolicy(request, mcpTools)
     if (decision === POLICY_DECISION.ALLOW) return
     if (decision === POLICY_DECISION.DENY) {
       throw new ToolPolicyError(

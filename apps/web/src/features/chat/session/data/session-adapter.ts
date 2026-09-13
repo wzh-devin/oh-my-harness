@@ -41,6 +41,7 @@ const toChatTool = (
   state: tool.state,
   toolCallId: tool.toolCallId,
   toolName: tool.toolName,
+  label: tool.label,
 })
 
 /** 保留服务端消息块顺序，并为旧响应生成兼容的活动块。 */

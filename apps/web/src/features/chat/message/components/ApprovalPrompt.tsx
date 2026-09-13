@@ -16,6 +16,16 @@ interface ApprovalPromptProps {
 export function ApprovalPrompt({ tool, onResolve }: ApprovalPromptProps) {
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
+      // 编辑设置或输入内容时，回车与 Escape 只属于当前控件。
+      if (
+        event.defaultPrevented ||
+        document.querySelector('[role=dialog]') ||
+        (event.target instanceof Element &&
+          event.target.closest(
+            'input,textarea,select,button,[contenteditable=true]',
+          ))
+      )
+        return
       if (event.key === 'Escape') {
         event.preventDefault()
         onResolve(APPROVAL_DECISION.REJECT)

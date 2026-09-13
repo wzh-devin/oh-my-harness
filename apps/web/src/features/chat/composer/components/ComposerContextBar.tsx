@@ -1,14 +1,7 @@
-import {
-  CircleExclamation,
-  MagicWand,
-  Terminal,
-  Xmark,
-} from '@gravity-ui/icons'
+import { CircleExclamation, Xmark } from '@gravity-ui/icons'
 import { Button } from '@heroui/react'
-import type {
-  ComposerContextItem,
-  ComposerContextKind,
-} from '../capabilities/composer-capabilities.ts'
+import type { ComposerContextItem } from '../capabilities/composer-capabilities.ts'
+import { ComposerCapabilityIcon } from './ComposerCapabilityIcon.tsx'
 
 type ComposerContextDisplayItem = ComposerContextItem & {
   unavailableReason?: string | null
@@ -21,12 +14,7 @@ interface ComposerContextBarProps {
   onRemove?: (id: string) => void
 }
 
-const CONTEXT_ICONS = {
-  command: Terminal,
-  skill: MagicWand,
-} satisfies Record<ComposerContextKind, typeof Terminal>
-
-/** 以统一 Token 展示消息的命令与 Skill 上下文。 */
+/** 以统一 Token 展示消息的命令、Skill 与 MCP 上下文。 */
 export function ComposerContextBar({
   className,
   isDisabled,
@@ -42,7 +30,6 @@ export function ComposerContextBar({
       role="list"
     >
       {items.map((item) => {
-        const Icon = CONTEXT_ICONS[item.kind]
         const label = item.label
         const title = item.unavailableReason
           ? `${label}：${item.unavailableReason}`
@@ -65,8 +52,9 @@ export function ComposerContextBar({
                 variant="ghost"
                 onPress={() => onRemove(item.id)}
               >
-                <Icon
-                  aria-hidden
+                <ComposerCapabilityIcon
+                  kind={item.kind}
+                  label={item.label}
                   className="size-3.5 group-hover/remove:hidden"
                 />
                 <Xmark className="hidden size-3.5 group-hover/remove:block" />
@@ -75,7 +63,11 @@ export function ComposerContextBar({
               <span
                 className={`flex size-6 shrink-0 items-center justify-center rounded-md ${item.unavailableReason ? 'bg-danger/10 text-danger' : 'bg-accent/10 text-accent'}`}
               >
-                <Icon aria-hidden className="size-3.5" />
+                <ComposerCapabilityIcon
+                  kind={item.kind}
+                  label={item.label}
+                  className="size-3.5"
+                />
               </span>
             )}
             <span

@@ -3,12 +3,14 @@ import type {
   CapabilityCommand,
 } from '../../../settings/index.ts'
 import {
+  MCP_CONNECTION_STATUS,
   COMPOSER_CAPABILITY_KIND,
   COMPOSER_MENU_MODE,
   type CapabilityKind,
   type ComposerCapabilityKind,
   type ComposerMenuMode,
 } from '@oh-my-harness/shared'
+import type { McpServerVo } from '../../../settings/mcp/types/mcp-vo.ts'
 
 export type { ComposerMenuMode }
 export type ComposerContextKind = CapabilityKind
@@ -34,6 +36,7 @@ export interface ComposerTrigger {
 }
 
 export type ComposerCapability = {
+  unavailableReason?: string | null
   contextReference?: string
   description: string
   id: string
@@ -46,6 +49,7 @@ export interface ComposerCapabilityGroup {
   id: string
   items: ComposerCapability[]
   label: string
+  message?: string
 }
 
 const ADD_ITEMS: readonly ComposerCapability[] = [
@@ -72,7 +76,17 @@ const filterGroups = (groups: ComposerCapabilityGroup[], query: string) =>
       ...group,
       items: group.items.filter((item) => matchesQuery(item, query)),
     }))
-    .filter((group) => group.items.length > 0)
+    .filter((group) => group.items.length > 0 || group.message)
+
+/** 选择只引用已启用且可调用的服务；状态变化后同样阻止发送过期引用。 */
+export const getMcpUnavailableReason = (server?: McpServerVo) => {
+  if (!server) return 'MCP 服务已移除'
+  if (!server.enabled) return 'MCP 服务已停用'
+  if (server.status !== MCP_CONNECTION_STATUS.CONNECTED)
+    return 'MCP 服务尚未连接'
+  if (!server.toolCount) return 'MCP 服务没有可用工具'
+  return null
+}
 
 /** 解析光标前有效的 @ 或 / 唤醒词。 */
 export function findComposerTrigger(
@@ -103,7 +117,34 @@ export function getComposerCapabilityGroups(
   skills: readonly AssistantSkill[],
   commands: readonly CapabilityCommand[],
   query = '',
+  mcpServers?: readonly McpServerVo[],
+  mcpMessage?: string,
 ): ComposerCapabilityGroup[] {
+  const mcpGroups: ComposerCapabilityGroup[] = mcpServers
+    ? [
+        {
+          id: 'mcp',
+          label: 'MCP',
+          message:
+            mcpMessage ||
+            (!mcpServers.length
+              ? '尚未配置 MCP 服务，请在设置中添加。'
+              : undefined),
+          items: mcpServers.map((server) => ({
+            id: `mcp-${server.id}`,
+            kind: COMPOSER_CAPABILITY_KIND.MCP,
+            label: server.name,
+            description:
+              mcpMessage ||
+              getMcpUnavailableReason(server) ||
+              `${server.toolCount} 个工具 · 本轮优先使用`,
+            unavailableReason: mcpMessage || getMcpUnavailableReason(server),
+            contextReference: `/mcp:${server.name}`,
+            sourceId: server.id,
+          })),
+        },
+      ]
+    : []
   const commandItems: ComposerCapability[] = commands.map((command) => ({
     description: command.description,
     id: command.id,
@@ -117,6 +158,7 @@ export function getComposerCapabilityGroups(
       [
         { id: 'commands', items: commandItems, label: '命令' },
         { id: 'add', items: [...ADD_ITEMS], label: '添加' },
+        ...mcpGroups,
       ],
       query,
     )
@@ -136,6 +178,7 @@ export function getComposerCapabilityGroups(
     [
       { id: 'commands', items: commandItems, label: '命令' },
       { id: 'skills', items: skillItems, label: 'Skills' },
+      ...mcpGroups,
     ],
     query,
   )
@@ -155,6 +198,7 @@ export function createComposerContextItem(
 ): ComposerContextItem | null {
   if (
     capability.kind === COMPOSER_CAPABILITY_KIND.ATTACHMENT ||
+    capability.unavailableReason ||
     !capability.contextReference
   ) {
     return null
@@ -194,7 +238,17 @@ export function getComposerContextUnavailableReason(
   item: ComposerContextItem,
   skills: readonly AssistantSkill[],
   commands: readonly CapabilityCommand[],
+  mcpServers: readonly McpServerVo[] = [],
+  mcpMessage?: string,
 ) {
+  if (item.kind === COMPOSER_CAPABILITY_KIND.MCP) {
+    return (
+      mcpMessage ||
+      getMcpUnavailableReason(
+        mcpServers.find((server) => server.id === item.sourceId),
+      )
+    )
+  }
   if (item.kind === COMPOSER_CAPABILITY_KIND.SKILL) {
     const skill = skills.find((candidate) => candidate.id === item.sourceId)
     if (!skill) return '技能已移除'

@@ -18,6 +18,8 @@ export {
   isToolPermission,
 } from './contracts.ts'
 export type {
+  McpToolIdentity,
+  McpToolAuthorizationRequest,
   ApprovalDecision,
   ApprovalResolution,
   BashToolAuthorizationRequest,

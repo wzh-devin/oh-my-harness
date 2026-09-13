@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import {
   Archive,
+  BookOpen,
   Database,
   Display,
   Gear,
   Moon,
-  Code,
   Sun,
 } from '@gravity-ui/icons'
+import mcpIcon from '@lobehub/icons-static-svg/icons/mcp.svg'
 import { Button, Modal, ToggleButton, ToggleButtonGroup } from '@heroui/react'
 import { SETTINGS_SECTION, type SettingsSection } from '@oh-my-harness/shared'
 import {
@@ -16,6 +17,7 @@ import {
   usePermissionSettings,
 } from '../../providers/contexts/permission-settings-context.ts'
 import { ModelsSettingsSection } from '../../models/components/ModelsSettingsSection.tsx'
+import { McpSettingsSection } from '../../mcp/components/index.ts'
 import { SkillsSettingsSection } from '../../skills/components/SkillsSettingsSection.tsx'
 import type { ArchivedConversation } from '../types/settings-dialog.ts'
 import { SettingsSelect } from './SettingsSelect.tsx'
@@ -34,10 +36,31 @@ interface SettingsDialogProps {
 }
 
 const SETTINGS_SECTIONS = [
-  { id: SETTINGS_SECTION.GENERAL, label: '通用设置', icon: Gear },
-  { id: SETTINGS_SECTION.MODELS, label: '模型', icon: Database },
-  { id: SETTINGS_SECTION.SKILLS, label: '技能', icon: Code },
-  { id: SETTINGS_SECTION.ARCHIVED, label: '已归档对话', icon: Archive },
+  {
+    id: SETTINGS_SECTION.GENERAL,
+    label: '通用设置',
+    icon: <Gear className="size-4 shrink-0" />,
+  },
+  {
+    id: SETTINGS_SECTION.MODELS,
+    label: '模型',
+    icon: <Database className="size-4 shrink-0" />,
+  },
+  {
+    id: SETTINGS_SECTION.SKILLS,
+    label: '技能',
+    icon: <BookOpen className="size-4 shrink-0" />,
+  },
+  {
+    id: SETTINGS_SECTION.MCP,
+    label: 'MCP',
+    icon: <img src={mcpIcon} alt="" className="size-4 shrink-0 dark:invert" />,
+  },
+  {
+    id: SETTINGS_SECTION.ARCHIVED,
+    label: '已归档对话',
+    icon: <Archive className="size-4 shrink-0" />,
+  },
 ] as const
 
 const APPEARANCE_OPTIONS = [
@@ -60,15 +83,21 @@ export function SettingsDialog({
   const [activeSection, setActiveSection] =
     useState<SettingsSection>(initialSection)
   const { permission, setPermission } = usePermissionSettings()
+  const [mcpDirty, setMcpDirty] = useState(false)
+  const [mcpBusy, setMcpBusy] = useState(false)
+  const canLeaveMcp = () =>
+    !mcpBusy && (!mcpDirty || window.confirm('放弃尚未保存的 MCP 配置？'))
   const [language, setLanguage] = useState('zh-CN')
   const [appearance, setAppearance] = useState('system')
 
   return (
     <Modal.Backdrop
-      isDismissable
+      isDismissable={!mcpBusy}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm"
       isOpen={isOpen}
-      onOpenChange={onOpenChange}
+      onOpenChange={(open) => {
+        if (open || canLeaveMcp()) onOpenChange(open)
+      }}
     >
       <Modal.Container
         className="h-[calc(100dvh-24px)] w-[calc(100vw-24px)] max-w-[800px] p-0 sm:h-[min(800px,calc(100dvh-48px))] sm:w-[calc(100vw-48px)] sm:p-0"
@@ -81,6 +110,7 @@ export function SettingsDialog({
             </Modal.Heading>
             <Modal.CloseTrigger
               aria-label="关闭设置"
+              isDisabled={mcpBusy}
               className="pointer-events-auto bg-transparent text-foreground hover:bg-surface-secondary"
             />
           </Modal.Header>
@@ -91,7 +121,6 @@ export function SettingsDialog({
               className="flex gap-1 overflow-x-auto px-3 pt-16 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:flex-col md:overflow-visible md:p-3 md:pt-16"
             >
               {SETTINGS_SECTIONS.map((section) => {
-                const Icon = section.icon
                 const isActive = section.id === activeSection
 
                 return (
@@ -100,9 +129,12 @@ export function SettingsDialog({
                     aria-pressed={isActive}
                     className={`h-10 shrink-0 justify-start gap-2 rounded-xl px-3 text-left text-sm font-normal md:w-full ${isActive ? 'bg-surface-secondary text-foreground' : ''}`}
                     variant="ghost"
-                    onPress={() => setActiveSection(section.id)}
+                    onPress={() => {
+                      if (section.id !== activeSection && canLeaveMcp())
+                        setActiveSection(section.id)
+                    }}
                   >
-                    <Icon className="size-4 shrink-0" />
+                    {section.icon}
                     {section.label}
                   </Button>
                 )
@@ -170,6 +202,13 @@ export function SettingsDialog({
               <div hidden={activeSection !== SETTINGS_SECTION.SKILLS}>
                 <SkillsSettingsSection />
               </div>
+
+              {isOpen && activeSection === SETTINGS_SECTION.MCP ? (
+                <McpSettingsSection
+                  onDirtyChange={setMcpDirty}
+                  onBusyChange={setMcpBusy}
+                />
+              ) : null}
 
               <div hidden={activeSection !== SETTINGS_SECTION.ARCHIVED}>
                 <ArchivedConversationsSection

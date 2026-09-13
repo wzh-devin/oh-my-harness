@@ -87,7 +87,23 @@ export type BashToolAuthorizationRequest = ToolAuthorizationBase &
     command: string
   }
 export type ToolAuthorizationRequest =
-  FileToolAuthorizationRequest | BashToolAuthorizationRequest
+  | FileToolAuthorizationRequest
+  | BashToolAuthorizationRequest
+  | McpToolAuthorizationRequest
+
+export interface McpToolIdentity {
+  toolName: string
+  serverId: string
+  serverName: string
+  originalToolName: string
+  revision: number
+  toolVersion: string
+}
+export type McpToolAuthorizationRequest = ToolAuthorizationBase &
+  McpToolIdentity & {
+    effect: typeof TOOL_EFFECT.MCP_CALL
+    input: Record<string, unknown>
+  }
 export type PendingToolApproval = ToolAuthorizationRequest & {
   approvalId: string
 }

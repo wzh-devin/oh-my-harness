@@ -166,7 +166,10 @@ export function App() {
       try {
         const thread = await createSession(payload)
         setSelectedWorkspaceId(payload.workspaceId)
-        void sendMessage(thread.id, payload)
+        const accepted = await new Promise<boolean>((resolve) => {
+          void sendMessage(thread.id, payload, resolve)
+        })
+        if (!accepted) return false
         commitNavigation(`/${thread.id}`)
         return true
       } catch {
@@ -178,8 +181,9 @@ export function App() {
 
   const handleThreadSubmit = useCallback(
     (thread: ChatThread, payload: ChatSubmitPayload) => {
-      void sendMessage(thread.id, payload)
-      return true
+      return new Promise<boolean>((resolve) => {
+        void sendMessage(thread.id, payload, resolve)
+      })
     },
     [sendMessage],
   )

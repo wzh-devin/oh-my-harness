@@ -1,6 +1,7 @@
 import type { RefObject } from 'react'
-import { FilePlus, MagicWand, Plus, Terminal } from '@gravity-ui/icons'
+import { Plus } from '@gravity-ui/icons'
 import { ListBox, Popover } from '@heroui/react'
+import { ComposerCapabilityIcon } from './ComposerCapabilityIcon.tsx'
 import type {
   ComposerCapability,
   ComposerCapabilityGroup,
@@ -16,13 +17,7 @@ interface ComposerCapabilityMenuProps {
   onSelect: (item: ComposerCapability) => void
 }
 
-const CAPABILITY_ICONS = {
-  attachment: FilePlus,
-  command: Terminal,
-  skill: MagicWand,
-} as const
-
-/** 展示 Composer 的命令、文件与 Skills。 */
+/** 展示 Composer 的命令、文件、Skills 与 MCP 服务。 */
 export function ComposerCapabilityMenu({
   activeId,
   anchorRef,
@@ -61,21 +56,29 @@ export function ComposerCapabilityMenu({
                 <p className="px-2 py-0.5 text-[11px] font-medium leading-5 text-muted">
                   {group.label}
                 </p>
+                {group.message ? (
+                  <p role="status" className="px-2 py-2 text-xs text-muted">
+                    {group.message}
+                  </p>
+                ) : null}
                 <ListBox aria-label={group.label}>
                   {group.items.map((item) => {
-                    const Icon = CAPABILITY_ICONS[item.kind]
-
                     return (
                       <ListBox.Item
                         key={item.id}
                         aria-current={activeId === item.id ? 'true' : undefined}
                         className={`grid min-h-11 grid-cols-[1.5rem_minmax(6rem,8rem)_minmax(0,1fr)] items-center gap-2 rounded-lg px-2 py-1 sm:min-h-9 ${activeId === item.id ? 'bg-surface-secondary' : ''}`}
                         id={item.id}
+                        isDisabled={Boolean(item.unavailableReason)}
                         textValue={item.label}
                         onAction={() => onSelect(item)}
                       >
                         <span className="flex size-6 items-center justify-center text-muted">
-                          <Icon className="size-4" />
+                          <ComposerCapabilityIcon
+                            kind={item.kind}
+                            label={item.label}
+                            className="size-4"
+                          />
                         </span>
                         <span className="truncate text-sm text-foreground">
                           {item.label}

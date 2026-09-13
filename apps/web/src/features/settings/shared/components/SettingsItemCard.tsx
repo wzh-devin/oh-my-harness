@@ -5,6 +5,7 @@ interface SettingsItemCardProps {
   actions: ReactNode
   description: ReactNode
   icon: ReactNode
+  isDisabled?: boolean
   openLabel?: string
   title: ReactNode
   onOpen?: () => void
@@ -15,6 +16,7 @@ export function SettingsItemCard({
   actions,
   description,
   icon,
+  isDisabled,
   onOpen,
   openLabel,
   title,
@@ -27,6 +29,7 @@ export function SettingsItemCard({
       {onOpen && openLabel ? (
         <Button
           aria-label={openLabel}
+          isDisabled={isDisabled}
           className="absolute inset-0 z-0 h-full w-full cursor-[var(--cursor-interactive)] rounded-xl"
           variant="ghost"
           onPress={onOpen}

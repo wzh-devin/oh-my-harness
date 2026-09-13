@@ -17,6 +17,7 @@ export type AgentRuntimeEvent =
   | {
       permission: ToolPermission
       sessionId: string
+      mcpUnavailable?: string[]
       type: typeof AGENT_RUN_EVENT_TYPE.START
     }
   | { type: typeof AGENT_RUN_EVENT_TYPE.TRAJECTORY_CHANGED }
@@ -27,6 +28,7 @@ export type AgentRuntimeEvent =
       input: unknown
       toolCallId: string
       toolName: string
+      label?: string
       kind: ToolActivityKind
       type: typeof AGENT_RUN_EVENT_TYPE.TOOL_START
     }
@@ -37,6 +39,7 @@ export type AgentRuntimeEvent =
       output: unknown
       toolCallId: string
       toolName: string
+      label?: string
       kind: ToolActivityKind
       type: typeof AGENT_RUN_EVENT_TYPE.TOOL_END
     }

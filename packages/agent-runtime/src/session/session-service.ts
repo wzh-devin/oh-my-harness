@@ -45,6 +45,7 @@ import type {
 } from '../execution/run-input.ts'
 import {
   projectAgentTrajectory,
+  redactTrajectoryValue,
   type AgentTrajectory,
   type AgentTrajectoryRecord,
 } from '../trajectory/agent-trajectory.ts'
@@ -122,6 +123,7 @@ export interface AgentSessionTool {
   state: SessionToolState
   toolCallId: string
   toolName: string
+  label?: string
 }
 
 export type AgentSessionMessagePart =
@@ -267,6 +269,7 @@ function safeToolInput(input: Record<string, unknown>) {
 function toSessionTool(
   toolCall: Extract<AssistantMessage['content'][number], { type: 'toolCall' }>,
   toolResults: ReadonlyMap<string, ToolResultMessage>,
+  toolLabels: ReadonlyMap<string, string>,
 ): AgentSessionTool {
   const result = toolResults.get(toolCall.id)
   const output = result ? toolResultText(result) : undefined
@@ -276,9 +279,19 @@ function toSessionTool(
       : undefined
   return {
     ...(result?.isError && output ? { errorText: output } : {}),
+    ...(result?.details &&
+    typeof result.details === 'object' &&
+    typeof (result.details as { displayName?: unknown }).displayName ===
+      'string'
+      ? { label: (result.details as { displayName: string }).displayName }
+      : toolLabels.has(toolCall.id)
+        ? { label: toolLabels.get(toolCall.id) }
+        : {}),
     input: toolFilePath(result?.details)
       ? { path: toolFilePath(result?.details) }
-      : safeToolInput(toolCall.arguments),
+      : toolCall.name.startsWith('mcp_')
+        ? (redactTrajectoryValue(toolCall.arguments) as Record<string, unknown>)
+        : safeToolInput(toolCall.arguments),
     kind: getToolActivityKind(toolCall.name),
     ...(!result?.isError && output ? { output } : {}),
     ...(outcome ? { outcome } : {}),
@@ -369,6 +382,7 @@ export function projectRecoverableTodos(entries: readonly Entry[]) {
 function toMessage(
   entry: Extract<Entry, { type: 'message' }>,
   toolResults: ReadonlyMap<string, ToolResultMessage>,
+  toolLabels: ReadonlyMap<string, string>,
 ) {
   const { message } = entry
   if (
@@ -414,7 +428,7 @@ function toMessage(
           }
           return [
             {
-              tool: toSessionTool(content, toolResults),
+              tool: toSessionTool(content, toolResults, toolLabels),
               type: MESSAGE_PART_TYPE.TOOL,
             },
           ]
@@ -708,11 +722,36 @@ export class AgentSessionService {
           toolResults.set(entry.message.toolCallId, entry.message)
         }
       }
+      // Run 快照保留名称，待审批或中断、尚无 toolResult 时也能恢复可读标签。
+      const toolLabels = new Map<string, string>()
+      let currentLabels: Record<string, unknown> = {}
+      for (const entry of branchEntries.toReversed()) {
+        if (
+          entry.type === 'custom' &&
+          entry.customType === SESSION_CUSTOM_TYPE.RUN_POLICY
+        ) {
+          const labels = (entry.data as { toolLabels?: unknown } | undefined)
+            ?.toolLabels
+          currentLabels =
+            labels && typeof labels === 'object' && !Array.isArray(labels)
+              ? (labels as Record<string, unknown>)
+              : {}
+        } else if (
+          entry.type === 'message' &&
+          entry.message.role === 'assistant'
+        ) {
+          for (const content of entry.message.content) {
+            if (content.type !== 'toolCall') continue
+            const label = currentLabels[content.name]
+            if (typeof label === 'string') toolLabels.set(content.id, label)
+          }
+        }
+      }
       const candidates: AgentSessionMessage[] = []
       for (const entry of entries) {
         if (options.before !== undefined && entry.seq >= options.before)
           continue
-        const message = toMessage(entry, toolResults)
+        const message = toMessage(entry, toolResults, toolLabels)
         if (message) candidates.push(message)
         if (candidates.length > options.limit) break
       }

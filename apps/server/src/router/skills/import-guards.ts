@@ -2,7 +2,7 @@ import type { MiddlewareHandler } from 'hono'
 
 /** 限制设置写操作的浏览器来源；本地 CLI 无 Origin 的请求保持可用。 */
 export const settingsMutationGuard =
-  (publicUrl: string): MiddlewareHandler =>
+  (publicUrl: string, code = 'SKILL_ORIGIN_REJECTED'): MiddlewareHandler =>
   async (c, next) => {
     c.header('Cache-Control', 'no-store')
     if (!['GET', 'HEAD'].includes(c.req.method)) {
@@ -19,10 +19,7 @@ export const settingsMutationGuard =
         c.req.header('sec-fetch-site') === 'cross-site' ||
         (origin && !allowed.includes(origin))
       )
-        return c.json(
-          { code: 'SKILL_ORIGIN_REJECTED', message: '不允许跨站修改设置' },
-          403,
-        )
+        return c.json({ code, message: '不允许跨站修改设置' }, 403)
     }
     await next()
   }

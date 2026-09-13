@@ -82,6 +82,7 @@ export interface AgentSessionToolDto {
   state: SessionToolState
   toolCallId: string
   toolName: string
+  label?: string
 }
 
 export type AgentSessionMessagePartDto =

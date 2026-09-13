@@ -65,6 +65,7 @@ export interface AgentSessionToolVo {
   state: SessionToolState
   toolCallId: string
   toolName: string
+  label?: string
 }
 
 export interface BashOutcomeVo {
@@ -95,6 +96,7 @@ export type AgentRunEventVo =
   | {
       permission: PermissionId
       sessionId: string
+      mcpUnavailable?: string[]
       type: typeof AGENT_RUN_EVENT_TYPE.START
     }
   | { type: typeof AGENT_RUN_EVENT_TYPE.TRAJECTORY_CHANGED }
@@ -112,6 +114,7 @@ export type AgentRunEventVo =
       input: unknown
       toolCallId: string
       toolName: string
+      label?: string
       kind: AgentSessionToolVo['kind']
       type: typeof AGENT_RUN_EVENT_TYPE.TOOL_START
     }
@@ -122,6 +125,7 @@ export type AgentRunEventVo =
       output: unknown
       toolCallId: string
       toolName: string
+      label?: string
       kind: AgentSessionToolVo['kind']
       type: typeof AGENT_RUN_EVENT_TYPE.TOOL_END
     }
@@ -149,6 +153,17 @@ export type AgentRunEventVo =
       title: string
       toolCallId: string
       toolName: typeof POLICY_TOOL.BASH.toolName
+      type: typeof AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED
+    }
+  | {
+      approvalId: string
+      input: Record<string, unknown>
+      kind: typeof TOOL_ACTIVITY_KIND.TOOL
+      serverId: string
+      label: string
+      title: string
+      toolCallId: string
+      toolName: string
       type: typeof AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED
     }
   | {

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { ListBox, Select } from '@heroui/react'
+import { Label, ListBox, Select } from '@heroui/react'
 
 interface SelectMenuOption {
   id: string
@@ -39,7 +39,7 @@ export function SelectMenu({
       }}
     >
       <Select.Trigger
-        className={`justify-between rounded-full ${startContent ? 'pr-7' : ''} ${triggerClassName ?? ''}`}
+        className={`justify-between ${startContent ? 'pr-7' : ''} ${triggerClassName ?? ''}`}
       >
         {startContent ? (
           <span className="flex min-w-0 items-center gap-1.5">
@@ -51,17 +51,22 @@ export function SelectMenu({
         )}
         <Select.Indicator />
       </Select.Trigger>
-      <Select.Popover className="min-w-56">
+      <Select.Popover
+        placement="bottom start"
+        className="min-w-(--trigger-width) rounded-xl"
+      >
         <ListBox>
           {options.map((option) => (
             <ListBox.Item
               key={option.id}
-              className="whitespace-nowrap"
+              className="rounded-lg pe-2 data-[focus-visible=true]:ring-0 data-[focus-visible=true]:ring-offset-0 data-[focus-visible=true]:bg-default"
               id={option.id}
               textValue={option.label}
             >
-              {option.label}
-              <ListBox.ItemIndicator />
+              <Label className="min-w-0 flex-1 break-words font-normal">
+                {option.label}
+              </Label>
+              <ListBox.ItemIndicator className="static translate-y-0" />
             </ListBox.Item>
           ))}
         </ListBox>

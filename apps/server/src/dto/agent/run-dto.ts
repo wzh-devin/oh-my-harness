@@ -31,6 +31,7 @@ export interface SendAgentMessageDto {
   content: string
   permission: ToolPermission
   skillIds?: readonly string[]
+  mcpServerIds?: readonly string[]
   thinkingLevel?: ModelThinkingLevel
 }
 
@@ -50,6 +51,7 @@ export type AgentRunEventDto =
   | {
       permission: ToolPermission
       sessionId: string
+      mcpUnavailable?: string[]
       type: typeof AGENT_RUN_EVENT_TYPE.START
     }
   | { type: typeof AGENT_RUN_EVENT_TYPE.TRAJECTORY_CHANGED }
@@ -66,6 +68,7 @@ export type AgentRunEventDto =
       input: unknown
       toolCallId: string
       toolName: string
+      label?: string
       kind: ToolActivityKind
       type: typeof AGENT_RUN_EVENT_TYPE.TOOL_START
     }
@@ -76,6 +79,7 @@ export type AgentRunEventDto =
       output: unknown
       toolCallId: string
       toolName: string
+      label?: string
       kind: ToolActivityKind
       type: typeof AGENT_RUN_EVENT_TYPE.TOOL_END
     }
@@ -103,6 +107,17 @@ export type AgentRunEventDto =
       title: string
       toolCallId: string
       toolName: typeof POLICY_TOOL.BASH.toolName
+      type: typeof AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED
+    }
+  | {
+      approvalId: string
+      input: Record<string, unknown>
+      kind: typeof TOOL_ACTIVITY_KIND.TOOL
+      serverId: string
+      label: string
+      title: string
+      toolCallId: string
+      toolName: string
       type: typeof AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED
     }
   | {

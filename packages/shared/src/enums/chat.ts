@@ -1,3 +1,5 @@
+import { CAPABILITY_KIND } from './skill.ts'
+
 export const CHAT_ROUTE_KIND = {
   EXPLORE: 'explore',
   LIBRARY: 'library',
@@ -25,8 +27,7 @@ export type ComposerMenuMode =
 
 export const COMPOSER_CAPABILITY_KIND = {
   ATTACHMENT: 'attachment',
-  COMMAND: 'command',
-  SKILL: 'skill',
+  ...CAPABILITY_KIND,
 } as const
 export type ComposerCapabilityKind =
   (typeof COMPOSER_CAPABILITY_KIND)[keyof typeof COMPOSER_CAPABILITY_KIND]
@@ -58,6 +59,7 @@ export type PlanStepState =
   (typeof PLAN_STEP_STATE)[keyof typeof PLAN_STEP_STATE]
 
 export const SETTINGS_SECTION = {
+  MCP: 'mcp',
   ARCHIVED: 'archived',
   GENERAL: 'general',
   MODELS: 'models',

@@ -43,7 +43,15 @@ textarea {
   font: inherit;
 }
 
-.settings-dialog .input:focus,
-.settings-dialog .input[data-focused='true'] {
+.settings-dialog
+  :is(.input, .textarea, .select__trigger):is(
+    :focus,
+    [data-focused='true'],
+    [data-focus-visible='true']
+  ):not([data-invalid='true']):not([aria-invalid='true']) {
   --tw-ring-shadow: 0 0 #0000;
+  --tw-ring-offset-width: 0px;
+  --tw-ring-offset-shadow: 0 0 #0000;
+  outline: none;
+  background-color: var(--default-hover);
 }

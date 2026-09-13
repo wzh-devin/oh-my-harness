@@ -1,0 +1,39 @@
+import type {
+  McpChangeKind,
+  McpConnectionStatus,
+  McpTransport,
+} from '@oh-my-harness/shared'
+
+export interface McpServerDto {
+  id: string
+  name: string
+  transport: McpTransport
+  enabled: boolean
+  revision: number
+  config: { command?: string; args?: string[]; url?: string; enabled: boolean }
+  secretKeys: { env: string[]; headers: string[] }
+  status: McpConnectionStatus
+  error?: string
+  checkedAt?: string
+  toolCount: number
+  activeSessionIds: string[]
+}
+export interface McpListDto {
+  revision: number
+  servers: McpServerDto[]
+}
+export interface McpPreviewDto {
+  revision: number
+  changes: {
+    id: string
+    name: string
+    kind: McpChangeKind
+    fields: {
+      path: string
+      kind: McpChangeKind
+      sensitive: boolean
+      before?: string
+      after?: string
+    }[]
+  }[]
+}
