@@ -14,24 +14,20 @@ import {
   type PermissionId,
 } from '../contexts/permission-settings-context.ts'
 import {
-  PluginSettingsContext,
+  CapabilitySettingsContext,
   type AssistantSkill,
   type CapabilityCommand,
-  type CapabilityPlugin,
-  type PluginSettingsTab,
-} from '../contexts/plugin-settings-context.ts'
+} from '../contexts/capability-settings-context.ts'
 
 interface SettingsProviderProps {
   children: ReactNode
-  onOpenPluginSettings: (tab: PluginSettingsTab) => void
   selectedWorkspaceId: string
   permissionScope: string
 }
 
-/** 持有模型、权限、当前工作区能力与插件设置状态。 */
+/** 持有模型、权限、当前工作区 Skills 与命令状态。 */
 export function SettingsProvider({
   children,
-  onOpenPluginSettings,
   selectedWorkspaceId,
   permissionScope,
 }: SettingsProviderProps) {
@@ -62,7 +58,6 @@ export function SettingsProvider({
   const [commands, setCommands] = useState<CapabilityCommand[]>([])
   const [capabilityError, setCapabilityError] = useState<string | null>(null)
   const [isLoadingCapabilities, setIsLoadingCapabilities] = useState(false)
-  const [plugins, setPlugins] = useState<CapabilityPlugin[]>([])
   const [capabilityRevision, setCapabilityRevision] = useState(0)
   const refreshCapabilities = useCallback(
     () => setCapabilityRevision((value) => value + 1),
@@ -101,7 +96,6 @@ export function SettingsProvider({
       if (!selectedWorkspaceId) {
         setSkills([])
         setCommands([])
-        setPlugins([])
         setCapabilityError(null)
         setIsLoadingCapabilities(false)
         return
@@ -110,18 +104,13 @@ export function SettingsProvider({
       void getAgentCapabilities(selectedWorkspaceId, controller.signal)
         .then((catalog) => {
           if (controller.signal.aborted) return
-          setPlugins(catalog.plugins)
           setSkills(catalog.skills)
           setCommands(catalog.commands)
-          setCapabilityError(
-            catalog.diagnostics.length
-              ? `${catalog.diagnostics.length} 个能力文件未能加载。`
-              : null,
-          )
+          // 目录已过滤不可用条目；诊断也包含可恢复警告，不能按条数误报加载失败。
+          setCapabilityError(null)
         })
         .catch((error: unknown) => {
           if (controller.signal.aborted) return
-          setPlugins([])
           setSkills([])
           setCommands([])
           setCapabilityError(
@@ -148,20 +137,18 @@ export function SettingsProvider({
           thinkingLevel,
         }}
       >
-        <PluginSettingsContext.Provider
+        <CapabilitySettingsContext.Provider
           value={{
             capabilityError,
             commands,
             isLoadingCapabilities,
-            openPluginSettings: onOpenPluginSettings,
-            plugins,
             refreshCapabilities,
             setSkills,
             skills,
           }}
         >
           {children}
-        </PluginSettingsContext.Provider>
+        </CapabilitySettingsContext.Provider>
       </ModelSettingsContext.Provider>
     </PermissionSettingsContext.Provider>
   )

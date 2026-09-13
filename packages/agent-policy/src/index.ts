@@ -26,7 +26,6 @@ export type {
   FileToolEffect,
   FileToolName,
   FileScope,
-  McpToolAuthorizationRequest,
   PendingToolApproval,
   PolicyDecision,
   ToolAuthorizationRequest,

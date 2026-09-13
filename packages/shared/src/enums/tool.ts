@@ -19,7 +19,6 @@ export type TodoStatus = (typeof TODO_STATUS)[keyof typeof TODO_STATUS]
 export const TOOL_ACTIVITY_KIND = {
   COMMAND: 'command',
   EDIT: 'edit',
-  MCP: 'mcp',
   READ: 'read',
   SKILL: 'skill',
   TOOL: 'tool',

@@ -215,12 +215,10 @@ export const toChatMessages = (
 export const toChatThread = (
   session: AgentSessionVo & {
     contextUsage?: ChatThread['contextUsage']
-    pluginIds?: readonly string[]
   },
 ): ChatThread => ({
   archived: session.archived,
   ...(session.contextUsage ? { contextUsage: session.contextUsage } : {}),
-  pluginIds: session.pluginIds,
   id: session.id,
   messages: [],
   modelId: session.modelId,

@@ -10,7 +10,7 @@ interface SettingsItemCardProps {
   onOpen?: () => void
 }
 
-/** 统一设置页技能、MCP 与插件条目的视觉结构和可选详情入口。 */
+/** 统一设置页条目的视觉结构和可选详情入口。 */
 export function SettingsItemCard({
   actions,
   description,

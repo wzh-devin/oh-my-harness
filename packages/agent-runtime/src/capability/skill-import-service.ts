@@ -19,15 +19,9 @@ import {
 import { basename, dirname, join, relative } from 'node:path'
 import { loadSkills } from '@earendil-works/pi-agent-core'
 import { NodeExecutionEnv } from '@earendil-works/pi-agent-core/node'
-import {
-  exists,
-  extractZip,
-  fetchGit,
-  inspectTree,
-  normalizeGitSource,
-  PluginError,
-  resolveContentPath,
-} from '@oh-my-harness/agent-plugins'
+import { exists, inspectTree, resolveContentPath } from './source/files.ts'
+import { extractZip, fetchGit, normalizeGitSource } from './source/fetch.ts'
+import { SkillError } from '../error/skill-error.ts'
 import { validSkill } from './capability-service.ts'
 
 export type SkillImportCandidate = {
@@ -73,11 +67,11 @@ export class SkillImportService {
   private async initialize() {
     await mkdir(this.skills, { recursive: true, mode: 0o700 })
     if ((await lstat(this.skills)).isSymbolicLink())
-      throw new PluginError('SKILL_DIRECTORY_INVALID', '技能目录不能是链接')
+      throw new SkillError('SKILL_DIRECTORY_INVALID', '技能目录不能是链接')
     await chmod(this.skills, 0o700)
     await mkdir(this.staging, { recursive: true, mode: 0o700 })
     if ((await lstat(this.staging)).isSymbolicLink())
-      throw new PluginError('SKILL_DIRECTORY_INVALID', '暂存目录不能是链接')
+      throw new SkillError('SKILL_DIRECTORY_INVALID', '暂存目录不能是链接')
     await chmod(this.staging, 0o700)
     // 仅回收本服务格式且已过期的暂存，不触及已安装技能或其他目录。
     for (const entry of await readdir(this.staging, { withFileTypes: true })) {
@@ -92,9 +86,9 @@ export class SkillImportService {
   async create(input: { url: string } | { zip: Buffer; name: string }) {
     await this.ready
     if (this.closed)
-      throw new PluginError('SKILL_IMPORT_CLOSED', '技能导入已关闭', 503)
+      throw new SkillError('SKILL_IMPORT_CLOSED', '技能导入已关闭', 503)
     if (this.jobs.size >= 20)
-      throw new PluginError(
+      throw new SkillError(
         'SKILL_IMPORT_LIMIT',
         '待处理导入过多，请先取消现有导入',
         429,
@@ -138,7 +132,7 @@ export class SkillImportService {
         await this.discover(job, root, canonicalContent)
         job.controller.signal.throwIfAborted()
         if (!job.value.candidates.length)
-          throw new PluginError(
+          throw new SkillError(
             'SKILL_NOT_FOUND',
             '未找到 SKILL.md，请选择包含技能目录的仓库或 ZIP',
           )
@@ -148,7 +142,7 @@ export class SkillImportService {
           ? SKILL_IMPORT_STATUS.CANCELLED
           : SKILL_IMPORT_STATUS.FAILED
         job.value.error =
-          error instanceof PluginError
+          error instanceof SkillError
             ? error.message
             : '技能读取失败，请检查文件格式、大小或网络'
         await rm(job.directory, { recursive: true, force: true }).catch(
@@ -167,7 +161,7 @@ export class SkillImportService {
   ): Promise<void> {
     job.controller.signal.throwIfAborted()
     if (job.value.candidates.length >= 200)
-      throw new PluginError(
+      throw new SkillError(
         'SKILL_CANDIDATE_LIMIT',
         '技能入口超过 200 个，请指定更小的仓库子目录或 ZIP',
       )
@@ -244,7 +238,7 @@ export class SkillImportService {
   private job(id: string) {
     const job = this.jobs.get(id)
     if (!job)
-      throw new PluginError(
+      throw new SkillError(
         'SKILL_IMPORT_NOT_FOUND',
         '导入已过期或被取消，请重新导入',
         404,
@@ -267,7 +261,7 @@ export class SkillImportService {
         !candidate ||
         candidate.status === SKILL_IMPORT_CANDIDATE_STATUS.INVALID
       )
-        throw new PluginError('SKILL_IMPORT_INVALID', '请选择有效的技能入口')
+        throw new SkillError('SKILL_IMPORT_INVALID', '请选择有效的技能入口')
       job.controller.signal.throwIfAborted()
       const source = await resolveContentPath(
         join(job.directory, 'content'),
@@ -275,7 +269,7 @@ export class SkillImportService {
       )
       const status = await this.installedStatus(candidate.name, source)
       if (status === SKILL_IMPORT_CANDIDATE_STATUS.CONFLICT)
-        throw new PluginError(
+        throw new SkillError(
           'SKILL_NAME_CONFLICT',
           '已存在同名技能且内容不同，不会覆盖',
           409,
@@ -298,7 +292,7 @@ export class SkillImportService {
         })
         await this.secureTree(pending)
         if ((await inspectTree(pending)) !== (await inspectTree(source)))
-          throw new PluginError(
+          throw new SkillError(
             'SKILL_CONTENT_CHANGED',
             '技能内容发生变化，请重新导入',
           )
@@ -316,7 +310,7 @@ export class SkillImportService {
                 validSkill(skill),
             )
           )
-            throw new PluginError(
+            throw new SkillError(
               'SKILL_NOT_DISCOVERABLE',
               '技能被用户目录的 SKILL.md 或忽略规则遮蔽，导入未生效',
             )

@@ -3,12 +3,10 @@ import {
   AGENT_RUN_EVENT_TYPE,
   CAPABILITY_KIND,
   CHAT_ASSISTANT_STATUS,
-  CHAT_TOOL_KIND,
   MESSAGE_PART_TYPE,
   MESSAGE_ROLE,
   SESSION_TOOL_STATE,
   TODO_STATUS,
-  TOOL_ACTIVITY_KIND,
 } from '@oh-my-harness/shared'
 import type { PermissionId } from '../../../settings/index.ts'
 import { publishTraceUpdate } from '../../../trace/api/index.ts'
@@ -647,8 +645,7 @@ export function useAgentSessions() {
       const contextItems = payload.contextItems.filter(
         (item) =>
           item.kind === CAPABILITY_KIND.COMMAND ||
-          item.kind === CAPABILITY_KIND.SKILL ||
-          item.kind === CAPABILITY_KIND.PLUGIN,
+          item.kind === CAPABILITY_KIND.SKILL,
       )
       const preview =
         payload.message || attachments[0]?.name || contextItems[0]?.label || ''
@@ -672,11 +669,6 @@ export function useAgentSessions() {
           streamingAssistant(assistantId),
         ],
         preview,
-        pluginIds: contextItems.flatMap((item) =>
-          item.kind === CAPABILITY_KIND.PLUGIN && item.sourceId
-            ? [item.sourceId]
-            : [],
-        ),
         todos: undefined,
         updatedAt: '刚刚',
       }))
@@ -692,11 +684,6 @@ export function useAgentSessions() {
               (item) => item.kind === CAPABILITY_KIND.COMMAND,
             )?.sourceId,
             content: payload.message,
-            pluginIds: contextItems.flatMap((item) =>
-              item.kind === CAPABILITY_KIND.PLUGIN && item.sourceId
-                ? [item.sourceId]
-                : [],
-            ),
             permission: payload.permission,
             skillIds: contextItems.flatMap((item) =>
               item.kind === CAPABILITY_KIND.SKILL && item.sourceId
@@ -831,10 +818,7 @@ export function useAgentSessions() {
                               'input' in event
                                 ? event.input
                                 : { path: event.path },
-                            kind:
-                              event.kind === TOOL_ACTIVITY_KIND.MCP
-                                ? CHAT_TOOL_KIND.TOOL
-                                : event.kind,
+                            kind: event.kind,
                             state: 'requires-action',
                             toolCallId: event.toolCallId,
                             toolName: event.toolName,

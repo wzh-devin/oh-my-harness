@@ -16,7 +16,6 @@
   "dependencies": {
     "@earendil-works/pi-agent-core": "0.84.3",
     "@hono/node-server": "2.1.1",
-    "@oh-my-harness/agent-plugins": "workspace:*",
     "@oh-my-harness/agent-policy": "workspace:*",
     "@oh-my-harness/agent-runtime": "workspace:*",
     "@oh-my-harness/agent-tools": "workspace:*",

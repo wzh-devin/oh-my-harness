@@ -31,7 +31,6 @@ export interface SendAgentMessageDto {
   content: string
   permission: ToolPermission
   skillIds?: readonly string[]
-  pluginIds?: readonly string[]
   thinkingLevel?: ModelThinkingLevel
 }
 
@@ -104,19 +103,6 @@ export type AgentRunEventDto =
       title: string
       toolCallId: string
       toolName: typeof POLICY_TOOL.BASH.toolName
-      type: typeof AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED
-    }
-  | {
-      approvalId: string
-      input: {
-        connectionId: string
-        tool: string
-        arguments: Record<string, unknown>
-      }
-      kind: typeof TOOL_ACTIVITY_KIND.MCP
-      title: string
-      toolCallId: string
-      toolName: typeof POLICY_TOOL.MCP.toolName
       type: typeof AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED
     }
   | {

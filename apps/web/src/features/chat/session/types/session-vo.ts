@@ -32,7 +32,6 @@ export interface ContextUsageVo {
 }
 
 export interface AgentSessionDetailVo extends AgentSessionVo {
-  pluginIds: string[]
   contextUsage?: ContextUsageVo
   stats: {
     cachedTokens: number
@@ -60,7 +59,7 @@ export interface AgentSessionMessageVo {
 export interface AgentSessionToolVo {
   errorText?: string
   input: Record<string, unknown>
-  kind: Exclude<ToolActivityKind, typeof TOOL_ACTIVITY_KIND.MCP>
+  kind: ToolActivityKind
   outcome?: BashOutcomeVo
   output?: string
   state: SessionToolState
@@ -150,19 +149,6 @@ export type AgentRunEventVo =
       title: string
       toolCallId: string
       toolName: typeof POLICY_TOOL.BASH.toolName
-      type: typeof AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED
-    }
-  | {
-      approvalId: string
-      input: {
-        connectionId: string
-        tool: string
-        arguments: Record<string, unknown>
-      }
-      kind: typeof TOOL_ACTIVITY_KIND.MCP
-      title: string
-      toolCallId: string
-      toolName: typeof POLICY_TOOL.MCP.toolName
       type: typeof AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED
     }
   | {

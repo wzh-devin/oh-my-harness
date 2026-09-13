@@ -22,16 +22,17 @@
   "dependencies": {
     "@earendil-works/pi-agent-core": "0.84.3",
     "@earendil-works/pi-ai": "0.84.3",
-    "@oh-my-harness/agent-plugins": "workspace:*",
     "@oh-my-harness/agent-policy": "workspace:*",
     "@oh-my-harness/agent-tools": "workspace:*",
     "@oh-my-harness/llm": "workspace:*",
-    "@oh-my-harness/shared": "workspace:*"
+    "@oh-my-harness/shared": "workspace:*",
+    "yauzl": "3.4.0"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
     "oxlint": "^1.75.0",
     "prettier": "^3.9.6",
-    "typescript": "~6.0.2"
+    "typescript": "~6.0.2",
+    "@types/yauzl": "3.4.0"
   }
 }

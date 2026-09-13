@@ -1,7 +1,6 @@
 export * from './agent.ts'
 export * from './chat.ts'
 export * from './llm.ts'
-export * from './plugin.ts'
 export * from './policy.ts'
 export * from './session.ts'
 export * from './skill.ts'

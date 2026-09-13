@@ -1,7 +1,8 @@
 import { dirname, join, relative } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { chmod, lstat, mkdir, readdir, rename } from 'node:fs/promises'
-import { resolveContentPath, PluginError } from '@oh-my-harness/agent-plugins'
+import { resolveContentPath } from './source/files.ts'
+import { SkillError } from '../error/skill-error.ts'
 
 import {
   formatPromptTemplateInvocation,
@@ -12,10 +13,6 @@ import {
   type Skill,
 } from '@earendil-works/pi-agent-core'
 import { NodeExecutionEnv } from '@earendil-works/pi-agent-core/node'
-import type {
-  PluginService,
-  PluginSnapshot,
-} from '@oh-my-harness/agent-plugins'
 
 import { AgentRuntimeError } from '../error/agent-runtime-error.ts'
 
@@ -38,7 +35,6 @@ export interface AgentCapabilityDiagnostic {
 }
 
 export interface AgentCapabilitySkill {
-  pluginId?: string
   description: string
   enabled: boolean
   id: string
@@ -47,7 +43,6 @@ export interface AgentCapabilitySkill {
 }
 
 export interface AgentCapabilityCommand {
-  pluginId?: string
   description: string
   id: string
   name: string
@@ -55,14 +50,12 @@ export interface AgentCapabilityCommand {
 }
 
 export interface AgentCapabilityCatalog {
-  plugins: { id: string; name: string; description: string; enabled: boolean }[]
   commands: AgentCapabilityCommand[]
   diagnostics: AgentCapabilityDiagnostic[]
   skills: AgentCapabilitySkill[]
 }
 
 export interface ResolvedSkill extends AgentCapabilitySkill {
-  resourceRootDirectory?: string
   content: string
   rootDirectory: string
 }
@@ -150,7 +143,6 @@ const preferHigherPriority = <
 ) => {
   const byName = new Map<string, T>()
   const sourcePriority: Record<AgentCapabilitySource, number> = {
-    [AGENT_CAPABILITY_SOURCE.PLUGIN]: 1,
     [AGENT_CAPABILITY_SOURCE.BUILTIN]: 0,
     [AGENT_CAPABILITY_SOURCE.USER]: 3,
     [AGENT_CAPABILITY_SOURCE.PROJECT]: 4,
@@ -177,12 +169,8 @@ export class AgentCapabilityService {
     { expiresAt: number; value: Promise<LoadedCatalog> }
   >()
   private readonly dataDirectory: string
-  private readonly plugins?: PluginService
-  private readonly pluginCache = new Map<string, Promise<LoadedCatalog>>()
-
-  constructor(dataDirectory: string, plugins?: PluginService) {
+  constructor(dataDirectory: string) {
     this.dataDirectory = dataDirectory
-    this.plugins = plugins
   }
 
   /** 安装用户技能后立即废弃所有工作区的目录快照。 */
@@ -190,65 +178,60 @@ export class AgentCapabilityService {
     this.cache.clear()
   }
 
-  /** 按稳定技能 ID 读取只读详情；插件资源读取期间持有其版本租约。 */
+  /** 按稳定技能 ID 读取只读详情。 */
   async detail(id: string) {
     this.invalidate()
     const resolved = await this.resolve(this.dataDirectory, {
       content: '',
       skillIds: [id],
     })
-    try {
-      const skill = resolved.skills[0]
-      const files: string[] = []
-      let truncated = false
-      const walk = async (directory: string, depth = 0): Promise<void> => {
-        if (depth > 20 || files.length >= 300) {
+    const skill = resolved.skills[0]
+    const files: string[] = []
+    let truncated = false
+    const walk = async (directory: string, depth = 0): Promise<void> => {
+      if (depth > 20 || files.length >= 300) {
+        truncated = true
+        return
+      }
+      for (const entry of await readdir(directory, { withFileTypes: true })) {
+        if (entry.name === '.git') continue
+        if (files.length >= 300) {
           truncated = true
           return
         }
-        for (const entry of await readdir(directory, { withFileTypes: true })) {
-          if (entry.name === '.git') continue
-          if (files.length >= 300) {
-            truncated = true
-            return
-          }
-          const path = join(directory, entry.name)
-          files.push(
-            relative(skill.rootDirectory, path) +
-              (entry.isDirectory()
-                ? '/'
-                : entry.isSymbolicLink()
-                  ? ' (链接)'
-                  : ''),
-          )
-          if (entry.isDirectory()) await walk(path, depth + 1)
-        }
+        const path = join(directory, entry.name)
+        files.push(
+          relative(skill.rootDirectory, path) +
+            (entry.isDirectory()
+              ? '/'
+              : entry.isSymbolicLink()
+                ? ' (链接)'
+                : ''),
+        )
+        if (entry.isDirectory()) await walk(path, depth + 1)
       }
-      await walk(skill.rootDirectory)
-      return {
-        id: skill.id,
-        name: skill.name,
-        description: skill.description,
-        source: skill.source,
-        pluginId: skill.pluginId,
-        content: skill.content,
-        files,
-        filesTruncated: truncated,
-        canDelete:
-          skill.source === AGENT_CAPABILITY_SOURCE.USER &&
-          skill.rootDirectory !== join(this.dataDirectory, 'skills'),
-      }
-    } finally {
-      await resolved.release()
+    }
+    await walk(skill.rootDirectory)
+    return {
+      id: skill.id,
+      name: skill.name,
+      description: skill.description,
+      source: skill.source,
+      content: skill.content,
+      files,
+      filesTruncated: truncated,
+      canDelete:
+        skill.source === AGENT_CAPABILITY_SOURCE.USER &&
+        skill.rootDirectory !== join(this.dataDirectory, 'skills'),
     }
   }
 
-  /** 独立技能原子移入回收目录，保留副本；绝不删除插件或整个用户技能根。 */
+  /** 独立技能原子移入回收目录，保留副本；绝不删除整个用户技能根。 */
   async remove(id: string) {
     if (!/^skill:[a-z0-9][a-z0-9-]{0,63}$/.test(id))
-      throw new PluginError(
+      throw new SkillError(
         'SKILL_DELETE_FORBIDDEN',
-        '插件内技能请通过管理所属插件移除',
+        '技能 ID 无效，不能删除',
         403,
       )
     const loaded = await this.loadUncached(this.dataDirectory)
@@ -257,11 +240,11 @@ export class AgentCapabilityService {
         value.id === id && value.source === AGENT_CAPABILITY_SOURCE.USER,
     )
     if (!skill)
-      throw new PluginError('SKILL_NOT_FOUND', '技能不存在或不可用', 404)
+      throw new SkillError('SKILL_NOT_FOUND', '技能不存在或不可用', 404)
     const root = join(this.dataDirectory, 'skills')
     const path = relative(root, skill.rootDirectory)
     if (!path || path === '.')
-      throw new PluginError(
+      throw new SkillError(
         'SKILL_DELETE_FORBIDDEN',
         '不能删除整个技能根目录，请手动管理根目录技能',
         403,
@@ -270,33 +253,15 @@ export class AgentCapabilityService {
     const trash = join(this.dataDirectory, 'skill-trash')
     await mkdir(trash, { recursive: true, mode: 0o700 })
     if ((await lstat(trash)).isSymbolicLink())
-      throw new PluginError('SKILL_DIRECTORY_INVALID', '回收目录不能是链接')
+      throw new SkillError('SKILL_DIRECTORY_INVALID', '回收目录不能是链接')
     await chmod(trash, 0o700)
     await rename(target, join(trash, `${randomUUID()}-${skill.name}`))
     this.invalidate()
   }
 
   async list(cwd: string): Promise<AgentCapabilityCatalog> {
-    const registry = await this.plugins?.list()
-    const lease = await this.plugins?.snapshot(
-      registry?.installations
-        .filter((item) => item.enabled)
-        .map((item) => item.id) ?? [],
-    )
-    let catalog: LoadedCatalog
-    try {
-      catalog = await this.withPlugins(cwd, lease?.installations ?? [])
-    } finally {
-      await lease?.release()
-    }
+    const catalog = await this.load(cwd)
     return {
-      plugins:
-        registry?.installations.map((item) => ({
-          id: item.id,
-          name: item.activeRevision.descriptor.name,
-          description: item.activeRevision.descriptor.description,
-          enabled: item.enabled,
-        })) ?? [],
       commands: catalog.commands.map(
         ({ template: _template, ...command }) => command,
       ),
@@ -306,7 +271,6 @@ export class AgentCapabilityService {
           content: _content,
           disableModelInvocation: _disabled,
           rootDirectory: _root,
-          resourceRootDirectory: _resourceRoot,
           ...skill
         }) => skill,
       ),
@@ -319,184 +283,40 @@ export class AgentCapabilityService {
       commandId?: string
       content: string
       skillIds?: readonly string[]
-      pluginIds?: readonly string[]
     },
   ) {
-    const owners = [
-      ...(input.skillIds ?? []),
-      ...(input.commandId ? [input.commandId] : []),
-    ].flatMap((id) => (id.split(':').length === 3 ? [id.split(':')[1]] : []))
-    const lease = await this.plugins?.snapshot([
-      ...new Set([...(input.pluginIds ?? []), ...owners]),
-    ])
-    try {
-      const catalog = await this.withPlugins(cwd, lease?.installations ?? [])
-      const defaultSkills = (lease?.installations ?? []).flatMap((plugin) => {
-        const available = catalog.skills.filter(
-          (skill) =>
-            skill.pluginId === plugin.id && !skill.disableModelInvocation,
-        )
-        const primary =
-          available.find(
-            (skill) =>
-              skill.name ===
-              `${plugin.activeRevision.descriptor.name}:${plugin.activeRevision.descriptor.name}`,
-          ) ?? (available.length === 1 ? available[0] : undefined)
-        return primary ? [primary.id] : []
-      })
-      const skills = [
-        ...new Set([...(input.skillIds ?? []), ...defaultSkills]),
-      ].map((id) => {
-        const skill = catalog.skills.find((candidate) => candidate.id === id)
-        if (!skill) {
-          throw new AgentRuntimeError(
-            'AGENT_SKILL_NOT_FOUND',
-            '所选 Skill 不存在或不可用。',
-            400,
-          )
-        }
-        return skill
-      })
-      const command = input.commandId
-        ? catalog.commands.find((candidate) => candidate.id === input.commandId)
-        : undefined
-      if (input.commandId && !command) {
+    const catalog = await this.load(cwd)
+    const skills = [...new Set(input.skillIds ?? [])].map((id) => {
+      const skill = catalog.skills.find((candidate) => candidate.id === id)
+      if (!skill) {
         throw new AgentRuntimeError(
-          'AGENT_COMMAND_NOT_FOUND',
-          '所选命令不存在或不可用。',
+          'AGENT_SKILL_NOT_FOUND',
+          '所选 Skill 不存在或不可用。',
           400,
         )
       }
-      return {
-        plugins: lease?.installations ?? [],
-        release: () => lease?.release() ?? Promise.resolve(),
-        catalog,
-        command,
-        commandContent: command
-          ? formatPromptTemplateInvocation(
-              command.template,
-              parseCommandArgs(input.content),
-            )
-          : undefined,
-        skills,
-      }
-    } catch (error) {
-      await lease?.release()
-      throw error
-    }
-  }
-
-  private async withPlugins(
-    cwd: string,
-    plugins: readonly PluginSnapshot[],
-  ): Promise<LoadedCatalog> {
-    const base = await this.load(cwd)
-    const additions = await Promise.all(
-      plugins.map((plugin) => {
-        const key = plugin.rootDirectory
-        let value = this.pluginCache.get(key)
-        if (!value) {
-          value = this.loadPlugin(plugin)
-          this.pluginCache.set(key, value)
-          if (this.pluginCache.size > 200)
-            this.pluginCache.delete(this.pluginCache.keys().next().value!)
-          void value.catch(() => this.pluginCache.delete(key))
-        }
-        return value
-      }),
-    )
-    return {
-      commands: [
-        ...base.commands,
-        ...additions.flatMap((item) => item.commands),
-      ],
-      skills: [...base.skills, ...additions.flatMap((item) => item.skills)],
-      diagnostics: [
-        ...base.diagnostics,
-        ...additions.flatMap((item) => item.diagnostics),
-      ],
-    }
-  }
-
-  private async loadPlugin(plugin: PluginSnapshot): Promise<LoadedCatalog> {
-    const descriptor = plugin.activeRevision.descriptor
-    const env = new NodeExecutionEnv({ cwd: plugin.rootDirectory })
-    try {
-      const [skills, commands] = await Promise.all([
-        loadSourcedSkills(
-          env,
-          descriptor.skills.map((path) => ({
-            path: join(plugin.rootDirectory, path),
-            source: AGENT_CAPABILITY_SOURCE.PLUGIN,
-          })),
-        ),
-        loadSourcedPromptTemplates(
-          env,
-          descriptor.commands.map((path) => ({
-            path: join(plugin.rootDirectory, path),
-            source: AGENT_CAPABILITY_SOURCE.PLUGIN,
-          })),
-        ),
-      ])
-      const diagnostics = [...skills.diagnostics, ...commands.diagnostics].map(
-        (item) => safeDiagnostic(item.code, AGENT_CAPABILITY_SOURCE.PLUGIN),
+      return skill
+    })
+    const command = input.commandId
+      ? catalog.commands.find((candidate) => candidate.id === input.commandId)
+      : undefined
+    if (input.commandId && !command) {
+      throw new AgentRuntimeError(
+        'AGENT_COMMAND_NOT_FOUND',
+        '所选命令不存在或不可用。',
+        400,
       )
-      return {
-        skills: deduplicate(
-          skills.skills.flatMap(({ skill }) =>
-            validSkill(skill)
-              ? [
-                  {
-                    id: `skill:${plugin.id}:${skill.name}`,
-                    pluginId: plugin.id,
-                    name: `${descriptor.name}:${skill.name}`,
-                    source: AGENT_CAPABILITY_SOURCE.PLUGIN,
-                    enabled: true,
-                    description: skill.description,
-                    content: skill.content,
-                    disableModelInvocation:
-                      skill.disableModelInvocation === true,
-                    rootDirectory: dirname(skill.filePath),
-                    resourceRootDirectory: plugin.rootDirectory,
-                  },
-                ]
-              : (diagnostics.push(
-                  safeDiagnostic(
-                    'invalid_skill',
-                    AGENT_CAPABILITY_SOURCE.PLUGIN,
-                  ),
-                ),
-                []),
-          ),
-          diagnostics,
-        ),
-        commands: deduplicate(
-          commands.promptTemplates.flatMap(({ promptTemplate: template }) =>
-            this.validCommand(template) && !/!\s*`/.test(template.content)
-              ? [
-                  {
-                    id: `command:${plugin.id}:${template.name}`,
-                    pluginId: plugin.id,
-                    name: `${descriptor.name}:${template.name}`,
-                    source: AGENT_CAPABILITY_SOURCE.PLUGIN,
-                    description: template.description ?? template.name,
-                    template,
-                  },
-                ]
-              : (diagnostics.push(
-                  safeDiagnostic(
-                    'unsupported_dynamic_command',
-                    AGENT_CAPABILITY_SOURCE.PLUGIN,
-                  ),
-                ),
-                []),
-          ),
-          diagnostics,
-        ),
-        diagnostics,
-      }
-    } finally {
-      await env.cleanup()
+    }
+    return {
+      catalog,
+      command,
+      commandContent: command
+        ? formatPromptTemplateInvocation(
+            command.template,
+            parseCommandArgs(input.content),
+          )
+        : undefined,
+      skills,
     }
   }
 

@@ -15,12 +15,10 @@ export {
   SettingsProvider,
   useModelSettings,
   usePermissionSettings,
-  usePluginSettings,
+  useCapabilitySettings,
 } from './providers/index.ts'
 export type {
   AssistantSkill,
   CapabilityCommand,
-  McpServer,
   PermissionId,
-  PluginSettingsTab,
 } from './providers/index.ts'

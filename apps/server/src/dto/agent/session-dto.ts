@@ -44,7 +44,6 @@ export interface ContextUsageDto {
 }
 
 export interface AgentSessionDetailDto extends AgentSessionDto {
-  pluginIds: string[]
   contextUsage?: ContextUsageDto
   stats: {
     cachedTokens: number

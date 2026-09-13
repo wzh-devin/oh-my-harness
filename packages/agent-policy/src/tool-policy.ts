@@ -51,8 +51,6 @@ export const evaluateToolPolicy = (
   if (!isToolPermission(request.permission)) return POLICY_DECISION.DENY
   const tool = getPolicyTool(request.toolName)
   if (!tool || request.effect !== tool.effect) return POLICY_DECISION.DENY
-  if (request.effect === TOOL_EFFECT.MCP)
-    return POLICY_DECISION.REQUIRE_APPROVAL
   if (request.effect === TOOL_EFFECT.EXECUTE) {
     return request.permission === TOOL_PERMISSION.FULL_ACCESS
       ? POLICY_DECISION.ALLOW

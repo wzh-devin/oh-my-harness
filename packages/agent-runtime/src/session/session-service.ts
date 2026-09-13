@@ -95,7 +95,6 @@ export interface AgentSessionProjection {
 }
 
 export interface AgentSessionDetail extends AgentSessionInfo {
-  pluginIds: string[]
   contextUsage?: ContextUsageSnapshot
   stats: SessionStats
 }
@@ -593,21 +592,15 @@ export class AgentSessionService {
   async get(id: string): Promise<AgentSessionDetail> {
     const opened = await this.openSession(id)
     try {
-      const [name, stats, contextUsageEntry, pluginSelection] =
-        await Promise.all([
-          opened.session.getName(),
-          opened.session.getStats(),
-          opened.session.findEntryOnBranch({
-            customType: SESSION_CUSTOM_TYPE.CONTEXT_USAGE_SNAPSHOT,
-            order: 'newestFirst',
-            type: 'custom',
-          }),
-          opened.session.findEntryOnBranch({
-            customType: SESSION_CUSTOM_TYPE.PLUGIN_SELECTION,
-            order: 'newestFirst',
-            type: 'custom',
-          }),
-        ])
+      const [name, stats, contextUsageEntry] = await Promise.all([
+        opened.session.getName(),
+        opened.session.getStats(),
+        opened.session.findEntryOnBranch({
+          customType: SESSION_CUSTOM_TYPE.CONTEXT_USAGE_SNAPSHOT,
+          order: 'newestFirst',
+          type: 'custom',
+        }),
+      ])
       const contextUsage = parseContextUsageSnapshot(
         contextUsageEntry?.type === 'custom'
           ? contextUsageEntry.data
@@ -616,16 +609,6 @@ export class AgentSessionService {
       )
       return {
         ...toInfo(opened.metadata, opened.config, name, opened.archived),
-        pluginIds: (() => {
-          const entry = pluginSelection
-          const ids =
-            entry?.type === 'custom'
-              ? (entry.data as { pluginIds?: unknown }).pluginIds
-              : undefined
-          return Array.isArray(ids)
-            ? ids.filter((id): id is string => typeof id === 'string')
-            : []
-        })(),
         ...(contextUsage ? { contextUsage } : {}),
         stats,
       }

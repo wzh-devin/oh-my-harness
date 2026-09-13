@@ -58,7 +58,6 @@ export interface StreamAgentMessageInput {
   content: string
   permission: PermissionId
   skillIds: readonly string[]
-  pluginIds?: readonly string[]
   thinkingLevel: ModelThinkingLevel
 }
 
@@ -219,36 +218,6 @@ const parseToolApproval = (
     title: event.title,
     toolCallId: event.toolCallId,
     type: AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED,
-  }
-  if (
-    event.kind === TOOL_ACTIVITY_KIND.MCP &&
-    event.toolName === POLICY_TOOL.MCP.toolName
-  ) {
-    if (
-      !event.input ||
-      typeof event.input !== 'object' ||
-      Array.isArray(event.input)
-    )
-      return
-    const input = event.input as Record<string, unknown>
-    if (
-      typeof input.connectionId !== 'string' ||
-      typeof input.tool !== 'string' ||
-      !input.arguments ||
-      typeof input.arguments !== 'object' ||
-      Array.isArray(input.arguments)
-    )
-      return
-    return {
-      ...common,
-      kind: TOOL_ACTIVITY_KIND.MCP,
-      toolName: POLICY_TOOL.MCP.toolName,
-      input: {
-        connectionId: input.connectionId,
-        tool: input.tool,
-        arguments: input.arguments as Record<string, unknown>,
-      },
-    }
   }
   if (
     event.kind === TOOL_ACTIVITY_KIND.COMMAND &&
@@ -607,7 +576,6 @@ export async function streamAgentMessage(
     content: input.content,
     permission: input.permission,
     ...(input.skillIds.length ? { skillIds: input.skillIds } : {}),
-    pluginIds: input.pluginIds ?? [],
     thinkingLevel: input.thinkingLevel,
   }
   const body = input.attachments.length

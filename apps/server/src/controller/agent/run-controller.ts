@@ -43,7 +43,6 @@ function parseMessage(
         key !== 'content' &&
         key !== 'permission' &&
         key !== 'skillIds' &&
-        key !== 'pluginIds' &&
         key !== 'thinkingLevel',
     ) ||
     typeof record.content !== 'string' ||
@@ -73,20 +72,7 @@ function parseMessage(
     return undefined
   }
   const skillIds = record.skillIds as string[] | undefined
-  if (
-    record.pluginIds !== undefined &&
-    (!Array.isArray(record.pluginIds) ||
-      record.pluginIds.length > 20 ||
-      record.pluginIds.some(
-        (id) => typeof id !== 'string' || !/^[\w-]{1,100}$/.test(id),
-      ) ||
-      new Set(record.pluginIds).size !== record.pluginIds.length)
-  )
-    return undefined
   return {
-    ...(record.pluginIds === undefined
-      ? {}
-      : { pluginIds: record.pluginIds as string[] }),
     ...(commandId ? { commandId } : {}),
     content: record.content,
     permission: record.permission,

@@ -1,6 +1,5 @@
 export const SESSION_CUSTOM_TYPE = {
   AGENT_CONTEXT: 'agent/context',
-  PLUGIN_SELECTION: 'plugins/selection',
   APPROVAL_REQUESTED: 'approval/requested',
   APPROVAL_RESOLVED: 'approval/resolved',
   CONTEXT_USAGE_SNAPSHOT: 'context_usage_snapshot',

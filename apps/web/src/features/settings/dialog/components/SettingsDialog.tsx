@@ -5,23 +5,18 @@ import {
   Display,
   Gear,
   Moon,
-  Puzzle,
+  Code,
   Sun,
 } from '@gravity-ui/icons'
 import { Button, Modal, ToggleButton, ToggleButtonGroup } from '@heroui/react'
-import {
-  PLUGIN_SETTINGS_TAB,
-  SETTINGS_SECTION,
-  type SettingsSection,
-} from '@oh-my-harness/shared'
+import { SETTINGS_SECTION, type SettingsSection } from '@oh-my-harness/shared'
 import {
   PERMISSION_OPTIONS,
   type PermissionId,
   usePermissionSettings,
 } from '../../providers/contexts/permission-settings-context.ts'
-import type { PluginSettingsTab } from '../../providers/contexts/plugin-settings-context.ts'
 import { ModelsSettingsSection } from '../../models/components/ModelsSettingsSection.tsx'
-import { PluginsSettingsSection } from '../../plugins/components/PluginsSettingsSection.tsx'
+import { SkillsSettingsSection } from '../../skills/components/SkillsSettingsSection.tsx'
 import type { ArchivedConversation } from '../types/settings-dialog.ts'
 import { SettingsSelect } from './SettingsSelect.tsx'
 import { ArchivedConversationsSection } from './ArchivedConversationsSection.tsx'
@@ -29,7 +24,6 @@ import { FileEditorSettings } from './FileEditorSettings.tsx'
 
 interface SettingsDialogProps {
   archivedConversations: readonly ArchivedConversation[]
-  initialPluginTab?: PluginSettingsTab
   initialSection?: SettingsSection
   isOpen: boolean
   onArchivedConversationDelete: (conversationId: string) => Promise<string>
@@ -42,7 +36,7 @@ interface SettingsDialogProps {
 const SETTINGS_SECTIONS = [
   { id: SETTINGS_SECTION.GENERAL, label: '通用设置', icon: Gear },
   { id: SETTINGS_SECTION.MODELS, label: '模型', icon: Database },
-  { id: SETTINGS_SECTION.PLUGINS, label: '插件', icon: Puzzle },
+  { id: SETTINGS_SECTION.SKILLS, label: '技能', icon: Code },
   { id: SETTINGS_SECTION.ARCHIVED, label: '已归档对话', icon: Archive },
 ] as const
 
@@ -55,7 +49,6 @@ const APPEARANCE_OPTIONS = [
 /** 展示应用级本地设置；当前选择只保留在页面会话中。 */
 export function SettingsDialog({
   archivedConversations,
-  initialPluginTab = PLUGIN_SETTINGS_TAB.SKILLS,
   initialSection = SETTINGS_SECTION.GENERAL,
   isOpen,
   onArchivedConversationDelete,
@@ -66,8 +59,6 @@ export function SettingsDialog({
 }: SettingsDialogProps) {
   const [activeSection, setActiveSection] =
     useState<SettingsSection>(initialSection)
-  const [pluginTab, setPluginTab] =
-    useState<PluginSettingsTab>(initialPluginTab)
   const { permission, setPermission } = usePermissionSettings()
   const [language, setLanguage] = useState('zh-CN')
   const [appearance, setAppearance] = useState('system')
@@ -176,11 +167,8 @@ export function SettingsDialog({
                 <ModelsSettingsSection />
               </div>
 
-              <div hidden={activeSection !== SETTINGS_SECTION.PLUGINS}>
-                <PluginsSettingsSection
-                  activeTab={pluginTab}
-                  onTabChange={setPluginTab}
-                />
+              <div hidden={activeSection !== SETTINGS_SECTION.SKILLS}>
+                <SkillsSettingsSection />
               </div>
 
               <div hidden={activeSection !== SETTINGS_SECTION.ARCHIVED}>

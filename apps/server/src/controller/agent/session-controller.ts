@@ -130,7 +130,6 @@ function sessionDetailDto(
     ...sessionDto(session, workspaceId),
     ...(session.contextUsage ? { contextUsage: session.contextUsage } : {}),
     stats: session.stats,
-    pluginIds: session.pluginIds,
   }
 }
 

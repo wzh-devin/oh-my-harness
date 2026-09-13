@@ -26,7 +26,7 @@ import {
   resolveModelSelectionKey,
   useModelSettings,
   usePermissionSettings,
-  usePluginSettings,
+  useCapabilitySettings,
 } from '../../../settings/index.ts'
 import {
   addComposerContextItem,
@@ -121,7 +121,7 @@ export function ChatComposer({
   const [isModelUpdating, setIsModelUpdating] = useState(false)
   const { providers, setThinkingLevel, thinkingLevel } = useModelSettings()
   const { permission } = usePermissionSettings()
-  const { commands, openPluginSettings, skills, plugins } = usePluginSettings()
+  const { commands, skills } = useCapabilitySettings()
   const { onWorkspaceSelect, selectedWorkspaceId, workspaces } =
     useChatWorkspace()
   const composerWorkspace = resolveComposerWorkspace(
@@ -163,7 +163,6 @@ export function ChatComposer({
         skills,
         commands,
         menuState.query,
-        plugins,
       )
     : []
   const capabilities = capabilityGroups.flatMap((group) => group.items)
@@ -176,7 +175,6 @@ export function ChatComposer({
       item,
       skills,
       commands,
-      plugins,
     ),
   }))
   const hasUnavailableContext = contextDisplayItems.some(
@@ -316,21 +314,9 @@ export function ChatComposer({
   }
 
   const handleRemoveContext = (id: string) => {
-    setContextItems((currentItems) => {
-      const removed = currentItems.find((item) => item.id === id)
-      return currentItems.filter(
-        (item) =>
-          item.id !== id &&
-          !(
-            removed?.kind === COMPOSER_CAPABILITY_KIND.PLUGIN &&
-            [...skills, ...commands].some(
-              (capability) =>
-                capability.id === item.sourceId &&
-                capability.pluginId === removed.sourceId,
-            )
-          ),
-      )
-    })
+    setContextItems((currentItems) =>
+      currentItems.filter((item) => item.id !== id),
+    )
   }
 
   const getTextArea = () =>
@@ -388,30 +374,11 @@ export function ChatComposer({
       return
     }
 
-    if (capability.settingsTab) {
-      openPluginSettings(capability.settingsTab)
-      return
-    }
-
     const contextItem = createComposerContextItem(capability)
     if (!contextItem) return
-    const owner = [...skills, ...commands].find(
-      (item) => item.id === contextItem.sourceId,
-    )?.pluginId
-    const plugin = plugins.find((item) => item.id === owner)
-    setContextItems((currentItems) => {
-      const nextItems = addComposerContextItem(currentItems, contextItem)
-      return plugin
-        ? addComposerContextItem(nextItems, {
-            id: `plugin-${plugin.id}`,
-            sourceId: plugin.id,
-            kind: COMPOSER_CAPABILITY_KIND.PLUGIN,
-            label: plugin.name,
-            description: plugin.description,
-            reference: `@${plugin.name}`,
-          })
-        : nextItems
-    })
+    setContextItems((currentItems) =>
+      addComposerContextItem(currentItems, contextItem),
+    )
     window.requestAnimationFrame(() => {
       const currentTextArea = getTextArea()
       currentTextArea?.focus()

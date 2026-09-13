@@ -1,7 +1,6 @@
 import type {
   AssistantSkill,
   CapabilityCommand,
-  PluginSettingsTab,
 } from '../../../settings/index.ts'
 import {
   COMPOSER_CAPABILITY_KIND,
@@ -40,7 +39,6 @@ export type ComposerCapability = {
   id: string
   kind: ComposerCapabilityKind
   label: string
-  settingsTab?: PluginSettingsTab
   sourceId?: string
 }
 
@@ -105,12 +103,6 @@ export function getComposerCapabilityGroups(
   skills: readonly AssistantSkill[],
   commands: readonly CapabilityCommand[],
   query = '',
-  plugins: readonly {
-    id: string
-    name: string
-    description: string
-    enabled: boolean
-  }[] = [],
 ): ComposerCapabilityGroup[] {
   const commandItems: ComposerCapability[] = commands.map((command) => ({
     description: command.description,
@@ -123,20 +115,6 @@ export function getComposerCapabilityGroups(
   if (mode !== COMPOSER_MENU_MODE.SLASH) {
     return filterGroups(
       [
-        {
-          id: 'plugins',
-          label: '插件',
-          items: plugins
-            .filter((plugin) => plugin.enabled)
-            .map((plugin) => ({
-              id: `plugin-${plugin.id}`,
-              sourceId: plugin.id,
-              label: plugin.name,
-              description: plugin.description,
-              kind: COMPOSER_CAPABILITY_KIND.PLUGIN,
-              contextReference: `@${plugin.name}`,
-            })),
-        },
         { id: 'commands', items: commandItems, label: '命令' },
         { id: 'add', items: [...ADD_ITEMS], label: '添加' },
       ],
@@ -177,7 +155,6 @@ export function createComposerContextItem(
 ): ComposerContextItem | null {
   if (
     capability.kind === COMPOSER_CAPABILITY_KIND.ATTACHMENT ||
-    capability.settingsTab ||
     !capability.contextReference
   ) {
     return null
@@ -217,13 +194,7 @@ export function getComposerContextUnavailableReason(
   item: ComposerContextItem,
   skills: readonly AssistantSkill[],
   commands: readonly CapabilityCommand[],
-  plugins: readonly { id: string; enabled: boolean }[] = [],
 ) {
-  if (
-    item.kind === COMPOSER_CAPABILITY_KIND.PLUGIN &&
-    !plugins.some((plugin) => plugin.id === item.sourceId && plugin.enabled)
-  )
-    return '插件已禁用或卸载'
   if (item.kind === COMPOSER_CAPABILITY_KIND.SKILL) {
     const skill = skills.find((candidate) => candidate.id === item.sourceId)
     if (!skill) return '技能已移除'

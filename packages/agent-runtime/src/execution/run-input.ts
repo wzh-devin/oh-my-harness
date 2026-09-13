@@ -17,7 +17,6 @@ export interface AgentRunInput {
   commandId?: string
   content: string
   skillIds?: readonly string[]
-  pluginIds?: readonly string[]
   thinkingLevel?: ModelThinkingLevel
 }
 

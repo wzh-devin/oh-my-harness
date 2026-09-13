@@ -36,18 +36,6 @@ export const toToolApprovalEvent = (approval: PendingToolApproval) => {
     toolCallId: approval.toolCallId,
     type: AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED,
   }
-  if (approval.effect === TOOL_EFFECT.MCP)
-    return {
-      ...common,
-      kind: TOOL_ACTIVITY_KIND.MCP,
-      input: {
-        connectionId: approval.connectionId,
-        tool: approval.remoteToolName,
-        arguments: approval.input,
-      },
-      title: `允许调用 MCP 工具 ${approval.remoteToolName} 吗？`,
-      toolName: POLICY_TOOL.MCP.toolName,
-    }
   if (approval.effect === TOOL_EFFECT.EXECUTE)
     return {
       ...common,

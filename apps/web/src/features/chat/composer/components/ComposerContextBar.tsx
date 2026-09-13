@@ -1,14 +1,10 @@
 import {
   CircleExclamation,
-  CircleFill,
   MagicWand,
-  PlugConnection,
-  Puzzle,
   Terminal,
   Xmark,
 } from '@gravity-ui/icons'
 import { Button } from '@heroui/react'
-import { COMPOSER_CAPABILITY_KIND } from '@oh-my-harness/shared'
 import type {
   ComposerContextItem,
   ComposerContextKind,
@@ -27,12 +23,10 @@ interface ComposerContextBarProps {
 
 const CONTEXT_ICONS = {
   command: Terminal,
-  mcp: PlugConnection,
-  plugin: Puzzle,
   skill: MagicWand,
 } satisfies Record<ComposerContextKind, typeof Terminal>
 
-/** 以统一 Token 展示消息的命令、Skill、MCP 与插件上下文。 */
+/** 以统一 Token 展示消息的命令与 Skill 上下文。 */
 export function ComposerContextBar({
   className,
   isDisabled,
@@ -93,12 +87,6 @@ export function ComposerContextBar({
               <CircleExclamation
                 aria-label={item.unavailableReason}
                 className="size-3.5 shrink-0"
-                role="img"
-              />
-            ) : item.kind === COMPOSER_CAPABILITY_KIND.MCP ? (
-              <CircleFill
-                aria-label="MCP 已连接"
-                className="size-1.5 shrink-0 text-success"
                 role="img"
               />
             ) : null}

@@ -26,8 +26,6 @@ export type ComposerMenuMode =
 export const COMPOSER_CAPABILITY_KIND = {
   ATTACHMENT: 'attachment',
   COMMAND: 'command',
-  MCP: 'mcp',
-  PLUGIN: 'plugin',
   SKILL: 'skill',
 } as const
 export type ComposerCapabilityKind =
@@ -59,19 +57,11 @@ export const PLAN_STEP_STATE = {
 export type PlanStepState =
   (typeof PLAN_STEP_STATE)[keyof typeof PLAN_STEP_STATE]
 
-export const PLUGIN_SETTINGS_TAB = {
-  MARKETPLACES: 'marketplaces',
-  PLUGINS: 'plugins',
-  SKILLS: 'skills',
-} as const
-export type PluginSettingsTab =
-  (typeof PLUGIN_SETTINGS_TAB)[keyof typeof PLUGIN_SETTINGS_TAB]
-
 export const SETTINGS_SECTION = {
   ARCHIVED: 'archived',
   GENERAL: 'general',
   MODELS: 'models',
-  PLUGINS: 'plugins',
+  SKILLS: 'skills',
 } as const
 export type SettingsSection =
   (typeof SETTINGS_SECTION)[keyof typeof SETTINGS_SECTION]

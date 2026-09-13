@@ -2,7 +2,6 @@ import type { ReactNode } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   CHAT_ROUTE_KIND,
-  PLUGIN_SETTINGS_TAB,
   SETTINGS_SECTION,
   type SettingsSection,
 } from '@oh-my-harness/shared'
@@ -22,11 +21,7 @@ import {
   selectFileEditor,
   WorkspaceApiError,
 } from '../features/chat/index.ts'
-import {
-  type PluginSettingsTab,
-  SettingsDialog,
-  SettingsProvider,
-} from '../features/settings/index.ts'
+import { SettingsDialog, SettingsProvider } from '../features/settings/index.ts'
 
 interface ChatLayoutProps {
   activePage: ChatActivePage
@@ -91,10 +86,8 @@ export function ChatLayout({
   const fileEditorRequestId = useRef(0)
   const isFileEditorBusy = useRef(false)
   const [settingsTarget, setSettingsTarget] = useState<{
-    pluginTab: PluginSettingsTab
     section: SettingsSection
   }>({
-    pluginTab: PLUGIN_SETTINGS_TAB.SKILLS,
     section: SETTINGS_SECTION.GENERAL,
   })
   const isThreadPage = activePage.kind === CHAT_ROUTE_KIND.THREAD
@@ -102,11 +95,6 @@ export function ChatLayout({
   const activeWorkspaceId = isThreadPage
     ? activePage.thread.workspaceId
     : undefined
-
-  const openPluginSettings = useCallback((pluginTab: PluginSettingsTab) => {
-    setSettingsTarget({ pluginTab, section: SETTINGS_SECTION.PLUGINS })
-    setIsSettingsOpen(true)
-  }, [])
 
   const handleThreadSelect = useCallback(
     (thread: ChatThread) => {
@@ -244,7 +232,6 @@ export function ChatLayout({
     <SettingsProvider
       permissionScope={`${activePageId}:${activeWorkspaceId ?? selectedWorkspaceId}`}
       selectedWorkspaceId={selectedWorkspaceId}
-      onOpenPluginSettings={openPluginSettings}
     >
       <ChatWorkspaceContext.Provider
         value={{
@@ -322,8 +309,7 @@ export function ChatLayout({
                   (workspace) => workspace.id === thread.workspaceId,
                 )?.label ?? '未知工作区',
             }))}
-            key={`${settingsTarget.section}-${settingsTarget.pluginTab}-${isSettingsOpen ? 'open' : 'closed'}`}
-            initialPluginTab={settingsTarget.pluginTab}
+            key={`${settingsTarget.section}-${isSettingsOpen ? 'open' : 'closed'}`}
             initialSection={settingsTarget.section}
             isOpen={isSettingsOpen}
             onArchivedConversationDelete={onArchivedConversationDelete}

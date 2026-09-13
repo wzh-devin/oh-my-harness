@@ -1,10 +1,6 @@
 import { ToolPolicy } from '@oh-my-harness/agent-policy'
-import { PluginService } from '@oh-my-harness/agent-plugins'
-import { McpConnectionService } from '@oh-my-harness/agent-tools'
-import { FileMcpCredentialStore } from './infrastructure/plugins/mcp-credential-store.ts'
-import { createPluginRouter } from './router/plugins/plugin-router.ts'
 import { AgentRuntime, SkillImportService } from '@oh-my-harness/agent-runtime'
-import { createSkillImportRouter } from './router/plugins/skill-import-router.ts'
+import { createSkillImportRouter } from './router/skills/skill-import-router.ts'
 import {
   createProviderModels,
   FileCredentialStore,
@@ -50,28 +46,19 @@ export async function createApp(
   const fileEditors =
     options.fileEditors ?? new FileEditorService(dataDirectory)
   await workspaces.list()
-  const plugins = new PluginService(
-    dataDirectory,
-    process.env.OH_MY_HARNESS_PLUGIN_GIT_HOSTS?.split(',')
-      .map((host) => host.trim())
-      .filter(Boolean),
-  )
-  await plugins.list()
-  const connections = new McpConnectionService(
-    new FileMcpCredentialStore(dataDirectory),
-    `${process.env.OH_MY_HARNESS_PUBLIC_URL ?? `http://127.0.0.1:${process.env.OH_MY_HARNESS_SERVER_PORT ?? 4318}`}/api/plugin-oauth-sessions/callback`,
-  )
+  const publicUrl = (
+    process.env.OH_MY_HARNESS_PUBLIC_URL ??
+    `http://127.0.0.1:${process.env.OH_MY_HARNESS_SERVER_PORT ?? 4318}`
+  ).replace(/\/$/, '')
   const runtime = new AgentRuntime(models, repository, sessionIndex, {
     dataDirectory,
-    plugins,
-    connections,
     policy: new ToolPolicy(),
     protectedRoots: [dataDirectory],
   })
   let closed = false
   const skillImports = new SkillImportService(
     dataDirectory,
-    process.env.OH_MY_HARNESS_PLUGIN_GIT_HOSTS?.split(',')
+    process.env.OH_MY_HARNESS_SKILL_GIT_HOSTS?.split(',')
       .map((host) => host.trim())
       .filter(Boolean),
   )
@@ -80,8 +67,6 @@ export async function createApp(
     closed = true
     await runtime.close()
     await skillImports.close()
-    connections.close()
-    await plugins.close()
     await sessionIndex.close()
   }
 
@@ -96,11 +81,7 @@ export async function createApp(
       fileEditors,
     ),
   )
-  app.route('/api', createPluginRouter(plugins, connections))
-  app.route(
-    '/api',
-    createSkillImportRouter(skillImports, runtime, connections.redirectUrl),
-  )
+  app.route('/api', createSkillImportRouter(skillImports, runtime, publicUrl))
 
   return app
 }

@@ -52,3 +52,5 @@ export type {
   PendingToolApproval,
   ToolPermission,
 } from '@oh-my-harness/agent-policy'
+
+export { SkillError } from './error/skill-error.ts'

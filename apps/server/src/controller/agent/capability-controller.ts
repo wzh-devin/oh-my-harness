@@ -18,11 +18,8 @@ export const createAgentCapabilityController =
     }
     try {
       const workspace = await workspaces.requireAvailable(workspaceId)
-      return context.json(
-        (await runtime.listCapabilitiesForWorkspace(
-          workspace.path,
-        )) satisfies AgentCapabilityCatalogDto,
-      )
+      const catalog = await runtime.listCapabilitiesForWorkspace(workspace.path)
+      return context.json(catalog satisfies AgentCapabilityCatalogDto)
     } catch (error) {
       return agentErrorResponse(context, error)
     }

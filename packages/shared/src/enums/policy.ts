@@ -10,7 +10,6 @@ export const TOOL_EFFECT = {
   READ: 'read',
   WRITE: 'write',
   EXECUTE: 'execute',
-  MCP: 'mcp',
 } as const
 export type ToolEffect = (typeof TOOL_EFFECT)[keyof typeof TOOL_EFFECT]
 export type FileToolEffect = typeof TOOL_EFFECT.READ | typeof TOOL_EFFECT.WRITE

@@ -9,14 +9,10 @@ export {
 } from './permission-settings-context.ts'
 export type { PermissionId } from './permission-settings-context.ts'
 export {
-  PluginSettingsContext,
-  usePluginSettings,
-} from './plugin-settings-context.ts'
+  CapabilitySettingsContext,
+  useCapabilitySettings,
+} from './capability-settings-context.ts'
 export type {
   AssistantSkill,
   CapabilityCommand,
-  McpConnectionStatus,
-  McpServer,
-  McpTransport,
-  PluginSettingsTab,
-} from './plugin-settings-context.ts'
+} from './capability-settings-context.ts'

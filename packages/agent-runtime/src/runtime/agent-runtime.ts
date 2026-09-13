@@ -1,10 +1,10 @@
+import { SkillError } from '../error/skill-error.ts'
 import { TOOL_PERMISSION } from '@oh-my-harness/agent-policy/contracts'
 import {
   getToolActivityKind,
   toToolApprovalEvent,
 } from '../execution/tool-presentation.ts'
 import { randomUUID } from 'node:crypto'
-import { PluginError, type PluginService } from '@oh-my-harness/agent-plugins'
 
 import {
   ToolPolicy,
@@ -20,9 +20,6 @@ import {
   createSkillResourceTool,
   createTodoWriteTool,
   createWorkspaceTools,
-  createMcpTools,
-  pluginConnectionTargets,
-  type McpConnectionService,
 } from '@oh-my-harness/agent-tools'
 import { ModelServiceError, type ModelService } from '@oh-my-harness/llm'
 import {
@@ -68,7 +65,6 @@ import {
   buildSystemPrompt,
   buildRuntimeContext,
   buildAvailableSkillsPrompt,
-  buildSelectedPluginsPrompt,
   buildCurrentTodosPrompt,
   escapePromptXml,
 } from '../prompt/system-prompt.ts'
@@ -102,8 +98,6 @@ interface ActiveOperation {
 }
 
 interface AgentRuntimeToolOptions {
-  plugins?: PluginService
-  connections?: McpConnectionService
   dataDirectory?: string
   policy: ToolPolicy
   protectedRoots?: readonly string[]
@@ -231,11 +225,11 @@ export class AgentRuntime {
     this.capabilities?.invalidate()
   }
 
-  /** 返回用户或已启用插件技能的只读详情。 */
+  /** 返回独立技能的只读详情。 */
   async getSkillDetail(id: string) {
     this.assertOpen()
     if (!this.capabilities)
-      throw new PluginError('SKILL_UNAVAILABLE', '技能服务不可用', 503)
+      throw new SkillError('SKILL_UNAVAILABLE', '技能服务不可用', 503)
     return this.capabilities.detail(id)
   }
 
@@ -243,13 +237,13 @@ export class AgentRuntime {
   async deleteSkill(id: string) {
     this.assertOpen()
     if (this.deletingSkill || this.active.size)
-      throw new PluginError(
+      throw new SkillError(
         'SKILL_IN_USE',
         '有对话正在运行，请结束运行后再删除技能',
         409,
       )
     if (!this.capabilities)
-      throw new PluginError('SKILL_UNAVAILABLE', '技能服务不可用', 503)
+      throw new SkillError('SKILL_UNAVAILABLE', '技能服务不可用', 503)
     this.deletingSkill = true
     try {
       await this.capabilities.remove(id)
@@ -275,10 +269,7 @@ export class AgentRuntime {
       ? new AttachmentStore(toolOptions.dataDirectory)
       : undefined
     this.capabilities = toolOptions?.dataDirectory
-      ? new AgentCapabilityService(
-          toolOptions.dataDirectory,
-          toolOptions.plugins,
-        )
+      ? new AgentCapabilityService(toolOptions.dataDirectory)
       : undefined
   }
 
@@ -379,7 +370,6 @@ export class AgentRuntime {
     this.assertOpen()
     return (
       this.capabilities?.list(cwd) ?? {
-        plugins: [],
         commands: [],
         diagnostics: [],
         skills: [],
@@ -556,28 +546,10 @@ export class AgentRuntime {
         )
       }
       operation.controller.signal.throwIfAborted()
-      const savedSelection = opened.entries
-        .filter(
-          (entry) =>
-            entry.type === 'custom' &&
-            entry.customType === SESSION_CUSTOM_TYPE.PLUGIN_SELECTION,
-        )
-        .at(-1)
-      const savedIds =
-        savedSelection?.type === 'custom'
-          ? (savedSelection.data as { pluginIds?: unknown }).pluginIds
-          : undefined
-      const pluginIds = input
-        ? (input.pluginIds ?? [])
-        : Array.isArray(savedIds) &&
-            savedIds.every((id) => typeof id === 'string')
-          ? (savedIds as string[])
-          : []
-      const resolved = await this.capabilities?.resolve(opened.metadata.cwd, {
-        ...(input ?? { content: '' }),
-        pluginIds,
-      })
-      if (resolved) cleanups.push(resolved.release)
+      const resolved = await this.capabilities?.resolve(
+        opened.metadata.cwd,
+        input ?? { content: '' },
+      )
       if (input?.attachments?.length) {
         if (!this.attachments) {
           throw new AgentRuntimeError(
@@ -603,23 +575,13 @@ export class AgentRuntime {
         input &&
         (input.attachments?.length ||
           input.commandId ||
-          input.skillIds?.length ||
-          resolved?.plugins.length ||
-          input.pluginIds),
+          input.skillIds?.length),
       )
       const structured =
         input && hasStructuredInput
           ? buildStructuredUserPrompt(input, storedAttachments)
           : undefined
       const contextItems: AgentMessageContextItem[] = [
-        ...(resolved?.plugins ?? []).map((plugin) => ({
-          description: plugin.activeRevision.descriptor.description,
-          id: plugin.id,
-          kind: CAPABILITY_KIND.PLUGIN,
-          label: plugin.activeRevision.descriptor.name,
-          reference: `@${plugin.activeRevision.descriptor.name}`,
-          sourceId: plugin.id,
-        })),
         ...(resolved?.command
           ? [
               {
@@ -741,31 +703,11 @@ export class AgentRuntime {
         : undefined
       if (workspaceTools) cleanups.push(() => workspaceTools.cleanup())
       cleanups.push(async () => this.toolOptions?.policy.clearRun(runId))
-      const mcpTools =
-        this.toolOptions?.connections && resolved?.plugins.length
-          ? await createMcpTools({
-              connections: this.toolOptions.connections,
-              targets: pluginConnectionTargets(resolved.plugins),
-              policy: this.toolOptions.policy,
-              permission,
-              runId,
-              sessionId: id,
-              signal: operation.controller.signal,
-              onApprovalRequested: async (approval) => {
-                await this.appendApprovalRequested(opened.session, approval)
-                events.push(toToolApprovalEvent(approval))
-              },
-              onApprovalResolved: (resolution) =>
-                this.appendApprovalResolved(opened.session, resolution),
-            })
-          : undefined
-      if (mcpTools) cleanups.push(mcpTools.cleanup)
       const skillResourceTool = resolved?.catalog.skills.length
         ? createSkillResourceTool(
             resolved.catalog.skills.map((skill) => ({
               id: skill.id,
               rootDirectory: skill.rootDirectory,
-              resourceRootDirectory: skill.resourceRootDirectory,
             })),
           )
         : undefined
@@ -785,7 +727,6 @@ export class AgentRuntime {
         })
       })
       const tools = [
-        ...(mcpTools?.tools ?? []),
         ...(workspaceTools?.tools ?? []),
         ...(skillResourceTool ? [skillResourceTool] : []),
         todoTool,
@@ -844,14 +785,6 @@ export class AgentRuntime {
           'Available skills: none. Earlier skill catalogs no longer apply.',
         true,
       )
-      appendContext(
-        'plugin-selection',
-        buildSelectedPluginsPrompt(
-          resolved?.plugins ?? [],
-          resolved?.catalog.skills ?? [],
-        ),
-        true,
-      )
       if (resolved?.commandContent)
         appendContext('command', resolved.commandContent)
       for (const skill of resolved?.skills ?? [])
@@ -860,8 +793,6 @@ export class AgentRuntime {
           `<skill id="${escapePromptXml(skill.id)}">\nResources use the prefix ${skill.id}/.\n${skill.content}\n</skill>`,
         )
       appendContext('task-recovery', buildCurrentTodosPrompt(currentTodos))
-      if (mcpTools?.diagnostics.length)
-        appendContext('plugin-diagnostics', mcpTools.diagnostics.join('\n'))
       const requestState: {
         id?: string
         startedAt?: number
@@ -884,9 +815,7 @@ export class AgentRuntime {
           call.toolCall.name === BUILTIN_TOOL_NAME.LOAD_SKILL_RESOURCE ||
           call.toolCall.name === BUILTIN_TOOL_NAME.TODO_WRITE
             ? undefined
-            : mcpTools?.owns(call.toolCall.name)
-              ? mcpTools.beforeToolCall(call, signal)
-              : workspaceTools?.beforeToolCall(call, signal),
+            : workspaceTools?.beforeToolCall(call, signal),
         initialState: {
           messages: context.messages,
           model,
@@ -946,13 +875,6 @@ export class AgentRuntime {
         toolExecution: 'sequential',
       })
       operation.agent = agent
-      await opened.session.appendCustomEntry(
-        SESSION_CUSTOM_TYPE.PLUGIN_SELECTION,
-        {
-          pluginIds: resolved?.plugins.map((plugin) => plugin.id) ?? [],
-          schemaVersion: 1,
-        },
-      )
       await opened.session.appendCustomEntry(SESSION_CUSTOM_TYPE.RUN_STARTED, {
         runId,
         startedAt: Date.now(),
@@ -977,8 +899,6 @@ export class AgentRuntime {
       await this.attachments?.remove(storedAttachments).catch(() => undefined)
       await cleanup()
       this.release(id, operation)
-      if (error instanceof PluginError)
-        throw new AgentRuntimeError('AGENT_SKILL_NOT_FOUND', error.message, 400)
       if (
         error instanceof AgentRuntimeError ||
         error instanceof ModelServiceError

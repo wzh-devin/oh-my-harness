@@ -1,12 +1,5 @@
 import type { RefObject } from 'react'
-import {
-  FilePlus,
-  MagicWand,
-  PlugConnection,
-  Plus,
-  Puzzle,
-  Terminal,
-} from '@gravity-ui/icons'
+import { FilePlus, MagicWand, Plus, Terminal } from '@gravity-ui/icons'
 import { ListBox, Popover } from '@heroui/react'
 import type {
   ComposerCapability,
@@ -26,12 +19,10 @@ interface ComposerCapabilityMenuProps {
 const CAPABILITY_ICONS = {
   attachment: FilePlus,
   command: Terminal,
-  mcp: PlugConnection,
-  plugin: Puzzle,
   skill: MagicWand,
 } as const
 
-/** 展示 Composer 的命令、添加项与插件能力。 */
+/** 展示 Composer 的命令、文件与 Skills。 */
 export function ComposerCapabilityMenu({
   activeId,
   anchorRef,
