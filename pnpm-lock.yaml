@@ -16,6 +16,9 @@ importers:
       '@hono/node-server':
         specifier: 2.1.1
         version: 2.1.1(hono@4.13.5)
+      '@oh-my-harness/agent-plugins':
+        specifier: workspace:*
+        version: link:../../packages/agent-plugins
       '@oh-my-harness/agent-policy':
         specifier: workspace:*
         version: link:../../packages/agent-policy
@@ -178,6 +181,37 @@ importers:
         specifier: ^8.2.0
         version: 8.2.2(@types/node@24.13.3)(jiti@2.7.0)(yaml@2.9.0)
 
+  packages/agent-plugins:
+    dependencies:
+      '@earendil-works/pi-agent-core':
+        specifier: 0.84.3
+        version: 0.84.3(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(ws@8.21.3)(zod@4.4.3)
+      '@oh-my-harness/agent-tools':
+        specifier: workspace:*
+        version: link:../agent-tools
+      '@oh-my-harness/shared':
+        specifier: workspace:*
+        version: link:../shared
+      yauzl:
+        specifier: 3.4.0
+        version: 3.4.0
+    devDependencies:
+      '@types/node':
+        specifier: ^24.13.3
+        version: 24.13.3
+      '@types/yauzl':
+        specifier: 3.4.0
+        version: 3.4.0
+      oxlint:
+        specifier: ^1.75.0
+        version: 1.79.0
+      prettier:
+        specifier: ^3.9.6
+        version: 3.9.6
+      typescript:
+        specifier: ~6.0.2
+        version: 6.0.3
+
   packages/agent-policy:
     dependencies:
       '@oh-my-harness/shared':
@@ -205,6 +239,9 @@ importers:
       '@earendil-works/pi-ai':
         specifier: 0.84.3
         version: 0.84.3(@modelcontextprotocol/sdk@1.30.0(zod@4.4.3))(ws@8.21.3)(zod@4.4.3)
+      '@oh-my-harness/agent-plugins':
+        specifier: workspace:*
+        version: link:../agent-plugins
       '@oh-my-harness/agent-policy':
         specifier: workspace:*
         version: link:../agent-policy
@@ -217,16 +254,10 @@ importers:
       '@oh-my-harness/shared':
         specifier: workspace:*
         version: link:../shared
-      yauzl:
-        specifier: 3.4.0
-        version: 3.4.0
     devDependencies:
       '@types/node':
         specifier: ^24.13.3
         version: 24.13.3
-      '@types/yauzl':
-        specifier: 3.4.0
-        version: 3.4.0
       oxlint:
         specifier: ^1.75.0
         version: 1.79.0

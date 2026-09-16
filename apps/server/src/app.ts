@@ -1,5 +1,7 @@
 import { ToolPolicy } from '@oh-my-harness/agent-policy'
 import { McpService } from '@oh-my-harness/agent-tools'
+import { PluginService } from '@oh-my-harness/agent-plugins'
+import { createPluginRouter } from './router/plugins/plugin-router.ts'
 import { createMcpRouter } from './router/mcp/mcp-router.ts'
 import { AgentRuntime, SkillImportService } from '@oh-my-harness/agent-runtime'
 import { createSkillImportRouter } from './router/skills/skill-import-router.ts'
@@ -20,6 +22,7 @@ import { WorkspaceStore } from './infrastructure/workspace/workspace-store.ts'
 import { createApiRouter } from './router/index.ts'
 
 export interface CreateAppOptions {
+  plugins?: PluginService
   fileEditors?: FileEditorService
   models?: ModelService
 }
@@ -53,9 +56,15 @@ export async function createApp(
     `http://127.0.0.1:${process.env.OH_MY_HARNESS_SERVER_PORT ?? 4318}`
   ).replace(/\/$/, '')
   const mcp = new McpService(dataDirectory)
+  const plugins = options.plugins ?? new PluginService(dataDirectory)
+  await plugins
+    .capabilities()
+    .then((snapshot) => mcp.setManagedServers(snapshot.servers))
+    .catch(() => undefined)
   void mcp.start().catch(() => undefined)
   const runtime = new AgentRuntime(models, repository, sessionIndex, {
     mcp,
+    plugins,
     dataDirectory,
     policy: new ToolPolicy(),
     protectedRoots: [dataDirectory],
@@ -72,6 +81,7 @@ export async function createApp(
     closed = true
     await runtime.close()
     await mcp.close()
+    await plugins.close()
     await skillImports.close()
     await sessionIndex.close()
   }
@@ -89,6 +99,10 @@ export async function createApp(
   )
   app.route('/api', createSkillImportRouter(skillImports, runtime, publicUrl))
   app.route('/api/mcp', createMcpRouter(mcp, publicUrl))
+  app.route(
+    '/api/plugins',
+    createPluginRouter(plugins, mcp, runtime, publicUrl),
+  )
 
   return app
 }

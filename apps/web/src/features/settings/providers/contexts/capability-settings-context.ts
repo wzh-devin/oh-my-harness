@@ -16,6 +16,8 @@ export interface AssistantSkill {
   enabled: boolean
   id: string
   name: string
+  pluginId?: string
+  pluginName?: string
   source: SkillSource
 }
 

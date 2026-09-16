@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { ArrowLeft } from 'lucide-react'
 import { Button } from '@heroui/react'
+import { SettingsBackButton } from '../../shared/components/SettingsBackNavigation.tsx'
 import { useSkillDetail } from '../hooks/use-skill-detail.ts'
 
 /** 展示独立技能原文，删除前确认并保留可恢复副本。 */
@@ -8,7 +8,9 @@ export function SkillDetail({
   id,
   onBack,
   onDeleted,
+  onOpenPlugin,
 }: {
+  onOpenPlugin?: (id: string) => void
   id: string
   onBack(): void
   onDeleted(message: string): void
@@ -20,14 +22,7 @@ export function SkillDetail({
   const [confirming, setConfirming] = useState(false)
   return (
     <section aria-label="技能详情" className="flex min-w-0 flex-col gap-5">
-      <Button
-        className="h-7 min-h-0 w-fit gap-1.5 px-0 text-xs text-muted"
-        variant="ghost"
-        onPress={onBack}
-      >
-        <ArrowLeft className="size-3.5" />
-        返回技能列表
-      </Button>
+      <SettingsBackButton label="返回技能列表" onBack={onBack} />
       {loading ? (
         <p role="status" className="text-sm text-muted">
           正在读取技能…
@@ -54,7 +49,18 @@ export function SkillDetail({
             <p className="break-words text-sm text-muted">
               {detail.description}
             </p>
-            <p className="text-xs text-muted">来源：oh-my-harness 独立技能</p>
+            <p className="text-xs text-muted">
+              来源：{detail.pluginName ?? 'oh-my-harness 独立技能'}
+            </p>
+            {detail.pluginId && onOpenPlugin ? (
+              <Button
+                variant="outline"
+                className="w-fit"
+                onPress={() => onOpenPlugin(detail.pluginId!)}
+              >
+                管理所属插件
+              </Button>
+            ) : null}
             {detail.canDelete ? (
               confirming ? (
                 <div
@@ -96,7 +102,9 @@ export function SkillDetail({
               )
             ) : (
               <p className="text-xs text-muted">
-                根目录技能请手动管理，不能删除整个技能目录。
+                {detail.pluginId
+                  ? '该技能随插件统一启停和卸载。'
+                  : '根目录技能请手动管理，不能删除整个技能目录。'}
               </p>
             )}
           </header>

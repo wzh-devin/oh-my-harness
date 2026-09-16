@@ -1,7 +1,12 @@
 import { dirname, join, relative } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { chmod, lstat, mkdir, readdir, rename } from 'node:fs/promises'
-import { resolveContentPath } from './source/files.ts'
+import {
+  resolveContentPath,
+  validSkill,
+  type PluginService,
+} from '@oh-my-harness/agent-plugins'
+export { validSkill } from '@oh-my-harness/agent-plugins'
 import { SkillError } from '../error/skill-error.ts'
 
 import {
@@ -10,7 +15,7 @@ import {
   loadSourcedSkills,
   parseCommandArgs,
   type PromptTemplate,
-  type Skill,
+  loadSkills,
 } from '@earendil-works/pi-agent-core'
 import { NodeExecutionEnv } from '@earendil-works/pi-agent-core/node'
 
@@ -40,6 +45,8 @@ export interface AgentCapabilitySkill {
   id: string
   name: string
   source: AgentSkillSource
+  pluginId?: string
+  pluginName?: string
 }
 
 export interface AgentCapabilityCommand {
@@ -77,13 +84,6 @@ export interface LoadedCatalog {
 const MAX_CAPABILITY_CONTENT = 200_000
 const CATALOG_CACHE_MS = 5_000
 const capabilityNamePattern = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/u
-
-/** 导入与运行时共享技能名称及内容边界。 */
-export const validSkill = (skill: Skill) =>
-  capabilityNamePattern.test(skill.name) &&
-  !!skill.description.trim() &&
-  skill.description.length <= 1_024 &&
-  skill.content.length <= MAX_CAPABILITY_CONTENT
 
 const BUILTIN_COMMANDS: readonly PromptTemplate[] = [
   {
@@ -146,6 +146,7 @@ const preferHigherPriority = <
     [AGENT_CAPABILITY_SOURCE.BUILTIN]: 0,
     [AGENT_CAPABILITY_SOURCE.USER]: 3,
     [AGENT_CAPABILITY_SOURCE.PROJECT]: 4,
+    [AGENT_CAPABILITY_SOURCE.PLUGIN]: 2,
   }
   for (const value of values) {
     const current = byName.get(value.name)
@@ -169,7 +170,9 @@ export class AgentCapabilityService {
     { expiresAt: number; value: Promise<LoadedCatalog> }
   >()
   private readonly dataDirectory: string
-  constructor(dataDirectory: string) {
+  private readonly plugins?: PluginService
+  constructor(dataDirectory: string, plugins?: PluginService) {
+    this.plugins = plugins
     this.dataDirectory = dataDirectory
   }
 
@@ -218,6 +221,8 @@ export class AgentCapabilityService {
       description: skill.description,
       source: skill.source,
       content: skill.content,
+      pluginId: skill.pluginId,
+      pluginName: skill.pluginName,
       files,
       filesTruncated: truncated,
       canDelete:
@@ -396,6 +401,38 @@ export class AgentCapabilityService {
         ),
         diagnostics,
       )
+      const pluginSkills: LoadedSkill[] = []
+      if (this.plugins) {
+        for (const root of (
+          await this.plugins.capabilities().catch(() => {
+            diagnostics.push(
+              safeDiagnostic(
+                'plugin_unavailable',
+                AGENT_CAPABILITY_SOURCE.PLUGIN,
+              ),
+            )
+            return { skills: [] }
+          })
+        ).skills) {
+          const loaded = await loadSkills(env, root.rootDirectory)
+          const skill = loaded.skills.find(
+            (item) => item.filePath === join(root.rootDirectory, 'SKILL.md'),
+          )
+          if (!skill || !validSkill(skill)) continue
+          pluginSkills.push({
+            id: root.id,
+            name: root.name,
+            description: root.description,
+            source: AGENT_CAPABILITY_SOURCE.PLUGIN,
+            enabled: true,
+            pluginId: root.pluginId,
+            pluginName: root.pluginName,
+            content: skill.content,
+            rootDirectory: root.rootDirectory,
+            disableModelInvocation: skill.disableModelInvocation === true,
+          })
+        }
+      }
       return {
         commands: preferHigherPriority([
           ...BUILTIN_COMMANDS.map((template) => ({
@@ -408,7 +445,7 @@ export class AgentCapabilityService {
           ...commands,
         ]),
         diagnostics,
-        skills: preferHigherPriority(skills),
+        skills: [...preferHigherPriority(skills), ...pluginSkills],
       }
     } finally {
       await env.cleanup()

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "name": "code-review",
+  "version": "1.0.0",
+  "displayName": "代码审查",
+  "description": "检查真实调用链中的正确性、边界与回归风险。",
+  "author": "oh-my-harness",
+  "license": "MIT",
+  "examples": [
+    "审查当前工作区改动，按严重程度列出有证据的问题。"
+  ],
+  "skills": [
+    "skills/code-review"
+  ],
+  "mcpServers": {},
+  "inputs": []
+}

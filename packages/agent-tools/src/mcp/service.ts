@@ -49,7 +49,12 @@ interface Connection {
   settled?: Promise<void>
   discovering?: Promise<void>
 }
+export interface McpManagedServer {
+  owner: { id: string; name: string }
+  config: McpServerConfig
+}
 export interface McpServerInfo {
+  owner?: { id: string; name: string }
   id: string
   name: string
   transport: McpServerConfig['transport']
@@ -108,12 +113,78 @@ const versionOf = (tool: Tool) =>
 /** 管理应用级 MCP 配置和连接；Run 只使用确定快照，停用立即撤销连接生命周期。 */
 export class McpService {
   private readonly store: McpConfigStore
+  private managed = new Map<string, McpManagedServer>()
   private readonly connections = new Map<string, Connection>()
   private readonly changing = new Set<string>()
   private closed = false
   private readonly tests = new Set<Connection>()
   constructor(dataDirectory: string) {
     this.store = new McpConfigStore(dataDirectory)
+  }
+
+  /** 插件配置仅保存在其所有者中；这里原子替换连接注册，不写用户配置。 */
+  async setManagedServers(servers: readonly McpManagedServer[]) {
+    return this.store.serialize(async () => {
+      const document = await this.store.read()
+      if (this.closed)
+        throw new McpError(
+          MCP_ERROR_CODE.UNAVAILABLE,
+          'MCP 管理器已关闭。',
+          503,
+        )
+      const next = new Map(
+        servers.map((server) => [server.config.id, structuredClone(server)]),
+      )
+      if (
+        next.size !== servers.length ||
+        servers.length > 2000 ||
+        servers.some((server) =>
+          document.servers.some((user) => user.id === server.config.id),
+        )
+      )
+        throw new McpError(
+          MCP_ERROR_CODE.INVALID_CONFIG,
+          '插件 MCP 身份冲突或服务过多。',
+        )
+      const affected = [
+        ...new Set([...this.managed.keys(), ...next.keys()]),
+      ].filter(
+        (id) =>
+          JSON.stringify(this.managed.get(id)) !== JSON.stringify(next.get(id)),
+      )
+      affected.forEach((id) => this.assertIdle(id))
+      affected.forEach((id) => this.changing.add(id))
+      try {
+        await Promise.all(affected.map((id) => this.disconnect(id)))
+        this.managed = next
+      } finally {
+        affected.forEach((id) => this.changing.delete(id))
+      }
+      void this.connectBatch(
+        affected.flatMap((id) =>
+          next.get(id)?.config.enabled ? [next.get(id)!.config] : [],
+        ),
+      )
+    })
+  }
+
+  private async allServers() {
+    return [
+      ...(await this.store.read()).servers,
+      ...[...this.managed.values()].map((server) => server.config),
+    ]
+  }
+  private assertUserOwned(id?: string) {
+    if (id && this.managed.has(id))
+      throw new McpError(
+        MCP_ERROR_CODE.INVALID_CONFIG,
+        '此服务由插件管理，请前往插件设置修改。',
+        409,
+      )
+  }
+  private displayName(server: McpServerConfig) {
+    const owner = this.managed.get(server.id)?.owner
+    return owner ? `${owner.name} · ${server.name}` : server.name
   }
 
   /** 启动已明确启用的服务；单个失败不影响宿主启动。 */
@@ -131,7 +202,7 @@ export class McpService {
     const document = await this.store.read()
     return {
       revision: document.revision,
-      servers: document.servers.map((server) => this.info(server)),
+      servers: (await this.allServers()).map((server) => this.info(server)),
     }
   }
 
@@ -165,6 +236,7 @@ export class McpService {
 
   /** 仅供用户显式查看单项凭据；普通配置投影始终不返回值。 */
   async secret(id: string, key: unknown, revision: number) {
+    this.assertUserOwned(id)
     if (typeof key !== 'string' || !key || key.length > 256)
       throw new McpError(MCP_ERROR_CODE.INVALID_CONFIG, '凭据键无效。')
     const document = await this.store.read()
@@ -239,6 +311,7 @@ export class McpService {
 
   /** 单服务编辑复用完整配置计划；保留其他服务及所有省略的凭据。 */
   async save(name: string, config: unknown, revision: number, id?: string) {
+    this.assertUserOwned(id)
     const document = await this.store.read()
     this.checkRevision(document.revision, revision)
     const previous = id
@@ -287,6 +360,7 @@ export class McpService {
   }
 
   async remove(id: string, revision: number) {
+    this.assertUserOwned(id)
     const document = await this.store.read()
     if (!document.servers.some((server) => server.id === id))
       throw new McpError(MCP_ERROR_CODE.NOT_FOUND, 'MCP 服务不存在。', 404)
@@ -307,7 +381,9 @@ export class McpService {
     return this.store.serialize(async () => {
       const document = await this.store.read()
       this.checkRevision(document.revision, revision)
-      const server = document.servers.find((server) => server.id === id)
+      const server = (await this.allServers()).find(
+        (server) => server.id === id,
+      )
       if (!server)
         throw new McpError(MCP_ERROR_CODE.NOT_FOUND, 'MCP 服务不存在。', 404)
       if (!server.enabled)
@@ -326,6 +402,7 @@ export class McpService {
 
   /** 测试草稿不写配置，取消和失败均释放临时客户端与进程。 */
   async test(name: string, value: unknown, signal?: AbortSignal, id?: string) {
+    this.assertUserOwned(id)
     const document = await this.store.read()
     const previous = id
       ? document.servers.find((server) => server.id === id)
@@ -368,32 +445,32 @@ export class McpService {
   }
 
   async tools(id: string) {
-    const document = await this.store.read()
-    if (!document.servers.some((server) => server.id === id))
+    const servers = await this.allServers()
+    if (!servers.some((server) => server.id === id))
       throw new McpError(MCP_ERROR_CODE.NOT_FOUND, 'MCP 服务不存在。', 404)
     return this.connections.get(id)?.tools ?? []
   }
 
   /** 固定本轮工具目录；未就绪服务生成明确说明，不阻塞其他工具。 */
   async snapshot() {
-    const document = await this.store.read()
+    const servers = await this.allServers()
     const bindings: McpToolBinding[] = [],
       unavailable: string[] = []
-    for (const config of document.servers.filter((server) => server.enabled)) {
+    for (const config of servers.filter((server) => server.enabled)) {
       const connection = this.connections.get(config.id)
       if (
         !connection ||
         connection.status !== MCP_CONNECTION_STATUS.CONNECTED ||
         this.changing.has(config.id)
       ) {
-        unavailable.push(config.name)
+        unavailable.push(this.displayName(config))
         continue
       }
       for (const tool of connection.tools)
         bindings.push({
           name: `mcp_${config.id.replaceAll('-', '')}_${createHash('sha256').update(tool.name).digest('hex').slice(0, 20)}`,
           serverId: config.id,
-          serverName: config.name,
+          serverName: this.displayName(config),
           revision: config.revision,
           toolVersion: versionOf(tool),
           tool: structuredClone(tool),
@@ -519,7 +596,8 @@ export class McpService {
     const connection = this.connections.get(server.id)
     return {
       id: server.id,
-      name: server.name,
+      name: this.displayName(server),
+      owner: this.managed.get(server.id)?.owner,
       transport: server.transport,
       enabled: server.enabled,
       revision: server.revision,
@@ -559,10 +637,10 @@ export class McpService {
   }
   private async connect(config: McpServerConfig) {
     if (this.closed) return
-    const document = await this.store.read()
+    const servers = await this.allServers()
     if (
       this.closed ||
-      !document.servers.some(
+      !servers.some(
         (server) =>
           server.id === config.id &&
           server.revision === config.revision &&

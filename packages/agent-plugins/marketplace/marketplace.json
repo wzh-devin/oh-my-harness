@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "name": "official",
+  "plugins": [
+    {
+      "name": "code-review",
+      "displayName": "代码审查",
+      "description": "检查真实调用链中的正确性、边界与回归风险。",
+      "category": "开发",
+      "version": "1.0.0",
+      "source": {
+        "kind": "bundled",
+        "path": "plugins/code-review"
+      }
+    },
+    {
+      "name": "documentation",
+      "displayName": "文档整理",
+      "description": "根据当前代码整理可验证的使用说明和维护文档。",
+      "category": "文档",
+      "version": "1.0.0",
+      "source": {
+        "kind": "bundled",
+        "path": "plugins/documentation"
+      }
+    },
+    {
+      "name": "debugging",
+      "displayName": "故障排查",
+      "description": "通过复现、调用链和最小验证定位根因。",
+      "category": "开发",
+      "version": "1.0.0",
+      "source": {
+        "kind": "bundled",
+        "path": "plugins/debugging"
+      }
+    },
+    {
+      "name": "release-notes",
+      "displayName": "变更说明",
+      "description": "从指定 Git 范围生成准确的发布说明草稿。",
+      "category": "文档",
+      "version": "1.0.0",
+      "source": {
+        "kind": "bundled",
+        "path": "plugins/release-notes"
+      }
+    },
+    {
+      "name": "github-collaboration",
+      "displayName": "GitHub 协作",
+      "description": "组合仓库协作指南与 GitHub 官方 MCP 服务。",
+      "category": "协作",
+      "version": "1.0.0",
+      "source": {
+        "kind": "bundled",
+        "path": "plugins/github-collaboration"
+      }
+    }
+  ]
+}

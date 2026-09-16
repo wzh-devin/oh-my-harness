@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "name": "documentation",
+  "version": "1.0.0",
+  "displayName": "文档整理",
+  "description": "根据当前代码整理可验证的使用说明和维护文档。",
+  "author": "oh-my-harness",
+  "license": "MIT",
+  "examples": [
+    "根据当前项目实现，整理安装、配置和常见故障的说明。"
+  ],
+  "skills": [
+    "skills/documentation"
+  ],
+  "mcpServers": {},
+  "inputs": []
+}

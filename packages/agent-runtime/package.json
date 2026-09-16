@@ -26,13 +26,12 @@
     "@oh-my-harness/agent-tools": "workspace:*",
     "@oh-my-harness/llm": "workspace:*",
     "@oh-my-harness/shared": "workspace:*",
-    "yauzl": "3.4.0"
+    "@oh-my-harness/agent-plugins": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
     "oxlint": "^1.75.0",
     "prettier": "^3.9.6",
-    "typescript": "~6.0.2",
-    "@types/yauzl": "3.4.0"
+    "typescript": "~6.0.2"
   }
 }

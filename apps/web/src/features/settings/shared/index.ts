@@ -1,5 +1,7 @@
 export {
   SettingsAddButton,
+  SettingsBackButton,
+  SettingsSubpageHeader,
   SettingsEditorActions,
   SettingsEditorCard,
   SettingsItemCard,

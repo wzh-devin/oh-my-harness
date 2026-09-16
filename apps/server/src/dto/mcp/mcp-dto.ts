@@ -5,6 +5,7 @@ import type {
 } from '@oh-my-harness/shared'
 
 export interface McpServerDto {
+  owner?: { id: string; name: string }
   id: string
   name: string
   transport: McpTransport

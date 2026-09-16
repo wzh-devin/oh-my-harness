@@ -8,7 +8,11 @@ import { SkillImportForm } from './SkillImportForm.tsx'
 import { SkillDetail } from './SkillDetail.tsx'
 
 /** 仅管理独立 Skills，保留导入、详情与可恢复删除。 */
-export function SkillsSettingsSection() {
+export function SkillsSettingsSection({
+  onOpenPlugin,
+}: {
+  onOpenPlugin?: (id: string) => void
+}) {
   const { capabilityError, isLoadingCapabilities, skills } =
     useCapabilitySettings()
   const [searchQuery, setSearchQuery] = useState('')
@@ -29,6 +33,7 @@ export function SkillsSettingsSection() {
       <div className="pt-5">
         {selectedSkillId ? (
           <SkillDetail
+            onOpenPlugin={onOpenPlugin}
             key={selectedSkillId}
             id={selectedSkillId}
             onBack={() => setSelectedSkillId(null)}
@@ -110,7 +115,7 @@ export function SkillsSettingsSection() {
                       <>
                         <span className="truncate">{skill.name}</span>
                         <span className="shrink-0 text-xs font-normal text-muted">
-                          oh-my-harness
+                          {skill.pluginName ?? 'oh-my-harness'}
                         </span>
                       </>
                     }

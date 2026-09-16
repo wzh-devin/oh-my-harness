@@ -27,11 +27,13 @@ export const AGENT_CAPABILITY_SOURCE = {
   BUILTIN: 'builtin',
   PROJECT: 'project',
   USER: 'user',
+  PLUGIN: 'plugin',
 } as const
 export type AgentCapabilitySource =
   (typeof AGENT_CAPABILITY_SOURCE)[keyof typeof AGENT_CAPABILITY_SOURCE]
 export type AgentCommandSource = AgentCapabilitySource
-export type AgentSkillSource = typeof AGENT_CAPABILITY_SOURCE.USER
+export type AgentSkillSource =
+  typeof AGENT_CAPABILITY_SOURCE.USER | typeof AGENT_CAPABILITY_SOURCE.PLUGIN
 export type CapabilityScope =
   typeof AGENT_CAPABILITY_SOURCE.PROJECT | typeof AGENT_CAPABILITY_SOURCE.USER
 
@@ -39,6 +41,7 @@ export const CAPABILITY_KIND = {
   COMMAND: 'command',
   SKILL: 'skill',
   MCP: 'mcp',
+  PLUGIN: 'plugin',
 } as const
 export type CapabilityKind =
   (typeof CAPABILITY_KIND)[keyof typeof CAPABILITY_KIND]

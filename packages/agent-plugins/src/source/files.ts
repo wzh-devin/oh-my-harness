@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { lstat, readdir, readFile, realpath } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { SkillError } from '../../error/skill-error.ts'
+import { SourceError as SkillError } from './error.ts'
 
 export const MAX_FILES = 20_000
 export const MAX_BYTES = 256 * 1024 * 1024

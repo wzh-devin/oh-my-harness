@@ -21,7 +21,8 @@
     "@oh-my-harness/agent-tools": "workspace:*",
     "@oh-my-harness/llm": "workspace:*",
     "@oh-my-harness/shared": "workspace:*",
-    "hono": "4.13.5"
+    "hono": "4.13.5",
+    "@oh-my-harness/agent-plugins": "workspace:*"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "0.84.3",

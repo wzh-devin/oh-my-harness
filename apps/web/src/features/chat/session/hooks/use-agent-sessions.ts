@@ -388,11 +388,6 @@ export function useAgentSessions() {
           } else if (event.type === AGENT_RUN_EVENT_TYPE.TRAJECTORY_CHANGED) {
             bumpTrajectory(sessionId)
           } else if (event.type === AGENT_RUN_EVENT_TYPE.START) {
-            if (event.mcpUnavailable?.length)
-              setErrors((current) => ({
-                ...current,
-                [sessionId]: `本轮 MCP 不可用：${event.mcpUnavailable?.join('、')}。其他能力继续运行。`,
-              }))
             setRunPermissions((current) => ({
               ...current,
               [sessionId]: event.permission,
@@ -655,7 +650,8 @@ export function useAgentSessions() {
         (item) =>
           item.kind === CAPABILITY_KIND.COMMAND ||
           item.kind === CAPABILITY_KIND.SKILL ||
-          item.kind === CAPABILITY_KIND.MCP,
+          item.kind === CAPABILITY_KIND.MCP ||
+          item.kind === CAPABILITY_KIND.PLUGIN,
       )
       const preview =
         payload.message || attachments[0]?.name || contextItems[0]?.label || ''
@@ -702,6 +698,11 @@ export function useAgentSessions() {
                 ? [item.sourceId]
                 : [],
             ),
+            pluginIds: contextItems.flatMap((item) =>
+              item.kind === CAPABILITY_KIND.PLUGIN && item.sourceId
+                ? [item.sourceId]
+                : [],
+            ),
             skillIds: contextItems.flatMap((item) =>
               item.kind === CAPABILITY_KIND.SKILL && item.sourceId
                 ? [item.sourceId]
@@ -721,11 +722,6 @@ export function useAgentSessions() {
               case AGENT_RUN_EVENT_TYPE.START:
                 accepted = true
                 onAccepted?.(true)
-                if (event.mcpUnavailable?.length)
-                  setErrors((current) => ({
-                    ...current,
-                    [sessionId]: `本轮 MCP 不可用：${event.mcpUnavailable?.join('、')}。其他能力继续运行。`,
-                  }))
                 setRunPermissions((current) => ({
                   ...current,
                   [sessionId]: event.permission,

@@ -98,7 +98,8 @@ export function structuredMessageDetails(
       return typeof item.id === 'string' &&
         (item.kind === CAPABILITY_KIND.COMMAND ||
           item.kind === CAPABILITY_KIND.SKILL ||
-          item.kind === CAPABILITY_KIND.MCP) &&
+          item.kind === CAPABILITY_KIND.MCP ||
+          item.kind === CAPABILITY_KIND.PLUGIN) &&
         typeof item.label === 'string' &&
         typeof item.description === 'string' &&
         typeof item.reference === 'string' &&

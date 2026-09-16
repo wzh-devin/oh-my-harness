@@ -59,6 +59,7 @@ export interface StreamAgentMessageInput {
   permission: PermissionId
   skillIds: readonly string[]
   mcpServerIds?: readonly string[]
+  pluginIds?: readonly string[]
   thinkingLevel: ModelThinkingLevel
 }
 
@@ -603,6 +604,7 @@ export async function streamAgentMessage(
     permission: input.permission,
     ...(input.skillIds.length ? { skillIds: input.skillIds } : {}),
     ...(input.mcpServerIds?.length ? { mcpServerIds: input.mcpServerIds } : {}),
+    ...(input.pluginIds?.length ? { pluginIds: input.pluginIds } : {}),
     thinkingLevel: input.thinkingLevel,
   }
   const body = input.attachments.length

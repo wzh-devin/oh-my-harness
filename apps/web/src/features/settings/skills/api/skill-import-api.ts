@@ -35,6 +35,8 @@ export interface SkillDetailVo {
   id: string
   name: string
   description: string
+  pluginId?: string
+  pluginName?: string
   source: AgentSkillSource
   content: string
   files: string[]

@@ -9,6 +9,7 @@ import {
   TextField,
 } from '@heroui/react'
 import { SelectMenu } from '../../../../components/ui/index.ts'
+import { SettingsSubpageHeader } from '../../shared/components/SettingsBackNavigation.tsx'
 import { MCP_TRANSPORT, type McpTransport } from '@oh-my-harness/shared'
 import { McpJsonInput } from './McpJsonInput.tsx'
 import {
@@ -130,18 +131,15 @@ export function McpServerEditor({
 
   return (
     <section>
-      <Button
-        variant="ghost"
-        type="button"
-        className="h-9 min-h-0 rounded-full px-3.5 text-sm -ml-3.5 mb-3"
+      <SettingsSubpageHeader
+        label="返回服务列表"
         isDisabled={state.busy}
-        onPress={onBack}
+        onBack={onBack}
       >
-        ← 返回服务列表
-      </Button>
-      <h2 className="text-base leading-6 font-medium text-foreground">
-        {server ? '编辑 MCP 服务' : '添加 MCP 服务'}
-      </h2>
+        <h2 className="text-base leading-6 font-medium text-foreground">
+          {server ? '编辑 MCP 服务' : '添加 MCP 服务'}
+        </h2>
+      </SettingsSubpageHeader>
       <Form
         aria-label={server ? '编辑 MCP 服务' : '添加 MCP 服务'}
         onSubmit={(event) => {

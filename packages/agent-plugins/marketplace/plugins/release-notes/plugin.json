@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "name": "release-notes",
+  "version": "1.0.0",
+  "displayName": "变更说明",
+  "description": "从指定 Git 范围生成准确的发布说明草稿。",
+  "author": "oh-my-harness",
+  "license": "MIT",
+  "examples": [
+    "整理这次改动的发布说明，突出用户可见行为与升级注意事项。"
+  ],
+  "skills": [
+    "skills/release-notes"
+  ],
+  "mcpServers": {},
+  "inputs": []
+}

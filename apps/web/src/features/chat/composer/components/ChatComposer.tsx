@@ -52,6 +52,7 @@ import { ContextUsageMeter } from './ContextUsageMeter.tsx'
 import type { ChatContextUsage } from '../../data/index.ts'
 import { getNonImageClipboardFiles } from '../utils/clipboard-files.ts'
 import { useMcpServers } from '../../../settings/mcp/hooks/use-mcp-servers.ts'
+import { useInstalledPlugins } from '../../../settings/plugins/hooks/use-installed-plugins.ts'
 
 interface PendingAttachment {
   file: File
@@ -127,6 +128,12 @@ export function ChatComposer({
     Boolean(menuState) ||
       contextItems.some((item) => item.kind === COMPOSER_CAPABILITY_KIND.MCP),
   )
+  const plugins = useInstalledPlugins(
+    menuState?.mode === COMPOSER_MENU_MODE.MENTION ||
+      contextItems.some(
+        (item) => item.kind === COMPOSER_CAPABILITY_KIND.PLUGIN,
+      ),
+  )
   const { onWorkspaceSelect, selectedWorkspaceId, workspaces } =
     useChatWorkspace()
   const composerWorkspace = resolveComposerWorkspace(
@@ -171,6 +178,8 @@ export function ChatComposer({
         menuState.query,
         mcp.servers,
         mcp.message,
+        plugins.installations,
+        plugins.message,
       )
     : []
   const capabilities = capabilityGroups
@@ -187,6 +196,8 @@ export function ChatComposer({
       commands,
       mcp.servers,
       mcp.message,
+      plugins.installations,
+      plugins.message,
     ),
   }))
   const hasUnavailableContext = contextDisplayItems.some(

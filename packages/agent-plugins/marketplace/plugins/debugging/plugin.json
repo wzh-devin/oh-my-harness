@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "name": "debugging",
+  "version": "1.0.0",
+  "displayName": "故障排查",
+  "description": "通过复现、调用链和最小验证定位根因。",
+  "author": "oh-my-harness",
+  "license": "MIT",
+  "examples": [
+    "帮我定位这个报错，先复现并说明根因，再提出最小修复。"
+  ],
+  "skills": [
+    "skills/debugging"
+  ],
+  "mcpServers": {},
+  "inputs": []
+}

@@ -18,6 +18,7 @@ export interface AgentRunInput {
   content: string
   skillIds?: readonly string[]
   mcpServerIds?: readonly string[]
+  pluginIds?: readonly string[]
   thinkingLevel?: ModelThinkingLevel
 }
 

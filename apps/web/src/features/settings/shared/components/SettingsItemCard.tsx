@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Button, Card } from '@heroui/react'
+import { Card } from '@heroui/react'
 
 interface SettingsItemCardProps {
   actions: ReactNode
@@ -27,15 +27,13 @@ export function SettingsItemCard({
       variant="transparent"
     >
       {onOpen && openLabel ? (
-        <Button
+        <button
+          type="button"
           aria-label={openLabel}
-          isDisabled={isDisabled}
-          className="absolute inset-0 z-0 h-full w-full cursor-[var(--cursor-interactive)] rounded-xl"
-          variant="ghost"
-          onPress={onOpen}
-        >
-          <span className="sr-only">{openLabel}</span>
-        </Button>
+          disabled={isDisabled}
+          className="absolute inset-0 z-0 h-full w-full cursor-[var(--cursor-interactive)] rounded-xl border-0 bg-transparent p-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-[var(--cursor-disabled)]"
+          onClick={onOpen}
+        />
       ) : null}
 
       <div className="pointer-events-none relative z-10 flex size-9 shrink-0 items-center justify-center rounded-lg bg-surface-secondary">

@@ -11,6 +11,7 @@ import {
   type ComposerMenuMode,
 } from '@oh-my-harness/shared'
 import type { McpServerVo } from '../../../settings/mcp/types/mcp-vo.ts'
+import type { PluginInstallationVo } from '../../../settings/plugins/types/plugin-vo.ts'
 
 export type { ComposerMenuMode }
 export type ComposerContextKind = CapabilityKind
@@ -88,6 +89,21 @@ export const getMcpUnavailableReason = (server?: McpServerVo) => {
   return null
 }
 
+export const getPluginUnavailableReason = (plugin?: PluginInstallationVo) => {
+  if (!plugin) return '插件已移除'
+  if (plugin.error) return plugin.error
+  if (!plugin.enabled) return '插件已停用'
+  if (
+    !plugin.skills.length &&
+    !plugin.servers.some(
+      (server) =>
+        server.status === MCP_CONNECTION_STATUS.CONNECTED && server.toolCount,
+    )
+  )
+    return '插件没有可用的 Skill 或已连接的 MCP 工具'
+  return null
+}
+
 /** 解析光标前有效的 @ 或 / 唤醒词。 */
 export function findComposerTrigger(
   value: string,
@@ -119,7 +135,33 @@ export function getComposerCapabilityGroups(
   query = '',
   mcpServers?: readonly McpServerVo[],
   mcpMessage?: string,
+  plugins?: readonly PluginInstallationVo[],
+  pluginMessage?: string,
 ): ComposerCapabilityGroup[] {
+  const pluginGroups: ComposerCapabilityGroup[] = plugins
+    ? [
+        {
+          id: 'plugins',
+          label: '插件',
+          message:
+            pluginMessage ||
+            (!plugins.length ? '尚未安装插件，请在插件市场安装。' : undefined),
+          items: plugins.map((plugin) => ({
+            id: `plugin-${plugin.id}`,
+            kind: COMPOSER_CAPABILITY_KIND.PLUGIN,
+            label: plugin.manifest.displayName,
+            description:
+              pluginMessage ||
+              getPluginUnavailableReason(plugin) ||
+              plugin.manifest.description,
+            unavailableReason:
+              pluginMessage || getPluginUnavailableReason(plugin),
+            contextReference: `@${plugin.manifest.displayName}`,
+            sourceId: plugin.id,
+          })),
+        },
+      ]
+    : []
   const mcpGroups: ComposerCapabilityGroup[] = mcpServers
     ? [
         {
@@ -156,6 +198,7 @@ export function getComposerCapabilityGroups(
   if (mode !== COMPOSER_MENU_MODE.SLASH) {
     return filterGroups(
       [
+        ...(mode === COMPOSER_MENU_MODE.MENTION ? pluginGroups : []),
         { id: 'commands', items: commandItems, label: '命令' },
         { id: 'add', items: [...ADD_ITEMS], label: '添加' },
         ...mcpGroups,
@@ -171,7 +214,9 @@ export function getComposerCapabilityGroups(
       id: `skill-${skill.id}`,
       contextReference: `/${skill.name}`,
       kind: COMPOSER_CAPABILITY_KIND.SKILL,
-      label: skill.name,
+      label: skill.pluginName
+        ? `${skill.pluginName} · ${skill.name}`
+        : skill.name,
       sourceId: skill.id,
     }))
   return filterGroups(
@@ -240,7 +285,16 @@ export function getComposerContextUnavailableReason(
   commands: readonly CapabilityCommand[],
   mcpServers: readonly McpServerVo[] = [],
   mcpMessage?: string,
+  plugins: readonly PluginInstallationVo[] = [],
+  pluginMessage?: string,
 ) {
+  if (item.kind === COMPOSER_CAPABILITY_KIND.PLUGIN)
+    return (
+      pluginMessage ||
+      getPluginUnavailableReason(
+        plugins.find((plugin) => plugin.id === item.sourceId),
+      )
+    )
   if (item.kind === COMPOSER_CAPABILITY_KIND.MCP) {
     return (
       mcpMessage ||

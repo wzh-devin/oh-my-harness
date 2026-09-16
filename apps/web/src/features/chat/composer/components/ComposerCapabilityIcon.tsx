@@ -1,4 +1,4 @@
-import { BookOpen, FilePlus, Terminal } from '@gravity-ui/icons'
+import { BookOpen, Box, FilePlus, Terminal } from '@gravity-ui/icons'
 import githubIcon from '@lobehub/icons-static-svg/icons/github.svg'
 import mcpIcon from '@lobehub/icons-static-svg/icons/mcp.svg'
 import {
@@ -10,6 +10,7 @@ const ICONS = {
   [COMPOSER_CAPABILITY_KIND.ATTACHMENT]: FilePlus,
   [COMPOSER_CAPABILITY_KIND.COMMAND]: Terminal,
   [COMPOSER_CAPABILITY_KIND.SKILL]: BookOpen,
+  [COMPOSER_CAPABILITY_KIND.PLUGIN]: Box,
 }
 
 export function ComposerCapabilityIcon({

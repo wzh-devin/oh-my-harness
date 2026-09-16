@@ -64,6 +64,7 @@ export const SETTINGS_SECTION = {
   GENERAL: 'general',
   MODELS: 'models',
   SKILLS: 'skills',
+  PLUGINS: 'plugins',
 } as const
 export type SettingsSection =
   (typeof SETTINGS_SECTION)[keyof typeof SETTINGS_SECTION]

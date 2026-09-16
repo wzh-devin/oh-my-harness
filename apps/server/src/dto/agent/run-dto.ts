@@ -32,6 +32,7 @@ export interface SendAgentMessageDto {
   permission: ToolPermission
   skillIds?: readonly string[]
   mcpServerIds?: readonly string[]
+  pluginIds?: readonly string[]
   thinkingLevel?: ModelThinkingLevel
 }
 

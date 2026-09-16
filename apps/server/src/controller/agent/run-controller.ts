@@ -44,6 +44,7 @@ function parseMessage(
         key !== 'permission' &&
         key !== 'skillIds' &&
         key !== 'mcpServerIds' &&
+        key !== 'pluginIds' &&
         key !== 'thinkingLevel',
     ) ||
     typeof record.content !== 'string' ||
@@ -84,12 +85,28 @@ function parseMessage(
   )
     return undefined
   const mcpServerIds = record.mcpServerIds as string[] | undefined
+  if (
+    record.pluginIds !== undefined &&
+    (!Array.isArray(record.pluginIds) ||
+      record.pluginIds.length > 5 ||
+      record.pluginIds.some(
+        (id) =>
+          typeof id !== 'string' ||
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(
+            id,
+          ),
+      ) ||
+      new Set(record.pluginIds).size !== record.pluginIds.length)
+  )
+    return undefined
+  const pluginIds = record.pluginIds as string[] | undefined
   return {
     ...(commandId ? { commandId } : {}),
     content: record.content,
     permission: record.permission,
     ...(skillIds?.length ? { skillIds } : {}),
     ...(mcpServerIds?.length ? { mcpServerIds } : {}),
+    ...(pluginIds?.length ? { pluginIds } : {}),
     ...(record.thinkingLevel === undefined
       ? {}
       : { thinkingLevel: record.thinkingLevel as ModelThinkingLevel }),
@@ -169,7 +186,8 @@ async function parsePromptRequest(context: Context) {
       (input.content.trim() ||
         input.commandId ||
         input.skillIds?.length ||
-        input.mcpServerIds?.length)
+        input.mcpServerIds?.length ||
+        input.pluginIds?.length)
       ? input
       : undefined
   }
@@ -201,6 +219,7 @@ async function parsePromptRequest(context: Context) {
       input.commandId ||
       input.skillIds?.length ||
       input.mcpServerIds?.length ||
+      input.pluginIds?.length ||
       attachments.length)
     ? { ...input, attachments }
     : undefined

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button, Checkbox, Label, TextField } from '@heroui/react'
 import { MCP_CHANGE_KIND } from '@oh-my-harness/shared'
+import { SettingsSubpageHeader } from '../../shared/components/SettingsBackNavigation.tsx'
 import { mcpApi } from '../api/mcp-api.ts'
 import type { useMcpSettings } from '../hooks/use-mcp-settings.ts'
 import type { McpConfigVo, McpPreviewVo } from '../types/mcp-vo.ts'
@@ -98,31 +99,28 @@ export function McpJsonEditor({
 
   return (
     <section>
-      <Button
-        variant="ghost"
-        type="button"
-        className="h-9 min-h-0 rounded-full px-3.5 text-sm -ml-3.5 mb-3"
+      <SettingsSubpageHeader
+        label="返回服务列表"
         isDisabled={state.busy}
-        onPress={onBack}
+        onBack={onBack}
       >
-        ← 返回服务列表
-      </Button>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-base leading-6 font-medium text-foreground">
-          JSON 配置
-        </h2>
-        <Button
-          variant="outline"
-          type="button"
-          className="h-9 min-h-0 rounded-full px-3.5 text-sm"
-          isDisabled={state.busy}
-          onPress={() => {
-            void validate(true)
-          }}
-        >
-          格式化
-        </Button>
-      </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-base leading-6 font-medium text-foreground">
+            JSON 配置
+          </h2>
+          <Button
+            variant="outline"
+            type="button"
+            className="h-9 min-h-0 rounded-full px-3.5 text-sm"
+            isDisabled={state.busy}
+            onPress={() => {
+              void validate(true)
+            }}
+          >
+            格式化
+          </Button>
+        </div>
+      </SettingsSubpageHeader>
       <p className="text-xs leading-[18px] text-muted mt-1">
         编辑完整服务配置，或粘贴已有的 mcpServers 配置。
       </p>

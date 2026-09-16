@@ -19,8 +19,16 @@ import {
 import { basename, dirname, join, relative } from 'node:path'
 import { loadSkills } from '@earendil-works/pi-agent-core'
 import { NodeExecutionEnv } from '@earendil-works/pi-agent-core/node'
-import { exists, inspectTree, resolveContentPath } from './source/files.ts'
-import { extractZip, fetchGit, normalizeGitSource } from './source/fetch.ts'
+import {
+  exists,
+  inspectTree,
+  resolveContentPath,
+} from '@oh-my-harness/agent-plugins'
+import {
+  extractZip,
+  fetchGit,
+  normalizeGitSource,
+} from '@oh-my-harness/agent-plugins'
 import { SkillError } from '../error/skill-error.ts'
 import { validSkill } from './capability-service.ts'
 

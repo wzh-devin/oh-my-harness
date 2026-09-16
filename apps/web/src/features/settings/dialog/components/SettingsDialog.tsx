@@ -1,3 +1,5 @@
+import { Package } from 'lucide-react'
+import { PluginsSettingsSection } from '../../plugins/components/PluginsSettingsSection.tsx'
 import { useState } from 'react'
 import {
   Archive,
@@ -47,6 +49,11 @@ const SETTINGS_SECTIONS = [
     icon: <Database className="size-4 shrink-0" />,
   },
   {
+    id: SETTINGS_SECTION.PLUGINS,
+    label: '插件市场',
+    icon: <Package className="size-4 shrink-0" />,
+  },
+  {
     id: SETTINGS_SECTION.SKILLS,
     label: '技能',
     icon: <BookOpen className="size-4 shrink-0" />,
@@ -83,10 +90,15 @@ export function SettingsDialog({
   const [activeSection, setActiveSection] =
     useState<SettingsSection>(initialSection)
   const { permission, setPermission } = usePermissionSettings()
+  const [pluginId, setPluginId] = useState<string>()
+  const openPlugin = (id: string) => {
+    setPluginId(id)
+    setActiveSection(SETTINGS_SECTION.PLUGINS)
+  }
   const [mcpDirty, setMcpDirty] = useState(false)
   const [mcpBusy, setMcpBusy] = useState(false)
   const canLeaveMcp = () =>
-    !mcpBusy && (!mcpDirty || window.confirm('放弃尚未保存的 MCP 配置？'))
+    !mcpBusy && (!mcpDirty || window.confirm('放弃尚未保存的设置？'))
   const [language, setLanguage] = useState('zh-CN')
   const [appearance, setAppearance] = useState('system')
 
@@ -130,8 +142,10 @@ export function SettingsDialog({
                     className={`h-10 shrink-0 justify-start gap-2 rounded-xl px-3 text-left text-sm font-normal md:w-full ${isActive ? 'bg-surface-secondary text-foreground' : ''}`}
                     variant="ghost"
                     onPress={() => {
-                      if (section.id !== activeSection && canLeaveMcp())
+                      if (section.id !== activeSection && canLeaveMcp()) {
+                        setPluginId(undefined)
                         setActiveSection(section.id)
+                      }
                     }}
                   >
                     {section.icon}
@@ -200,11 +214,20 @@ export function SettingsDialog({
               </div>
 
               <div hidden={activeSection !== SETTINGS_SECTION.SKILLS}>
-                <SkillsSettingsSection />
+                <SkillsSettingsSection onOpenPlugin={openPlugin} />
               </div>
 
+              {isOpen && activeSection === SETTINGS_SECTION.PLUGINS ? (
+                <PluginsSettingsSection
+                  key={pluginId ?? 'plugins'}
+                  initialPluginId={pluginId}
+                  onBusyChange={setMcpBusy}
+                  onDirtyChange={setMcpDirty}
+                />
+              ) : null}
               {isOpen && activeSection === SETTINGS_SECTION.MCP ? (
                 <McpSettingsSection
+                  onOpenPlugin={openPlugin}
                   onDirtyChange={setMcpDirty}
                   onBusyChange={setMcpBusy}
                 />

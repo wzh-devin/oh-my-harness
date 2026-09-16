@@ -6,7 +6,7 @@ import { pipeline } from 'node:stream/promises'
 import { Transform } from 'node:stream'
 import { promisify } from 'node:util'
 import yauzl from 'yauzl'
-import { SkillError } from '../../error/skill-error.ts'
+import { SourceError as SkillError } from './error.ts'
 import {
   contained,
   inspectTree,
@@ -19,6 +19,35 @@ import {
 type GitSkillSource = { url: string; ref?: string; path?: string }
 
 const exec = promisify(execFile)
+
+/** 仅继承用户 Git 配置中的纯代理地址，不放开全局重写、凭据或 hooks。 */
+const configuredProxy = async () => {
+  try {
+    const { stdout } = await exec(
+      'git',
+      ['config', '--global', '--get', 'http.proxy'],
+      {
+        timeout: 5000,
+        maxBuffer: 2048,
+      },
+    )
+    const value = stdout.trim()
+    const url = new URL(value)
+    if (
+      value.length > 500 ||
+      !['http:', 'https:'].includes(url.protocol) ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      url.pathname !== '/'
+    )
+      return undefined
+    return value
+  } catch {
+    return undefined
+  }
+}
 
 /** 规范化独立技能的 Git 来源，拒绝非受信 HTTPS 主机和 URL 凭据。 */
 export function normalizeGitSource(
@@ -81,6 +110,7 @@ export async function fetchGit(
     throw new SkillError('SKILL_REF_INVALID', '无效 Git ref')
   const controller = new AbortController()
   const combined = AbortSignal.any([signal, controller.signal])
+  const proxy = await configuredProxy()
   const env = {
     PATH: process.env.PATH,
     HOME: destination,
@@ -88,6 +118,7 @@ export async function fetchGit(
     GIT_CONFIG_GLOBAL: '/dev/null',
     GIT_TERMINAL_PROMPT: '0',
     GIT_LFS_SKIP_SMUDGE: '1',
+    ...(proxy ? { HTTPS_PROXY: proxy, https_proxy: proxy } : {}),
   }
   // Monitor the clone, including .git, so limits also apply before checkout finishes.
   let inspecting = false
@@ -180,13 +211,26 @@ export async function fetchGit(
     })
     await inspectTree(destination)
     return result.stdout.trim()
-  } catch {
-    throw new SkillError(
-      'SKILL_FETCH_FAILED',
-      signal.aborted
-        ? '导入已取消'
-        : 'Git 获取失败，请检查来源、分支、网络或包大小',
-    )
+  } catch (error) {
+    const detail = error as NodeJS.ErrnoException & {
+      stderr?: string
+      killed?: boolean
+    }
+    const stderr = detail.stderr ?? ''
+    const reason = signal.aborted
+      ? '导入已取消'
+      : controller.signal.aborted
+        ? 'Git 仓库超过文件或大小限制'
+        : detail.killed ||
+            detail.code === 'ETIMEDOUT' ||
+            /timed out|timeout/u.test(stderr)
+          ? 'Git 连接超时，请检查网络后重试'
+          : /Remote branch .* not found|couldn't find remote ref/u.test(stderr)
+            ? 'Git 分支或标签不存在'
+            : /Could not resolve host/u.test(stderr)
+              ? 'Git 主机无法解析，请检查网络'
+              : 'Git 获取失败，请检查来源、分支、网络或包大小'
+    throw new SkillError('SKILL_FETCH_FAILED', reason)
   } finally {
     clearInterval(timer)
   }

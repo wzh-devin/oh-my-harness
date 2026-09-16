@@ -13,6 +13,7 @@ import {
 import { MCP_CONNECTION_STATUS, MCP_TRANSPORT } from '@oh-my-harness/shared'
 import { SettingsItemCard } from '../../shared/components/SettingsItemCard.tsx'
 import { SettingsAddButton } from '../../shared/components/SettingsAddButton.tsx'
+import { SettingsSubpageHeader } from '../../shared/components/SettingsBackNavigation.tsx'
 import { mcpApi } from '../api/mcp-api.ts'
 import { useMcpSettings } from '../hooks/use-mcp-settings.ts'
 import type { McpConfigVo, McpServerVo, McpToolVo } from '../types/mcp-vo.ts'
@@ -31,7 +32,9 @@ const statusLabels = {
 export function McpSettingsSection({
   onDirtyChange,
   onBusyChange,
+  onOpenPlugin,
 }: {
+  onOpenPlugin?: (id: string) => void
   onDirtyChange(dirty: boolean): void
   onBusyChange(busy: boolean): void
 }) {
@@ -140,6 +143,10 @@ export function McpSettingsSection({
     }
   }
   const edit = (server: McpServerVo) => {
+    if (server.owner) {
+      onOpenPlugin?.(server.owner.id)
+      return
+    }
     state.setError('')
     setDetail(undefined)
     setEditor({ server, revision })
@@ -214,31 +221,28 @@ export function McpSettingsSection({
         />
       ) : detail ? (
         <section>
-          <Button
-            variant="ghost"
-            type="button"
-            className="h-9 min-h-0 rounded-full px-3.5 text-sm -ml-3.5 mb-3"
+          <SettingsSubpageHeader
+            label="返回服务列表"
             isDisabled={state.busy}
-            onPress={back}
+            onBack={back}
           >
-            ← 返回服务列表
-          </Button>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-base leading-6 font-medium text-foreground">
-              {selected?.name ?? '服务已删除'}
-            </h2>
-            <Button
-              variant="outline"
-              type="button"
-              className="h-9 min-h-0 rounded-full px-3.5 text-sm"
-              isDisabled={state.busy || !selected}
-              onPress={() => {
-                if (selected) edit(selected)
-              }}
-            >
-              编辑配置
-            </Button>
-          </div>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-base leading-6 font-medium text-foreground">
+                {selected?.name ?? '服务已删除'}
+              </h2>
+              <Button
+                variant="outline"
+                type="button"
+                className="h-9 min-h-0 rounded-full px-3.5 text-sm"
+                isDisabled={state.busy || !selected}
+                onPress={() => {
+                  if (selected) edit(selected)
+                }}
+              >
+                {selected?.owner ? '管理所属插件' : '编辑配置'}
+              </Button>
+            </div>
+          </SettingsSubpageHeader>
           {selected ? (
             <>
               <p className="text-xs leading-[18px] text-muted mt-1 break-words">
@@ -345,7 +349,9 @@ export function McpSettingsSection({
                   type="button"
                   className="h-9 min-h-0 rounded-full px-3.5 text-sm text-danger"
                   isDisabled={
-                    state.busy || selected.activeSessionIds.length > 0
+                    state.busy ||
+                    selected.activeSessionIds.length > 0 ||
+                    !!selected.owner
                   }
                   onPress={() => setDeleteId(selected.id)}
                 >
@@ -456,61 +462,76 @@ export function McpSettingsSection({
                       </span>
                     }
                     actions={
-                      <>
-                        <Switch
-                          aria-label={`启用 ${server.name}`}
-                          size="sm"
-                          isSelected={server.enabled}
+                      server.owner ? (
+                        <Button
+                          variant="outline"
+                          className="h-7 min-h-0 rounded-full px-2.5 text-xs"
                           isDisabled={state.busy}
-                          onChange={(enabled) => {
-                            void toggle(server, enabled)
-                          }}
+                          onPress={() => onOpenPlugin?.(server.owner!.id)}
                         >
-                          <Switch.Content>
-                            <Switch.Control>
-                              <Switch.Thumb />
-                            </Switch.Control>
-                            <Label className="text-xs">启用</Label>
-                          </Switch.Content>
-                        </Switch>
-                        <Dropdown>
-                          <Dropdown.Trigger
-                            className="size-8 shrink-0"
-                            aria-label={`管理 MCP 服务 ${server.name}`}
+                          管理插件
+                        </Button>
+                      ) : (
+                        <>
+                          <Switch
+                            aria-label={`启用 ${server.name}`}
+                            size="sm"
+                            isSelected={server.enabled}
                             isDisabled={state.busy}
+                            onChange={(enabled) => {
+                              void toggle(server, enabled)
+                            }}
                           >
-                            <Ellipsis aria-hidden className="size-4" />
-                          </Dropdown.Trigger>
-                          <Dropdown.Popover
-                            className="min-w-40"
-                            placement="bottom end"
-                          >
-                            <Dropdown.Menu
-                              aria-label={`${server.name} 的服务操作`}
+                            <Switch.Content>
+                              <Switch.Control>
+                                <Switch.Thumb />
+                              </Switch.Control>
+                              <Label className="text-xs">启用</Label>
+                            </Switch.Content>
+                          </Switch>
+                          <Dropdown>
+                            <Dropdown.Trigger
+                              className="size-8 shrink-0"
+                              aria-label={`管理 MCP 服务 ${server.name}`}
+                              isDisabled={state.busy}
                             >
-                              <Dropdown.Item
-                                id="edit"
-                                textValue="编辑配置"
-                                isDisabled={server.activeSessionIds.length > 0}
-                                onAction={() => edit(server)}
+                              <Ellipsis aria-hidden className="size-4" />
+                            </Dropdown.Trigger>
+                            <Dropdown.Popover
+                              className="min-w-40"
+                              placement="bottom end"
+                            >
+                              <Dropdown.Menu
+                                aria-label={`${server.name} 的服务操作`}
                               >
-                                <Pencil aria-hidden className="size-4" />
-                                编辑配置
-                              </Dropdown.Item>
-                              <Dropdown.Item
-                                className="text-danger"
-                                id="delete"
-                                textValue="删除服务"
-                                isDisabled={server.activeSessionIds.length > 0}
-                                onAction={() => setDeleteId(server.id)}
-                              >
-                                <TrashBin aria-hidden className="size-4" />
-                                删除服务
-                              </Dropdown.Item>
-                            </Dropdown.Menu>
-                          </Dropdown.Popover>
-                        </Dropdown>
-                      </>
+                                <Dropdown.Item
+                                  id="edit"
+                                  textValue="编辑配置"
+                                  isDisabled={
+                                    server.activeSessionIds.length > 0
+                                  }
+                                  onAction={() => edit(server)}
+                                >
+                                  <Pencil aria-hidden className="size-4" />
+                                  编辑配置
+                                </Dropdown.Item>
+                                <Dropdown.Item
+                                  className="text-danger"
+                                  id="delete"
+                                  textValue="删除服务"
+                                  isDisabled={
+                                    server.activeSessionIds.length > 0
+                                  }
+                                  onAction={() => setDeleteId(server.id)}
+                                >
+                                  <TrashBin aria-hidden className="size-4" />
+                                  删除服务
+                                </Dropdown.Item>
+                              </Dropdown.Menu>
+                            </Dropdown.Popover>
+                          </Dropdown>
+                        </>
+                      )
                     }
                   />
                   {server.status === MCP_CONNECTION_STATUS.ERROR &&
