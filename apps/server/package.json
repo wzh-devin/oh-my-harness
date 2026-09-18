@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node --env-file-if-exists=.env --use-env-proxy --watch --experimental-strip-types src/main.ts",
+    "dev": "OH_MY_HARNESS_DATA_DIR=\"${OH_MY_HARNESS_DATA_DIR:-$HOME/.omh}\" node --env-file-if-exists=\"${OH_MY_HARNESS_DATA_DIR:-$HOME/.omh}/server.env\" --use-env-proxy --watch --experimental-strip-types src/main.ts",
     "build": "tsc -p tsconfig.build.json",
-    "start": "node --env-file-if-exists=.env --use-env-proxy dist/main.js",
+    "start": "OH_MY_HARNESS_DATA_DIR=\"${OH_MY_HARNESS_DATA_DIR:-$HOME/.omh}\" node --env-file-if-exists=\"${OH_MY_HARNESS_DATA_DIR:-$HOME/.omh}/server.env\" --use-env-proxy dist/main.js",
     "test": "node --test --experimental-strip-types src/**/*.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint",

@@ -1,5 +1,64 @@
 import { configObject, McpError } from './config.ts'
 import { MCP_ERROR_CODE } from '@oh-my-harness/shared'
+import { chmod } from 'node:fs/promises'
+import { join } from 'node:path'
+import { privateDirectory, readJson } from './auth-store.ts'
+
+type AuthClients = Record<string, { client_id: string; client_secret?: string }>
+
+export function parseAuthClients(value: unknown): AuthClients {
+  const rows = configObject(value)
+  const invalid = () => {
+    throw new McpError(
+      MCP_ERROR_CODE.INVALID_CONFIG,
+      '管理员 OAuth 客户端配置无效。',
+    )
+  }
+  if (Object.keys(rows).length > 100) invalid()
+  for (const [url, client] of Object.entries(rows)) {
+    if (!URL.canParse(url)) invalid()
+    const fields = configObject(client)
+    if (
+      Object.keys(fields).some(
+        (key) => !['client_id', 'client_secret'].includes(key),
+      ) ||
+      typeof fields.client_id !== 'string' ||
+      !fields.client_id.trim() ||
+      /[<>\r\n]/u.test(fields.client_id) ||
+      (fields.client_secret !== undefined &&
+        (typeof fields.client_secret !== 'string' ||
+          !fields.client_secret.trim()))
+    )
+      invalid()
+  }
+  return structuredClone(rows) as AuthClients
+}
+
+/** 管理员配置只读当前数据根；缺失不生成默认值，错误不覆盖原件或回显凭据。 */
+export async function readMcpAuthConfig(dataDirectory: string) {
+  await privateDirectory(dataDirectory)
+  const directory = join(dataDirectory, 'mcp-auth')
+  await privateDirectory(directory)
+  const read = async (name: string): Promise<unknown> => {
+    try {
+      const path = join(directory, name)
+      const value = await readJson(path)
+      await chmod(path, 0o600)
+      return value
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}
+      throw new McpError(
+        MCP_ERROR_CODE.CONFIG_CORRUPT,
+        `MCP 授权配置 mcp-auth/${name} 无法读取；原文件已保留。`,
+        500,
+      )
+    }
+  }
+  return {
+    profiles: parseAuthProfiles(await read('providers.json')),
+    clients: parseAuthClients(await read('clients.json')),
+  }
+}
 
 export interface McpAuthProfile {
   setupUrl?: string

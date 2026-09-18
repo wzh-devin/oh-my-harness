@@ -22,4 +22,5 @@ export { parseMcpServer } from './mcp/config.ts'
 export type { McpServerConfig } from './mcp/config.ts'
 
 export type { McpAuthInfo, McpAuthSession, McpAuthOptions } from './mcp/auth.ts'
+export { readMcpAuthConfig } from './mcp/auth-profile.ts'
 export type { McpAuthorizationConfig } from './mcp/config.ts'

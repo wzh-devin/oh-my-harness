@@ -37,7 +37,11 @@ import {
   readJson,
   UUID_PATTERN,
 } from './auth-store.ts'
-import { parseAuthProfiles, type McpAuthProfile } from './auth-profile.ts'
+import {
+  parseAuthClients,
+  parseAuthProfiles,
+  type McpAuthProfile,
+} from './auth-profile.ts'
 import {
   startDeviceAuthorization,
   pollDeviceAuthorization,
@@ -133,31 +137,10 @@ export class McpAuth {
   private readonly directory: string
   private readonly options: McpAuthOptions
   constructor(directory: string, options: McpAuthOptions) {
-    if (options.clients) {
-      for (const [url, client] of Object.entries(
-        configObject(options.clients),
-      )) {
-        if (!URL.canParse(url) || !client || typeof client !== 'object')
-          throw failure('管理员 OAuth 客户端配置无效。')
-        const fields = configObject(client)
-        if (
-          Object.keys(fields).some(
-            (key) => !['client_id', 'client_secret'].includes(key),
-          ) ||
-          typeof fields.client_id !== 'string' ||
-          !fields.client_id.trim() ||
-          /[<>\r\n]/u.test(fields.client_id) ||
-          (fields.client_secret !== undefined &&
-            (typeof fields.client_secret !== 'string' ||
-              !fields.client_secret.trim()))
-        )
-          throw failure('管理员 OAuth 客户端配置无效。')
-      }
-    }
     this.directory = directory
     this.options = {
       ...options,
-      clients: options.clients ? structuredClone(options.clients) : undefined,
+      clients: parseAuthClients(options.clients ?? {}),
       profiles: parseAuthProfiles(options.profiles ?? {}),
     }
     this.ready = this.load()
@@ -312,7 +295,8 @@ export class McpAuth {
         (config && this.target(config) !== record.target)
       ) {
         this.generations.set(id, (this.generations.get(id) ?? 0) + 1)
-        await this.write(id)
+        // 配置暂缺或目标改变时仅禁止使用；显式删除服务才清理绑定。
+        if (!config) await this.write(id)
       }
     }
   }

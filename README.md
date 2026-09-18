@@ -38,37 +38,48 @@ pnpm test
 pnpm build
 ```
 
-## GitHub 插件连接
+## 本地配置与 MCP 账号连接
 
-Server 使用 Node.js 22.22+，从 `apps/server/.env` 读取本地配置（此文件不会提交）：
+Server 使用 Node.js 22.22+。开发与生产启动均从系统用户主目录下的 `~/.omh/` 读取运行配置，不依赖仓库内的 `.env` 或服务商配置文件。目录权限为 `0700`，配置与凭据文件为 `0600`。
+
+| 文件 | 用途 |
+| --- | --- |
+| `server.env` | 代理、监听端口、公开回调地址等部署环境 |
+| `mcp-auth/providers.json` | 服务商授权端点、权限范围、账号字段、附加参数与配置指引 |
+| `mcp-auth/clients.json` | 本应用预注册的 Client ID / Client Secret，以 MCP URL 为键 |
+| `mcp-auth/authorizations.json` | 应用维护的授权令牌与动态注册结果，请勿手工覆盖 |
+
+模型凭据、Provider 配置、工作区、会话、MCP 服务、插件安装状态和缓存同样存放在 `~/.omh/`。内置官方插件目录属于随应用发布的静态资源，继续在仓库维护。
+
+首次部署可创建私有目录，再编辑所需文件；不要将真实凭据复制到源码或聊天中：
+
+```bash
+mkdir -p ~/.omh/mcp-auth
+chmod 700 ~/.omh ~/.omh/mcp-auth
+# 创建上述配置文件后，为实际存在的文件设置 chmod 600。
+```
+
+`~/.omh/server.env` 示例（网络需要代理时才添加代理项）：
 
 ```dotenv
-OH_MY_HARNESS_MCP_OAUTH_CLIENTS={"https://api.githubcopilot.com/mcp/":{"client_id":"你的 GitHub 应用 Client ID"}}
-# 网络需要代理时配置；直连环境省略以下三项。
+OH_MY_HARNESS_PUBLIC_URL=http://127.0.0.1:4318
 HTTPS_PROXY=http://127.0.0.1:7890
 HTTP_PROXY=http://127.0.0.1:7890
 NO_PROXY=localhost,127.0.0.1,::1
 ```
 
-在 GitHub 应用设置中开启 **Enable Device Flow**。OAuth 应用申请 `repo`、`read:org` 和 `offline_access`；GitHub App 使用注册时配置的权限。用户安装 GitHub 插件后进入连接步骤，在 GitHub 官方页面确认短码与权限，无需填写 PAT 或 Client Secret。授权完成后启用插件即可连接 MCP。修改 `.env` 后需重启 Server。
+`~/.omh/mcp-auth/clients.json` 使用本应用自己的客户端信息，不使用其他产品的 Client ID 或占位符；下面仅为字段格式示例：
 
-当前会话、模型、插件和 Trace 数据均为只读或页面会话级 mock。真实 Agent runtime、连接和持久化必须位于浏览器外的 Agent API 边界。
-
-
-### MCP 账号连接（插件和独立服务共用）
-
-安装插件后在“连接服务”中点击“连接账号”或“连接并启用”，再打开服务商授权页。GitHub 使用设备短码，其他远程服务使用 OAuth + PKCE。无需把令牌发送到聊天中。支持服务端动态注册或公共客户端元数据的服务可直接进入授权；仅有平台 App 连接器、未提供公开 MCP 的能力会明确显示限制。
-
-需要预注册应用的服务由部署管理员配置，普通用户只执行账号授权。在 `apps/server/.env` 中配置本应用自己的客户端信息（不要使用市场里其他产品的 Client ID 或占位符）：
-
-```dotenv
-OH_MY_HARNESS_PUBLIC_URL=http://127.0.0.1:4318
-OH_MY_HARNESS_MCP_OAUTH_CLIENTS={"https://api.githubcopilot.com/mcp/":{"client_id":"your-device-flow-enabled-client-id"},"https://gmailmcp.googleapis.com/mcp/v1":{"client_id":"your-client-id","client_secret":"your-client-secret"},"https://mcp.slack.com/mcp":{"client_id":"your-client-id","client_secret":"your-client-secret"}}
+```json
+{
+  "https://mcp.example.com/mcp": {
+    "client_id": "your-client-id",
+    "client_secret": "your-client-secret"
+  }
+}
 ```
 
-服务商差异统一维护在 `apps/server/config/mcp-auth-providers.json`，部署时可用 `OH_MY_HARNESS_MCP_AUTH_PROVIDERS_FILE=/absolute/path/providers.json` 指定完整配置文件，修改后重启 Server。此文件仅包含公开端点、权限范围、账号名称字段、授权参数和配置指引，不保存 Client ID/Secret/Token。GitHub 只是其中一个设备授权配置；新增相同协议的服务无需新增专属 TypeScript 类。配置必须来自部署管理员，不能让市场插件自行覆盖可信授权端点。分发 Server 时须同时包含 `config/` 目录。
-
-设备授权配置示例（以 MCP 地址为键）：
+`~/.omh/mcp-auth/providers.json` 按需提供协议发现无法取得的配置，例如设备授权：
 
 ```json
 {
@@ -83,7 +94,15 @@ OH_MY_HARNESS_MCP_OAUTH_CLIENTS={"https://api.githubcopilot.com/mcp/":{"client_i
 }
 ```
 
-自有客户端仍通过 `OH_MY_HARNESS_MCP_OAUTH_CLIENTS` 中对应地址配置。没有设备配置的远程服务继续使用 MCP SDK 的标准 OAuth 发现；改变设备端点或 Client ID 后必须重新绑定，避免把旧令牌发送到新的授权服务。
+服务商配置由部署管理员维护，插件清单不能注入或覆盖这些可信端点。可选字段还包括 `setupUrl`、`authorizationParams`（`access_type` / `prompt`）以及 `device.account`（`url` / `nameField` / `headers`）。没有设备配置的远程服务使用 MCP SDK 的标准 OAuth 发现。没有预注册客户端时仍可尝试动态注册或公共客户端元数据；要求预注册的服务会提示管理员配置。
+
+GitHub 设备授权还需在自有应用设置中开启 **Enable Device Flow**，并在上述两个 JSON 文件中配置对应的 MCP 地址、设备授权协议及 Client ID。普通用户安装后通过 GitHub 官方页面确认短码和权限，无需填写 PAT 或 Client Secret。
+
+配置文件可以缺省，应用不会生成内置服务商表；授权 JSON 损坏或不安全时停止启动并保留原件。配置变更后需重启 Server。旧的 `apps/server/.env`、仓库服务商 JSON 和客户端环境变量不再读取；已有部署需先备份并将配置迁至上述位置。设备授权端点或其 Client ID 改变后，旧凭据不可用于新目标，但不会被自动删除；恢复相同配置可恢复原绑定。
+
+需要隔离数据时，在启动进程环境中指定已展开的绝对路径 `OH_MY_HARNESS_DATA_DIR`；其下文件结构相同。此变量不能放在 `server.env` 中改变数据根。显式进程环境优先于 `server.env`，配置由 Node 原生 `--env-file-if-exists` 在启动前载入以保证代理生效，不使用额外启动器。启动命令使用 POSIX Shell（macOS/Linux；Windows 可在 WSL 中运行）。
+
+安装插件后在“连接服务”中点击“连接账号”或“连接并启用”，再打开服务商授权页。插件和独立 MCP 服务共用此流程；仅有平台 App 连接器、未提供公开 MCP 的能力会明确显示限制。
 
 在服务商应用中登记 `${OH_MY_HARNESS_PUBLIC_URL}/api/mcp/oauth/callback`，重启 Server 后生效。服务商要求固定回调端口时，配置本应用的公开 URL 和监听端口与其保持一致；插件声明的回调端口不会擅自启动额外监听器。Google Workspace、Slack、Zoom 等仍可能需要管理员启用、应用审核和相应账号权限。Google Workspace 配置参考 <https://developers.google.com/workspace/guides/configure-mcp-servers>，Slack 参考 <https://docs.slack.dev/ai/slack-mcp-server/>，Zoom 参考 <https://developers.zoom.us/docs/mcp/>。
 
