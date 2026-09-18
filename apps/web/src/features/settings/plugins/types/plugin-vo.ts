@@ -1,3 +1,5 @@
+import type { McpAuthPolicy } from '@oh-my-harness/shared'
+import type { McpAuthVo } from '../../mcp/types/mcp-vo.ts'
 import { PLUGIN_INSTALLATION_SOURCE_KIND } from '@oh-my-harness/shared'
 import type {
   PluginInputTarget,
@@ -43,6 +45,7 @@ export interface PluginManifestVo {
   unavailable: string[]
 }
 export interface PluginEntryVo {
+  authentication?: McpAuthPolicy
   id: string
   name: string
   displayName: string
@@ -109,6 +112,7 @@ export interface PluginInstallationVo {
   latestVersion?: string
   error?: string
   servers: {
+    auth: McpAuthVo
     id: string
     name: string
     status: McpConnectionStatus

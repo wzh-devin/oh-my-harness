@@ -1,10 +1,16 @@
 import type {
+  McpAuthStatus,
+  McpAuthMethod,
+  McpAuthSessionStatus,
+} from '@oh-my-harness/shared'
+import type {
   McpChangeKind,
   McpConnectionStatus,
   McpTransport,
 } from '@oh-my-harness/shared'
 
 export interface McpServerDto {
+  auth: McpAuthDto
   owner?: { id: string; name: string }
   id: string
   name: string
@@ -37,4 +43,22 @@ export interface McpPreviewDto {
       after?: string
     }[]
   }[]
+}
+
+export interface McpAuthDto {
+  status: McpAuthStatus
+  method: McpAuthMethod
+  accountName?: string
+  error?: string
+  credentialKeys: string[]
+  setupUrl?: string
+}
+export interface McpAuthSessionDto {
+  id: string
+  status: McpAuthSessionStatus
+  expiresAt: number
+  authorizationUrl?: string
+  userCode?: string
+  verificationUri?: string
+  error?: string
 }

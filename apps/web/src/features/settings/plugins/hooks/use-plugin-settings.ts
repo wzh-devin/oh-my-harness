@@ -19,6 +19,8 @@ export const usePluginSettings = (
   const [list, setList] = useState<PluginListVo>()
   const [operation, setOperation] = useState<PluginOperationVo>()
   const [error, setError] = useState('')
+  const [listError, setListError] = useState('')
+  const [catalogError, setCatalogError] = useState('')
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(false)
   const [reload, setReload] = useState(0)
@@ -39,14 +41,16 @@ export const usePluginSettings = (
       pending = true
       try {
         const result = await pluginApi.list(controller.signal)
-        if (!controller.signal.aborted && !action.current)
+        if (!controller.signal.aborted && !action.current) {
           setList((previous) =>
             !previous || result.revision >= previous.revision
               ? result
               : previous,
           )
+          setListError('')
+        }
       } catch (error) {
-        if (!controller.signal.aborted) setError((error as Error).message)
+        if (!controller.signal.aborted) setListError((error as Error).message)
       } finally {
         pending = false
       }
@@ -73,10 +77,14 @@ export const usePluginSettings = (
       void pluginApi
         .catalog(controller.signal, query, category, offset, market)
         .then((result) => {
-          if (!controller.signal.aborted) setCatalog(result)
+          if (!controller.signal.aborted) {
+            setCatalog(result)
+            setCatalogError('')
+          }
         })
         .catch((error: unknown) => {
-          if (!controller.signal.aborted) setError((error as Error).message)
+          if (!controller.signal.aborted)
+            setCatalogError((error as Error).message)
         })
         .finally(() => {
           if (!controller.signal.aborted) setLoading(false)
@@ -190,7 +198,7 @@ export const usePluginSettings = (
     catalog,
     list,
     operation,
-    error,
+    error: error || listError || catalogError,
     setError,
     busy,
     loading,

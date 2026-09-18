@@ -20,6 +20,7 @@ import {
 import {
   configuredServers,
   inspectManifest,
+  externalMetadata,
   objectFields,
   textField,
   type PluginManifest,
@@ -27,6 +28,8 @@ import {
 } from './manifest/manifest.ts'
 import { PluginCatalog, type PluginCatalogEntry } from './catalog/catalog.ts'
 import { runPluginHook } from './hooks/runner.ts'
+import { readPluginIcon } from './source/icons.ts'
+
 import {
   inputValues,
   PluginStore,
@@ -121,7 +124,10 @@ export class PluginService {
   }
   constructor(
     dataDirectory: string,
-    options: { marketplaceRoot?: string; allowedGitHosts?: string[] } = {},
+    options: {
+      marketplaceRoot?: string
+      allowedGitHosts?: string[]
+    } = {},
   ) {
     this.options = options
     this.directory = join(dataDirectory, 'plugins')
@@ -146,8 +152,29 @@ export class PluginService {
           recursive: true,
           force: true,
         })
+    let migrated = false
     for (const installation of state.installations) {
       try {
+        if (installation.normalizationVersion !== 2) {
+          for (const release of [installation.current, installation.previous])
+            if (release) {
+              const root = this.releasePath(installation.id, release.hash)
+              if ((await inspectTree(root)) !== release.hash)
+                throw new Error('modified package')
+              const parsed = await inspectManifest(
+                root,
+                release.manifest.format,
+                release.hash,
+                release.manifest.version,
+              )
+              release.manifest = parsed.manifest
+              release.skills = parsed.skills
+              for (const key of Object.keys(parsed.manifest.mcpServers))
+                installation.serverIds[key] ??= randomUUID()
+            }
+          installation.normalizationVersion = 2
+          migrated = true
+        }
         await this.verify(installation)
       } catch {
         this.invalid.set(
@@ -156,6 +183,8 @@ export class PluginService {
         )
       }
     }
+    if (migrated)
+      await this.store.write({ ...state, revision: state.revision + 1 })
   }
   private assertOpen() {
     if (this.closed)
@@ -194,6 +223,9 @@ export class PluginService {
       )
   }
   private info(installation: PluginInstallation): PluginInstallationInfo {
+    const manifest = structuredClone(installation.current.manifest)
+    for (const server of Object.values(manifest.mcpServers))
+      if (server.oauth) delete server.oauth.client_secret
     return {
       id: installation.id,
       entryId: installation.entryId,
@@ -201,7 +233,7 @@ export class PluginService {
       revision: installation.revision,
       enabled: installation.enabled,
       hooksTrusted: installation.trustedHookHash === installation.current.hash,
-      manifest: structuredClone(installation.current.manifest),
+      manifest,
       skills: structuredClone(installation.current.skills),
       configuredKeys: Object.keys(installation.current.values),
       missingKeys: missingInputs(installation.current),
@@ -209,6 +241,45 @@ export class PluginService {
       error: this.invalid.get(installation.id),
     }
   }
+  /** 按安装身份读取当前包的图标，独立安装和移除市场后仍可展示。 */
+  async icon(id: string, dark = false, composer = false) {
+    await this.ready
+    this.assertOpen()
+    const installation = (await this.store.read()).installations.find(
+      (item) => item.id === id,
+    )
+    if (installation && !this.invalid.has(id)) {
+      const root = this.releasePath(id, installation.current.hash)
+      const metadata = await externalMetadata(
+        root,
+        installation.current.manifest.format,
+      ).catch(() => undefined)
+      const candidates = [
+        ...(dark
+          ? [
+              composer ? metadata?.composerIconDarkPath : undefined,
+              metadata?.logoDarkPath,
+            ]
+          : []),
+        ...(composer ? [metadata?.composerIconPath] : []),
+        metadata?.logoPath,
+      ]
+      for (const declared of new Set(candidates.filter(Boolean))) {
+        const image = await readPluginIcon(root, declared)
+        if (image)
+          return {
+            ...image,
+            etag: `"${createHash('sha256').update(image.bytes).digest('hex')}"`,
+          }
+      }
+    }
+    throw new PluginError(
+      PLUGIN_ERROR_CODE.NOT_FOUND,
+      '插件未提供可用图标。',
+      404,
+    )
+  }
+
   async list() {
     await this.ready
     this.assertOpen()
@@ -565,6 +636,7 @@ export class PluginService {
       const installation: PluginInstallation = {
         id: installationId,
         entryId: job.key,
+        normalizationVersion: 2,
         source: job.value.source as PluginInstallationSource,
         revision: (previous?.revision ?? 0) + 1,
         enabled: !!previous?.enabled && !reset,
@@ -745,7 +817,9 @@ export class PluginService {
     return { contexts, errors }
   }
   async remove(id: string, revision: number) {
-    await this.change(id, revision, async () => undefined)
+    await this.change(id, revision, async () => {
+      return undefined
+    })
     this.invalid.delete(id)
     // 已取消注册的安装独占目录；失败保留文件，不把持久化成功伪装成失败。
     const root = join(this.directory, 'packages', id)
@@ -832,7 +906,15 @@ export class PluginService {
           current.values,
           installation.enabled,
         ),
-      ))
+      )) {
+        if (!config.url) {
+          const root = this.releasePath(installation.id, current.hash)
+          config.cwd = await resolveContentPath(root, config.cwd ?? '.')
+          if (config.command?.startsWith('./')) {
+            config.command = await resolveContentPath(root, config.command)
+            await chmod(config.command, 0o700)
+          }
+        }
         servers.push({
           config: {
             ...config,
@@ -842,6 +924,7 @@ export class PluginService {
           },
           owner: { id: installation.id, name: current.manifest.displayName },
         })
+      }
     }
     return { skills, servers }
   }

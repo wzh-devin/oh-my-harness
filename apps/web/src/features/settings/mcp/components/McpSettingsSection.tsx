@@ -1,7 +1,7 @@
+import { McpConnectionPanel } from './McpConnectionPanel.tsx'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Ellipsis, Pencil, TrashBin } from '@gravity-ui/icons'
-import mcpIcon from '@lobehub/icons-static-svg/icons/mcp.svg'
-import githubIcon from '@lobehub/icons-static-svg/icons/github.svg'
+import { McpIcon } from './McpIcon.tsx'
 import {
   Button,
   Dropdown,
@@ -249,25 +249,21 @@ export function McpSettingsSection({
                 {endpoint(selected)}
               </p>
               <p className={statusClass(selected)}>{statusText(selected)}</p>
-              {selected.status === MCP_CONNECTION_STATUS.ERROR ? (
-                <div className="mt-4 rounded-xl bg-surface-secondary p-3 text-xs">
-                  {selected.error || '无法连接服务，请检查配置后重试。'}
-                  <div className="mt-4">
-                    <Button
-                      variant="outline"
-                      type="button"
-                      className="h-9 min-h-0 rounded-full px-3.5 text-sm"
-                      isDisabled={
-                        state.busy || selected.activeSessionIds.length > 0
-                      }
-                      onPress={() => {
-                        void reconnect(selected)
-                      }}
-                    >
-                      重试连接
-                    </Button>
-                  </div>
-                </div>
+              <div className="mt-4">
+                <McpConnectionPanel
+                  key={selected.id}
+                  server={selected}
+                  icon={
+                    <McpIcon
+                      serverId={selected.owner ? selected.id : undefined}
+                    />
+                  }
+                />
+              </div>
+              {selected.owner && !selected.enabled ? (
+                <p className="mt-4 rounded-xl bg-surface-secondary p-3 text-sm text-muted">
+                  此服务由插件管理。请进入所属插件，完成连接并启用插件。
+                </p>
               ) : null}
               {selected.activeSessionIds.length ? (
                 <p
@@ -288,7 +284,7 @@ export function McpSettingsSection({
                     variant="ghost"
                     type="button"
                     className="h-9 min-h-0 rounded-full px-3.5 text-sm text-xs leading-[18px] text-muted"
-                    isDisabled={state.busy}
+                    isDisabled={state.busy || !selected.enabled}
                     onPress={() => {
                       void openDetail(selected)
                     }}
@@ -328,36 +324,38 @@ export function McpSettingsSection({
                 调用权限跟随本轮对话：请求批准 /
                 帮我批准时逐次询问；完全访问权限下自动调用。
               </div>
-              <div className="flex flex-wrap items-center gap-2 mt-6">
-                <Button
-                  variant="outline"
-                  type="button"
-                  className="h-9 min-h-0 rounded-full px-3.5 text-sm"
-                  isDisabled={
-                    state.busy ||
-                    !selected.enabled ||
-                    selected.activeSessionIds.length > 0
-                  }
-                  onPress={() => {
-                    void reconnect(selected)
-                  }}
-                >
-                  重新连接
-                </Button>
-                <Button
-                  variant="ghost"
-                  type="button"
-                  className="h-9 min-h-0 rounded-full px-3.5 text-sm text-danger"
-                  isDisabled={
-                    state.busy ||
-                    selected.activeSessionIds.length > 0 ||
-                    !!selected.owner
-                  }
-                  onPress={() => setDeleteId(selected.id)}
-                >
-                  删除服务
-                </Button>
-              </div>
+              {!selected.owner ? (
+                <div className="flex flex-wrap items-center gap-2 mt-6">
+                  <Button
+                    variant="outline"
+                    type="button"
+                    className="h-9 min-h-0 rounded-full px-3.5 text-sm"
+                    isDisabled={
+                      state.busy ||
+                      !selected.enabled ||
+                      selected.activeSessionIds.length > 0
+                    }
+                    onPress={() => {
+                      void reconnect(selected)
+                    }}
+                  >
+                    重新连接
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    type="button"
+                    className="h-9 min-h-0 rounded-full px-3.5 text-sm text-danger"
+                    isDisabled={
+                      state.busy ||
+                      selected.activeSessionIds.length > 0 ||
+                      !!selected.owner
+                    }
+                    onPress={() => setDeleteId(selected.id)}
+                  >
+                    删除服务
+                  </Button>
+                </div>
+              ) : null}
               {deleteConfirmation}
             </>
           ) : null}
@@ -421,24 +419,9 @@ export function McpSettingsSection({
                       void openDetail(server)
                     }}
                     icon={
-                      server.name.toLowerCase() === 'github' ||
-                      server.config.url?.startsWith(
-                        'https://api.githubcopilot.com/',
-                      ) ? (
-                        <img
-                          src={githubIcon}
-                          alt=""
-                          aria-hidden
-                          className="size-4 shrink-0 dark:invert"
-                        />
-                      ) : (
-                        <img
-                          src={mcpIcon}
-                          alt=""
-                          aria-hidden
-                          className="size-4 dark:invert"
-                        />
-                      )
+                      <McpIcon
+                        serverId={server.owner ? server.id : undefined}
+                      />
                     }
                     title={
                       <div className="flex h-5 min-w-0 items-baseline gap-2">

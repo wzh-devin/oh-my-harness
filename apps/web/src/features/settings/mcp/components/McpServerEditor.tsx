@@ -85,6 +85,7 @@ export function McpServerEditor({
     )
     return transport === MCP_TRANSPORT.HTTP
       ? {
+          ...(server?.transport === transport ? server.config : {}),
           url: target,
           enabled,
           headers: {
@@ -93,6 +94,7 @@ export function McpServerEditor({
           },
         }
       : {
+          ...(server?.transport === transport ? server.config : {}),
           command: target,
           enabled,
           args:

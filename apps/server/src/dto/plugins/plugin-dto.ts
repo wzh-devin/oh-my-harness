@@ -1,3 +1,5 @@
+import type { McpAuthPolicy } from '@oh-my-harness/shared'
+import type { McpAuthDto } from '../mcp/mcp-dto.ts'
 import { PLUGIN_INSTALLATION_SOURCE_KIND } from '@oh-my-harness/shared'
 import type {
   PluginInputTarget,
@@ -43,6 +45,7 @@ export interface PluginManifestDto {
   unavailable: string[]
 }
 export interface PluginEntryDto {
+  authentication?: McpAuthPolicy
   id: string
   name: string
   displayName: string
@@ -109,6 +112,7 @@ export interface PluginInstallationDto {
   latestVersion?: string
   error?: string
   servers: {
+    auth: McpAuthDto
     id: string
     name: string
     status: McpConnectionStatus

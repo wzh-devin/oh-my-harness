@@ -1,13 +1,16 @@
+import { PluginIcon } from './PluginIcon.tsx'
 import { useEffect, useState } from 'react'
 import { Button, Input, Label, TextField } from '@heroui/react'
 import { SettingsSubpageHeader } from '../../shared/components/SettingsBackNavigation.tsx'
 import {
+  MCP_AUTH_POLICY,
   MCP_CONNECTION_STATUS,
   PLUGIN_INSTALLATION_SOURCE_KIND,
   PLUGIN_OPERATION_STATUS,
   PLUGIN_SOURCE_KIND,
 } from '@oh-my-harness/shared'
 import { pluginApi } from '../api/plugin-api.ts'
+import { McpConnectionPanel } from '../../mcp/components/McpConnectionPanel.tsx'
 import type {
   PluginEntryVo,
   PluginInstallationVo,
@@ -106,6 +109,8 @@ export function PluginDetail({
   state,
   backLabel,
   onBack,
+  onInstalled,
+  showConnectionGuide,
   onDirtyChange,
 }: {
   entry?: PluginEntryVo
@@ -113,6 +118,8 @@ export function PluginDetail({
   state: ReturnType<typeof usePluginSettings>
   backLabel: string
   onBack(): void
+  onInstalled(id: string, connect: boolean): void
+  showConnectionGuide?: boolean
   onDirtyChange(dirty: boolean): void
 }) {
   const [values, setValues] = useState<Record<string, string | null>>({})
@@ -183,7 +190,7 @@ export function PluginDetail({
       )
     }
   }
-  /** 确认后原子安装，成功才释放暂存并返回已安装列表。 */
+  /** 安装完成后进入已安装详情，按市场策略展示连接引导。 */
   const commit = async () => {
     if (!operation) return
     const result = await state.mutate((signal) =>
@@ -191,7 +198,16 @@ export function PluginDetail({
     )
     if (result) {
       await state.cancel()
-      onBack()
+      const installed = result.installations.find(
+        (item) => item.entryId === operation.entry?.id,
+      )
+      if (installed)
+        onInstalled(
+          installed.id,
+          installed.servers.length > 0 &&
+            currentEntry?.authentication !== MCP_AUTH_POLICY.ON_USE,
+        )
+      else onBack()
     }
   }
 
@@ -249,6 +265,26 @@ export function PluginDetail({
           ) : null}
         </p>
       ) : null}
+      {installation?.servers.length ? (
+        <div className="space-y-3">
+          <h3 className="text-sm font-medium">连接服务</h3>
+          {installation.servers.map((server) => (
+            <McpConnectionPanel
+              key={server.id}
+              server={server}
+              icon={
+                <PluginIcon
+                  installationId={installation.id}
+                  iconId={currentEntry?.iconId}
+                  iconDarkId={currentEntry?.iconDarkId}
+                />
+              }
+              highlighted={showConnectionGuide}
+              onEnable={!installation.enabled ? () => save(true) : undefined}
+            />
+          ))}
+        </div>
+      ) : null}
       {manifest ? (
         <ManifestDetails manifest={manifest} />
       ) : (
@@ -271,26 +307,6 @@ export function PluginDetail({
           {currentEntry.source.reason}
         </p>
       ) : null}
-      {installation?.servers.map((server) => (
-        <div
-          key={server.id}
-          className="rounded-xl bg-surface-secondary p-3 text-sm"
-        >
-          <p>
-            {server.name} ·{' '}
-            {server.status === MCP_CONNECTION_STATUS.CONNECTED
-              ? `已连接 · ${server.toolCount} 个工具`
-              : server.status === MCP_CONNECTION_STATUS.CONNECTING
-                ? '连接中'
-                : server.status === MCP_CONNECTION_STATUS.DISABLED
-                  ? '已停用'
-                  : '未连接'}
-          </p>
-          {server.error ? (
-            <p className="mt-1 text-xs text-danger">{server.error}</p>
-          ) : null}
-        </div>
-      ))}
       {preparing ? (
         <p role="status" className="text-sm text-muted">
           正在下载并校验插件…

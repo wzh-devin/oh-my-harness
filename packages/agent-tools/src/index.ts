@@ -20,3 +20,6 @@ export { createMcpTools } from './mcp/toolset.ts'
 export { McpError, parseMcpJson } from './mcp/config.ts'
 export { parseMcpServer } from './mcp/config.ts'
 export type { McpServerConfig } from './mcp/config.ts'
+
+export type { McpAuthInfo, McpAuthSession, McpAuthOptions } from './mcp/auth.ts'
+export type { McpAuthorizationConfig } from './mcp/config.ts'

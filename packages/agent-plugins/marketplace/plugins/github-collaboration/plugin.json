@@ -1,34 +1,18 @@
 {
   "schemaVersion": 1,
   "name": "github-collaboration",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "displayName": "GitHub 协作",
   "description": "组合仓库协作指南与 GitHub 官方 MCP 服务。",
   "author": "oh-my-harness",
   "license": "MIT",
-  "examples": [
-    "查看我指定仓库的拉取请求，汇总变更与待处理事项。"
-  ],
-  "skills": [
-    "skills/github-collaboration"
-  ],
+  "examples": ["查看我指定仓库的拉取请求，汇总变更与待处理事项。"],
+  "skills": ["skills/github-collaboration"],
   "mcpServers": {
     "github": {
       "url": "https://api.githubcopilot.com/mcp/"
     }
   },
-  "inputs": [
-    {
-      "key": "github-token",
-      "label": "GitHub 访问令牌",
-      "description": "填写能访问目标仓库的 PAT；不要包含 Bearer 前缀。",
-      "required": true,
-      "secret": true,
-      "server": "github",
-      "target": "headers",
-      "name": "Authorization",
-      "prefix": "Bearer "
-    }
-  ],
-  "requirements": "需要联网、可访问目标仓库的 GitHub PAT，以及 GitHub 远程 MCP 服务所要求的账户权限。当前使用访问令牌，不提供 OAuth 登录。"
+  "inputs": [],
+  "requirements": "需要联网并在插件详情中连接 GitHub；组织仓库可能需要管理员批准此应用。"
 }

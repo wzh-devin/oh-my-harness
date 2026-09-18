@@ -1,3 +1,5 @@
+import { join } from 'node:path'
+import { McpAuth, type McpAuthInfo, type McpAuthOptions } from './auth.ts'
 import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -54,6 +56,7 @@ export interface McpManagedServer {
   config: McpServerConfig
 }
 export interface McpServerInfo {
+  auth: McpAuthInfo
   owner?: { id: string; name: string }
   id: string
   name: string
@@ -83,7 +86,7 @@ const connectionErrorMessage = (error: unknown): string | undefined => {
   if (error instanceof McpError) return error.message
   if (error instanceof StreamableHTTPError) {
     if (error.code === 401)
-      return '认证失败（HTTP 401）：请填写有效的访问令牌或 Authorization 请求头。本应用暂不支持 OAuth 登录。'
+      return '认证失败（HTTP 401）：请检查该服务的连接状态或访问令牌。'
     if (error.code === 403)
       return '访问被拒绝（HTTP 403）：请检查令牌权限和服务访问策略。'
     if (error.code === 404)
@@ -112,18 +115,65 @@ const versionOf = (tool: Tool) =>
 
 /** 管理应用级 MCP 配置和连接；Run 只使用确定快照，停用立即撤销连接生命周期。 */
 export class McpService {
+  readonly auth: McpAuth
+  private preserveMissingAuth = false
+  private readonly authReconnectTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >()
   private readonly store: McpConfigStore
   private managed = new Map<string, McpManagedServer>()
   private readonly connections = new Map<string, Connection>()
   private readonly changing = new Set<string>()
   private closed = false
   private readonly tests = new Set<Connection>()
-  constructor(dataDirectory: string) {
+  constructor(
+    dataDirectory: string,
+    options: McpAuthOptions = {
+      callbackUrl: 'http://127.0.0.1:4318/api/mcp/oauth/callback',
+    },
+  ) {
     this.store = new McpConfigStore(dataDirectory)
+    this.auth = new McpAuth(join(dataDirectory, 'mcp-auth'), options)
+    this.auth.setOnChanged((id) => this.authChanged(id))
+  }
+
+  /** 授权变化不打断正在执行的工具；空闲后重新发现当前账号的能力。 */
+  private async authChanged(id: string): Promise<void> {
+    if (this.closed) return
+    if (
+      [...(this.connections.get(id)?.active ?? [])].some(
+        (call) => call.executing,
+      )
+    ) {
+      if (!this.authReconnectTimers.has(id)) {
+        const timer = setTimeout(() => {
+          this.authReconnectTimers.delete(id)
+          void this.authChanged(id).catch(() => undefined)
+        }, 1000)
+        timer.unref()
+        this.authReconnectTimers.set(id, timer)
+      }
+      return
+    }
+    await this.disconnect(id)
+    const config = (await this.allServers()).find((server) => server.id === id)
+    if (config?.enabled) void this.connect(config).catch(() => undefined)
+  }
+
+  /** 授权操作可以在服务停用时进行，权限与启用状态分开。 */
+  async authConfig(id: string) {
+    const config = (await this.allServers()).find((server) => server.id === id)
+    if (!config)
+      throw new McpError(MCP_ERROR_CODE.NOT_FOUND, 'MCP 服务不存在。', 404)
+    return config
   }
 
   /** 插件配置仅保存在其所有者中；这里原子替换连接注册，不写用户配置。 */
-  async setManagedServers(servers: readonly McpManagedServer[]) {
+  async setManagedServers(
+    servers: readonly McpManagedServer[],
+    preserveAuth = false,
+  ) {
     return this.store.serialize(async () => {
       const document = await this.store.read()
       if (this.closed)
@@ -157,6 +207,11 @@ export class McpService {
       try {
         await Promise.all(affected.map((id) => this.disconnect(id)))
         this.managed = next
+        this.preserveMissingAuth = preserveAuth
+        await this.auth.reconcile(
+          await this.allServers(),
+          this.preserveMissingAuth,
+        )
       } finally {
         affected.forEach((id) => this.changing.delete(id))
       }
@@ -190,6 +245,7 @@ export class McpService {
   /** 启动已明确启用的服务；单个失败不影响宿主启动。 */
   async start() {
     const document = await this.store.read()
+    await this.auth.reconcile(await this.allServers(), this.preserveMissingAuth)
     const enabled = document.servers.filter((server) => server.enabled)
     // ponytail: 每批最多四个启动，避免同时拉起全部本地进程；实测有等待瓶颈再改队列。
     for (let index = 0; index < enabled.length && !this.closed; index += 4)
@@ -297,6 +353,16 @@ export class McpService {
           revision: document.revision + 1,
           servers: plan.servers,
         })
+        for (const deletion of deletions) {
+          const removed = document.servers.find(
+            (server) => server.id === deletion.id,
+          )!
+          await this.auth.disconnect(removed)
+        }
+        await this.auth.reconcile(
+          await this.allServers(),
+          this.preserveMissingAuth,
+        )
         await Promise.all(affected.map((id) => this.disconnect(id)))
       } finally {
         affected.forEach((id) => this.changing.delete(id))
@@ -342,6 +408,10 @@ export class McpService {
               server.id === id ? next : server,
             ),
           })
+          await this.auth.reconcile(
+            await this.allServers(),
+            this.preserveMissingAuth,
+          )
           await this.disconnect(id!)
         } finally {
           this.changing.delete(id!)
@@ -532,6 +602,9 @@ export class McpService {
 
   async close() {
     this.closed = true
+    for (const timer of this.authReconnectTimers.values()) clearTimeout(timer)
+    this.authReconnectTimers.clear()
+    await this.auth.close()
     await Promise.all(
       [...this.tests].map(async (connection) => {
         connection.controller.abort()
@@ -595,6 +668,7 @@ export class McpService {
   private info(server: McpServerConfig): McpServerInfo {
     const connection = this.connections.get(server.id)
     return {
+      auth: this.auth.info(server),
       id: server.id,
       name: this.displayName(server),
       owner: this.managed.get(server.id)?.owner,
@@ -652,7 +726,11 @@ export class McpService {
     if (existing) return existing.settled
     const connection = this.makeConnection(config)
     this.connections.set(config.id, connection)
-    connection.settled = this.initialize(connection)
+    connection.settled = this.initialize(connection).catch((error: unknown) => {
+      connection.status = MCP_CONNECTION_STATUS.ERROR
+      connection.error =
+        connectionErrorMessage(error) ?? '连接服务失败，请重试。'
+    })
     await connection.settled
   }
   private async discover(connection: Connection) {
@@ -666,11 +744,14 @@ export class McpService {
         { signal: connection.controller.signal, timeout: 10_000 },
       )
       for (const tool of page.tools) {
-        if (
-          names.has(tool.name) ||
-          tool.name.length > 200 ||
-          JSON.stringify(tool).length > 64 * 1024
-        )
+        // Notion 的真实工具定义约 80 KB；按 UTF-8 字节限制，保留单响应 5 MiB 上限。
+        if (Buffer.byteLength(JSON.stringify(tool), 'utf8') > 128 * 1024)
+          throw new McpError(
+            MCP_ERROR_CODE.UNAVAILABLE,
+            '服务的单个工具定义超过 128 KiB，请联系服务提供方精简后重试。',
+            502,
+          )
+        if (names.has(tool.name) || tool.name.length > 200)
           throw new Error('invalid tool catalog')
         names.add(tool.name)
         tools.push(redactMcpValue(tool, knownSecrets(connection.config), false))
@@ -688,21 +769,34 @@ export class McpService {
     connection.tools = tools
   }
   private async initialize(connection: Connection) {
-    const { config, client } = connection
+    const originalConfig = connection.config
+    const config = await this.auth.connectionConfig(originalConfig)
+    connection.config = config
+    const { client } = connection
     const transport =
       config.transport === MCP_TRANSPORT.STDIO
         ? new StdioClientTransport({
             command: config.command!,
             args: config.args,
-            cwd: homedir(),
+            cwd: config.cwd ?? homedir(),
             env: { ...getDefaultEnvironment(), ...config.env },
             stderr: 'ignore',
             maxBufferSize: 5 * 1024 * 1024,
           })
         : new StreamableHTTPClientTransport(new URL(config.url!), {
-            requestInit: { headers: config.headers, redirect: 'error' },
+            requestInit: { redirect: 'error' },
             fetch: async (url, init) => {
-              const response = await fetch(url, { ...init, redirect: 'error' })
+              const current = await this.auth.connectionConfig(originalConfig)
+              connection.config = current
+              const headers = new Headers(init?.headers)
+              for (const [key, value] of Object.entries(current.headers))
+                headers.set(key, value)
+              const response = await fetch(url, {
+                ...init,
+                headers,
+                redirect: 'error',
+              })
+              await this.auth.rejected(originalConfig, response)
               if (!response.body) return response
               let bytes = 0
               const body = response.body.pipeThrough(

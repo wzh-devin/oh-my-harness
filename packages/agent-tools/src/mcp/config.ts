@@ -19,7 +19,16 @@ export class McpError extends Error {
   }
 }
 
-export interface McpServerConfig {
+export interface McpAuthorizationConfig {
+  scopes?: string[]
+  oauth_resource?: string
+  bearer_token_env_var?: string
+  oauth?: { client_id?: string; client_secret?: string; callback_port?: number }
+  cwd?: string
+  env_vars?: string[]
+}
+
+export interface McpServerConfig extends McpAuthorizationConfig {
   id: string
   name: string
   transport: McpTransport
@@ -36,7 +45,7 @@ export interface McpConfigDocument {
   revision: number
   servers: McpServerConfig[]
 }
-export interface McpPublicConfig {
+export interface McpPublicConfig extends McpAuthorizationConfig {
   command?: string
   args?: string[]
   url?: string
@@ -66,6 +75,7 @@ export const publicMcpConfig = (server: McpServerConfig): McpPublicConfig => ({
   ...(server.transport === MCP_TRANSPORT.HTTP
     ? { url: server.url }
     : { command: server.command, args: server.args ?? [] }),
+  ...authorizationConfig(server, true),
   enabled: server.enabled,
 })
 
@@ -82,6 +92,104 @@ const stringField = (value: unknown, label: string, maximum = 4096): string => {
       `${label} 必须为有效的非空字符串。`,
     )
   return value
+}
+
+/** 保留标准 MCP 授权声明；客户端秘密永不进入公开配置。 */
+export const authorizationConfig = (
+  value: McpAuthorizationConfig,
+  redact = false,
+): McpAuthorizationConfig => ({
+  ...(value.scopes ? { scopes: value.scopes } : {}),
+  ...(value.oauth_resource ? { oauth_resource: value.oauth_resource } : {}),
+  ...(value.bearer_token_env_var
+    ? { bearer_token_env_var: value.bearer_token_env_var }
+    : {}),
+  ...(value.oauth
+    ? {
+        oauth: {
+          ...value.oauth,
+          ...(redact ? { client_secret: undefined } : {}),
+        },
+      }
+    : {}),
+  ...(value.cwd ? { cwd: value.cwd } : {}),
+  ...(value.env_vars ? { env_vars: value.env_vars } : {}),
+})
+
+/** 验证 URL 和列表，不执行清单声明的变量或脚本。 */
+const parseAuthorizationConfig = (
+  value: Record<string, unknown>,
+): McpAuthorizationConfig => {
+  for (const field of ['scopes', 'env_vars'] as const) {
+    if (
+      value[field] !== undefined &&
+      (!Array.isArray(value[field]) ||
+        value[field].length > 100 ||
+        value[field].some(
+          (item: unknown) =>
+            typeof item !== 'string' ||
+            !item ||
+            item.length > 2048 ||
+            /[\s\0]/u.test(item),
+        ))
+    )
+      throw new McpError(
+        MCP_ERROR_CODE.INVALID_CONFIG,
+        `${field} 必须是有效字符串列表。`,
+      )
+  }
+  if (
+    value.env_vars &&
+    (value.env_vars as string[]).some(
+      (key) => !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(key),
+    )
+  )
+    throw new McpError(MCP_ERROR_CODE.INVALID_CONFIG, '环境变量名称无效。')
+  if (value.cwd !== undefined) stringField(value.cwd, 'cwd')
+  if (
+    value.bearer_token_env_var !== undefined &&
+    !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(
+      stringField(value.bearer_token_env_var, 'bearer_token_env_var'),
+    )
+  )
+    throw new McpError(MCP_ERROR_CODE.INVALID_CONFIG, '令牌变量名称无效。')
+  if (value.oauth_resource !== undefined) {
+    const resource = stringField(value.oauth_resource, 'oauth_resource')
+    if (!URL.canParse(resource))
+      throw new McpError(MCP_ERROR_CODE.INVALID_CONFIG, 'OAuth 资源地址无效。')
+    const url = new URL(resource)
+    if (
+      (url.protocol !== 'https:' &&
+        !(
+          url.protocol === 'http:' &&
+          ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+        )) ||
+      url.username ||
+      url.password ||
+      url.hash ||
+      url.search
+    )
+      throw new McpError(MCP_ERROR_CODE.INVALID_CONFIG, 'OAuth 资源地址无效。')
+  }
+  if (value.oauth !== undefined) {
+    const oauth = configObject(value.oauth)
+    if (
+      Object.keys(oauth).some(
+        (key) => !['client_id', 'client_secret', 'callback_port'].includes(key),
+      )
+    )
+      throw new McpError(MCP_ERROR_CODE.INVALID_CONFIG, 'OAuth 配置字段无效。')
+    for (const key of ['client_id', 'client_secret'])
+      if (oauth[key] !== undefined) stringField(oauth[key], key)
+    if (
+      oauth.callback_port !== undefined &&
+      (!Number.isInteger(oauth.callback_port) ||
+        Number(oauth.callback_port) < 1 ||
+        Number(oauth.callback_port) > 65535)
+    )
+      throw new McpError(MCP_ERROR_CODE.INVALID_CONFIG, 'OAuth 回调端口无效。')
+  }
+  return authorizationConfig(value as McpAuthorizationConfig)
 }
 
 /** 合并写入型凭据；省略保留、null 删除，并规范化 HTTP Header 键。 */
@@ -173,8 +281,17 @@ export const parseMcpServer = (
     )
   const transport = isHttp ? MCP_TRANSPORT.HTTP : MCP_TRANSPORT.STDIO
   const fields = isHttp
-    ? ['url', 'headers', 'enabled', 'type']
-    : ['command', 'args', 'env', 'enabled', 'type']
+    ? [
+        'url',
+        'headers',
+        'enabled',
+        'type',
+        'oauth',
+        'scopes',
+        'oauth_resource',
+        'bearer_token_env_var',
+      ]
+    : ['command', 'args', 'env', 'enabled', 'type', 'cwd', 'env_vars']
   if (
     Object.keys(config).some((key) => !fields.includes(key)) ||
     (config.type !== undefined && config.type !== transport)
@@ -236,11 +353,20 @@ export const parseMcpServer = (
       )
     args = (config.args as string[] | undefined) ?? []
   }
+  const authorization = parseAuthorizationConfig(config)
   const sameTarget =
     previous?.transport === transport &&
     previous.url === url &&
     previous.command === command &&
+    previous.cwd === authorization.cwd &&
     JSON.stringify(previous.args) === JSON.stringify(args)
+  if (
+    sameTarget &&
+    authorization.oauth &&
+    authorization.oauth.client_secret === undefined &&
+    previous?.oauth?.client_secret
+  )
+    authorization.oauth.client_secret = previous.oauth.client_secret
   const oldSecrets = previous ? (isHttp ? previous.headers : previous.env) : {}
   const incoming = isHttp ? config.headers : config.env
   if (
@@ -254,6 +380,7 @@ export const parseMcpServer = (
       '连接目标已变化，请重新填写凭据或显式提供空的 env/headers。',
     )
   return {
+    ...authorization,
     id: previous?.id ?? randomUUID(),
     name,
     transport,
@@ -320,7 +447,11 @@ export const parseMcpJson = (source: string): unknown => {
 
 /** 收集需要脱敏的凭据，同时识别 Bearer/Basic 头中的原始凭据部分。 */
 export const knownSecrets = (config: McpServerConfig) =>
-  [...Object.values(config.env), ...Object.values(config.headers)]
+  [
+    ...Object.values(config.env),
+    ...Object.values(config.headers),
+    config.oauth?.client_secret ?? '',
+  ]
     .flatMap((secret) => [
       secret,
       ...(/^(?:Bearer|Basic) (.+)$/iu.exec(secret)?.slice(1) ?? []),
@@ -369,8 +500,19 @@ const changedMcpFields = (
     })
   }
   compare('type', previous?.transport, next?.transport)
-  for (const field of ['url', 'command', 'args', 'enabled'] as const)
+  for (const field of [
+    'url',
+    'command',
+    'args',
+    'enabled',
+    'cwd',
+    'env_vars',
+    'scopes',
+    'oauth_resource',
+    'bearer_token_env_var',
+  ] as const)
     compare(field, previous?.[field], next?.[field])
+  compare('oauth', previous?.oauth, next?.oauth, true)
   for (const field of ['headers', 'env'] as const) {
     const before = previous?.[field] ?? {},
       after = next?.[field] ?? {}

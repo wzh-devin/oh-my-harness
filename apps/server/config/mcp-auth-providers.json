@@ -1,0 +1,46 @@
+{
+  "https://api.githubcopilot.com/mcp/": {
+    "setupUrl": "https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app",
+    "device": {
+      "authorizationUrl": "https://github.com/login/device/code",
+      "tokenUrl": "https://github.com/login/oauth/access_token",
+      "verificationUrl": "https://github.com/login/device",
+      "scopes": ["repo", "read:org", "offline_access"],
+      "account": {
+        "url": "https://api.github.com/user",
+        "nameField": "login",
+        "headers": {
+          "Accept": "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28"
+        }
+      }
+    }
+  },
+  "https://gmailmcp.googleapis.com/mcp/v1": {
+    "setupUrl": "https://developers.google.com/workspace/guides/configure-mcp-servers",
+    "authorizationParams": {
+      "access_type": "offline",
+      "prompt": "consent"
+    }
+  },
+  "https://calendarmcp.googleapis.com/mcp/v1": {
+    "setupUrl": "https://developers.google.com/workspace/guides/configure-mcp-servers",
+    "authorizationParams": {
+      "access_type": "offline",
+      "prompt": "consent"
+    }
+  },
+  "https://drivemcp.googleapis.com/mcp/v1": {
+    "setupUrl": "https://developers.google.com/workspace/guides/configure-mcp-servers",
+    "authorizationParams": {
+      "access_type": "offline",
+      "prompt": "consent"
+    }
+  },
+  "https://mcp.slack.com/mcp": {
+    "setupUrl": "https://docs.slack.dev/ai/slack-mcp-server/"
+  },
+  "https://mcp.zoom.us/mcp": {
+    "setupUrl": "https://developers.zoom.us/docs/mcp/"
+  }
+}

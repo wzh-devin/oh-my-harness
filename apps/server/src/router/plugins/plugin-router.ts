@@ -55,7 +55,10 @@ export const createPluginRouter = (
   router.post('/catalog/refresh', controller.refresh)
   router.get('/catalog/:id', controller.detail)
   router.get('/installations', controller.list)
+
   router.post('/operations', controller.prepare)
+  router.get('/installations/:id/icon', controller.installationIcon)
+  router.get('/mcp/:id/icon', controller.mcpIcon)
   router.post('/operations/direct', controller.prepareDirect)
   router.get('/operations/:id', controller.operation)
   router.delete('/operations/:id', controller.cancel)

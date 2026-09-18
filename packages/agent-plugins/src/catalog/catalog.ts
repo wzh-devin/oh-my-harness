@@ -7,10 +7,11 @@ import {
   readdir,
   rename,
   rm,
-  stat,
 } from 'node:fs/promises'
 import { dirname, join, posix } from 'node:path'
 import {
+  MCP_AUTH_POLICY,
+  type McpAuthPolicy,
   PLUGIN_ERROR_CODE,
   PLUGIN_FORMAT,
   PLUGIN_SOURCE_KIND,
@@ -18,12 +19,14 @@ import {
   type PluginSourceKind,
 } from '@oh-my-harness/shared'
 import { PluginError } from '../error.ts'
+import { iconMime, MAX_ICON_BYTES, readPluginIcon } from '../source/icons.ts'
 import {
   objectFields,
   nameField,
   textField,
   versionField,
   externalMetadata,
+  externalDescription,
 } from '../manifest/manifest.ts'
 import {
   exists,
@@ -40,6 +43,7 @@ import {
 } from '../installation/store.ts'
 
 export interface PluginCatalogEntry {
+  authentication?: McpAuthPolicy
   id: string
   name: string
   displayName: string
@@ -80,19 +84,7 @@ interface CatalogDocument {
 const identity = (value: string) =>
   createHash('sha256').update(value).digest('hex')
 const ICON_ID = /^[a-f0-9]{64}\.(png|jpg|webp)$/u
-const MAX_ICON_BYTES = 1024 * 1024
 const MAX_ICON_CACHE_BYTES = 64 * MAX_ICON_BYTES
-const iconMime = (bytes: Buffer) =>
-  bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))
-    ? { ext: 'png', mime: 'image/png' }
-    : bytes.length >= 3 &&
-        bytes.subarray(0, 3).equals(Buffer.from('ffd8ff', 'hex'))
-      ? { ext: 'jpg', mime: 'image/jpeg' }
-      : bytes.length >= 12 &&
-          bytes.toString('ascii', 0, 4) === 'RIFF' &&
-          bytes.toString('ascii', 8, 12) === 'WEBP'
-        ? { ext: 'webp', mime: 'image/webp' }
-        : undefined
 /** 所有清单路径先收敛为仓库内路径，拒绝越界和平台路径。 */
 const catalogPath = (value: unknown) => {
   const path = posix.normalize(relativePath(textField(value, 500)))
@@ -151,26 +143,10 @@ export class PluginCatalog {
     budget: { used: number },
   ): Promise<string | undefined> {
     try {
-      if (typeof declared !== 'string' || !declared.startsWith('./'))
-        return undefined
-      const parts = declared.slice(2).split('/')
-      if (
-        parts.some((part) => !part || part === '.' || part === '..') ||
-        declared.includes('\\')
-      )
-        return undefined
-      let current = pluginRoot
-      for (const part of parts) {
-        current = join(current, part)
-        if ((await lstat(current)).isSymbolicLink()) return undefined
-      }
-      const path = await resolveContentPath(pluginRoot, declared)
-      const info = await stat(path)
-      if (!info.isFile() || info.size > MAX_ICON_BYTES) return undefined
-      const bytes = await readFile(path)
-      const type = iconMime(bytes)
-      if (!type || bytes.length > MAX_ICON_BYTES) return undefined
-      const id = `${createHash('sha256').update(bytes).digest('hex')}.${type.ext}`
+      const image = await readPluginIcon(pluginRoot, declared)
+      if (!image) return undefined
+      const { bytes, ext } = image
+      const id = `${createHash('sha256').update(bytes).digest('hex')}.${ext}`
       const directory = this.iconDirectory()
       await privateDirectory(directory)
       if (await exists(join(directory, id))) return id
@@ -305,6 +281,7 @@ export class PluginCatalog {
         'version',
         'iconId',
         'iconDarkId',
+        'authentication',
         'format',
         'market',
         'source',
@@ -395,6 +372,13 @@ export class PluginCatalog {
     if (!Object.values(PLUGIN_FORMAT).includes(format))
       throw new PluginError(PLUGIN_ERROR_CODE.INVALID, '市场格式无效。')
     return {
+      authentication:
+        (record.authentication ??
+          (record.policy
+            ? objectFields(record.policy).authentication
+            : undefined)) === MCP_AUTH_POLICY.ON_USE
+          ? MCP_AUTH_POLICY.ON_USE
+          : MCP_AUTH_POLICY.ON_INSTALL,
       id: identity(`${market}:${name}`),
       market,
       name,
@@ -619,7 +603,11 @@ export class PluginCatalog {
           format,
           version: summary?.version ?? record.version,
           displayName: record.displayName ?? summary?.displayName,
-          description: record.description ?? summary?.description,
+          description:
+            format === PLUGIN_FORMAT.NATIVE
+              ? record.description
+              : (externalDescription(record.description) ??
+                summary?.description),
         },
         market.id,
       )

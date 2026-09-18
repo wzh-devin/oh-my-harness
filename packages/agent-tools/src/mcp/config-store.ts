@@ -100,6 +100,12 @@ export class McpConfigStore {
                 'args',
                 'env',
                 'headers',
+                'oauth',
+                'scopes',
+                'oauth_resource',
+                'bearer_token_env_var',
+                'cwd',
+                'env_vars',
               ].includes(key),
           )
         )
@@ -109,6 +115,7 @@ export class McpConfigStore {
         if (typeof item.enabled !== 'boolean') throw new Error('invalid')
         const server = parseMcpServer(item.name, {
           ...publicMcpConfig(item),
+          ...(item.oauth ? { oauth: item.oauth } : {}),
           ...(item.url ? { headers: item.headers } : { env: item.env }),
         })
         if (server.transport !== item.transport) throw new Error('invalid')

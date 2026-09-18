@@ -54,7 +54,7 @@ export function ComposerContextBar({
               >
                 <ComposerCapabilityIcon
                   kind={item.kind}
-                  label={item.label}
+                  sourceId={item.sourceId}
                   className="size-3.5 group-hover/remove:hidden"
                 />
                 <Xmark className="hidden size-3.5 group-hover/remove:block" />
@@ -65,7 +65,7 @@ export function ComposerContextBar({
               >
                 <ComposerCapabilityIcon
                   kind={item.kind}
-                  label={item.label}
+                  sourceId={item.sourceId}
                   className="size-3.5"
                 />
               </span>

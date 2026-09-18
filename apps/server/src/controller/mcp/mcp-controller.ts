@@ -52,6 +52,62 @@ export const createMcpController = (mcp: McpService) => {
       }
     }
   return {
+    authMetadata: protect(async (c) => c.json(mcp.auth.clientMetadata())),
+    authInfo: protect(async (c) =>
+      c.json(mcp.auth.info(await mcp.authConfig(c.req.param('id')!))),
+    ),
+    authStart: protect(async (c) => {
+      await requestBody(c, [])
+      return c.json(
+        await mcp.auth.start(
+          await mcp.authConfig(c.req.param('id')!),
+          c.req.raw.signal,
+        ),
+        201,
+      )
+    }),
+    authSession: protect(async (c) =>
+      c.json(
+        await mcp.auth.session(
+          await mcp.authConfig(c.req.param('id')!),
+          c.req.param('sessionId')!,
+        ),
+      ),
+    ),
+    authCancel: protect(async (c) => {
+      await mcp.auth.cancel(
+        await mcp.authConfig(c.req.param('id')!),
+        c.req.param('sessionId')!,
+      )
+      return c.json({ ok: true })
+    }),
+    authCredentials: protect(async (c) => {
+      const body = await requestBody(c, ['token', 'headers', 'env'])
+      await mcp.auth.credentials(await mcp.authConfig(c.req.param('id')!), body)
+      return c.json({ ok: true })
+    }),
+    authDisconnect: protect(async (c) => {
+      await mcp.auth.disconnect(await mcp.authConfig(c.req.param('id')!))
+      return c.json({ ok: true })
+    }),
+    authCallback: async (c: Context) => {
+      c.header('Referrer-Policy', 'no-referrer')
+      c.header(
+        'Content-Security-Policy',
+        "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
+      )
+      let succeeded = false
+      try {
+        await mcp.auth.callback(new URL(c.req.url).searchParams)
+        succeeded = true
+      } catch {
+        /* 不回显授权码及远端错误。 */
+      }
+      return c.html(
+        `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>连接服务</title><body style="font:18px system-ui;padding:48px"><h1>${succeeded ? '授权已完成' : '授权未完成'}</h1><p>${succeeded ? '请返回 oh-my-harness，连接状态会自动更新。' : '请返回 oh-my-harness，取消后重新连接。'}</p></body></html>`,
+        succeeded ? 200 : 400,
+      )
+    },
     list: protect(async (c) => c.json((await mcp.list()) satisfies McpListDto)),
     config: protect(async (c) => c.json(await mcp.config())),
     secret: protect(async (c) => {

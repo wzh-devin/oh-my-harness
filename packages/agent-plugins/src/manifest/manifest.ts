@@ -9,6 +9,7 @@ import {
   parseMcpServer,
   parseMcpJson,
   type McpServerConfig,
+  type McpAuthorizationConfig,
 } from '@oh-my-harness/agent-tools'
 import { loadSkills } from '@earendil-works/pi-agent-core'
 import { NodeExecutionEnv } from '@earendil-works/pi-agent-core/node'
@@ -17,6 +18,16 @@ import { join, posix } from 'node:path'
 import { PluginError } from '../error.ts'
 import { exists, relativePath, resolveContentPath } from '../source/files.ts'
 import { validSkill } from '../source/skills.ts'
+
+/** MCP 键保留上游大小写和下划线，身份由固定 serverId 管理。 */
+export const mcpServerKey = (value: unknown): string => {
+  if (
+    typeof value !== 'string' ||
+    !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u.test(value)
+  )
+    throw new PluginError(PLUGIN_ERROR_CODE.INVALID, 'MCP 服务名称无效。')
+  return value
+}
 
 export interface PluginInput {
   key: string
@@ -29,7 +40,9 @@ export interface PluginInput {
   name: string
   prefix: string
 }
-export interface PluginMcpDefinition {
+export interface PluginMcpDefinition extends McpAuthorizationConfig {
+  env?: Record<string, string>
+  headers?: Record<string, string>
   url?: string
   command?: string
   args?: string[]
@@ -95,6 +108,17 @@ export const textField = (value: unknown, max = 1024): string => {
       '插件字段为空、过长或包含非法字符。',
     )
   return value
+}
+
+/** 外部清单的展示说明可多行；收敛为安全短摘要后再写入本项目清单。 */
+export const externalDescription = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined
+  return (
+    value
+      .replace(/[\p{Cc}\s]+/gu, ' ')
+      .trim()
+      .slice(0, 1024) || undefined
+  )
 }
 /** 市场和插件清单共用版本语法，预览与安装不得采用不同标准。 */
 export const versionField = (value: unknown) => {
@@ -164,8 +188,20 @@ export const parseManifest = (value: unknown): PluginManifest => {
     )
   const mcpServers: Record<string, PluginMcpDefinition> = {}
   for (const [key, value] of Object.entries(servers)) {
-    nameField(key)
-    const definition = objectFields(value, ['url', 'command', 'args'])
+    mcpServerKey(key)
+    const definition = objectFields(value, [
+      'url',
+      'command',
+      'args',
+      'cwd',
+      'env_vars',
+      'env',
+      'headers',
+      'oauth',
+      'scopes',
+      'oauth_resource',
+      'bearer_token_env_var',
+    ])
     try {
       parseMcpServer(key, definition)
     } catch {
@@ -174,6 +210,7 @@ export const parseManifest = (value: unknown): PluginManifest => {
         '插件 MCP 定义无效，请检查地址、命令和参数。',
       )
     }
+    if (definition.cwd !== undefined) packagePath(String(definition.cwd))
     mcpServers[key] = definition as PluginMcpDefinition
   }
   const hookValues = record.hooks ?? []
@@ -199,7 +236,12 @@ export const parseManifest = (value: unknown): PluginManifest => {
       timeout: hook.timeout,
     }
   })
-  if (!skills.length && !Object.keys(servers).length && !hooks.length)
+  if (
+    !skills.length &&
+    !Object.keys(servers).length &&
+    !hooks.length &&
+    !stringList(record.unavailable ?? [], 30).length
+  )
     throw new PluginError(
       PLUGIN_ERROR_CODE.INVALID,
       '插件至少需要包含一个 Skill 或 MCP 服务。',
@@ -225,7 +267,7 @@ export const parseManifest = (value: unknown): PluginManifest => {
         'prefix',
       ])
       const key = nameField(input.key),
-        server = nameField(input.server)
+        server = mcpServerKey(input.server)
       const definition = mcpServers[server]
       const target = input.target
       if (
@@ -379,9 +421,14 @@ export const externalMetadata = async (root: string, format: PluginFormat) => {
     version:
       record.version === undefined ? undefined : versionField(record.version),
     displayName: presentation.displayName ?? record.displayName ?? record.name,
-    description: record.description ?? portable?.description,
+    description:
+      externalDescription(presentation.shortDescription) ??
+      externalDescription(record.description) ??
+      externalDescription(portable?.description),
     logoPath: presentation.logo ?? presentation.composerIcon,
     logoDarkPath: presentation.logoDark,
+    composerIconPath: presentation.composerIcon,
+    composerIconDarkPath: presentation.composerIconDark,
     author: typeof author === 'string' ? author : '未提供',
     license: record.license ?? portable?.license ?? '未提供',
     record,
@@ -436,30 +483,29 @@ const externalServers = async (
   const definitions = objectFields(record.mcpServers ?? record)
   const servers: Record<string, PluginMcpDefinition> = {}
   for (const [name, raw] of Object.entries(definitions)) {
-    nameField(name)
+    mcpServerKey(name)
     const config = objectFields(raw)
-    if (
-      config.env ||
-      config.headers ||
-      (config.args && !Array.isArray(config.args))
-    ) {
-      unavailable.push(`MCP ${name}：配置需要当前不支持的环境或参数`)
+    const fields = config.url
+      ? [
+          'url',
+          'headers',
+          'oauth',
+          'scopes',
+          'oauth_resource',
+          'bearer_token_env_var',
+        ]
+      : ['command', 'args', 'env', 'env_vars', 'cwd']
+    if (!config.url && !config.command) {
+      unavailable.push(`MCP ${name}：传输类型暂不支持`)
       continue
     }
-    if (
-      config.type === 'streamable-http' ||
-      config.type === 'http' ||
-      config.url
+    const definition = Object.fromEntries(
+      fields
+        .filter((key) => config[key] !== undefined)
+        .map((key) => [key, config[key]]),
     )
-      servers[name] = { url: textField(config.url, 2000) }
-    else if (config.command)
-      servers[name] = {
-        command: textField(config.command, 1000),
-        args: (Array.isArray(config.args) ? config.args : []).map(
-          (item: unknown) => textField(item, 1000),
-        ),
-      }
-    else unavailable.push(`MCP ${name}：传输类型暂不支持`)
+    parseMcpServer(name, definition)
+    servers[name] = definition as PluginMcpDefinition
   }
   return servers
 }
@@ -564,6 +610,21 @@ const externalManifest = async (
       (await exists(join(root, path)))
     )
       unavailable.push(`${field}：当前 Runtime 暂不支持`)
+  const appConfig = await optionalJson(root, '.app.json')
+  if (appConfig?.apps)
+    for (const [name, value] of Object.entries(objectFields(appConfig.apps))) {
+      const app = objectFields(value)
+      if (app.required === false || app.optional === true) continue
+      if (Object.hasOwn(mcpServers, name)) continue
+      if (
+        Object.keys(objectFields(appConfig.apps)).length === 1 &&
+        Object.values(mcpServers).some((server) => server.url)
+      )
+        continue
+      unavailable.push(
+        `App ${name}：需要平台连接器授权，当前插件未提供可替代的公开 MCP 连接入口`,
+      )
+    }
   const version =
     meta.version ??
     (catalogVersion === undefined ? undefined : versionField(catalogVersion)) ??
@@ -650,8 +711,8 @@ export const configuredServers = (
       const config: Record<string, unknown> = {
         ...definition,
         enabled,
-        env: {},
-        headers: {},
+        env: { ...definition.env },
+        headers: { ...definition.headers },
       }
       for (const input of manifest.inputs.filter(
         (input) => input.server === key,

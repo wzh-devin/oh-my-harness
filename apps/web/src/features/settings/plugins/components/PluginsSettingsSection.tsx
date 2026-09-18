@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Input, TextField } from '@heroui/react'
-import { Package, Store } from 'lucide-react'
+import { PluginIcon } from './PluginIcon.tsx'
 import {
   PLUGIN_FORMAT,
   PLUGIN_INSTALLATION_SOURCE_KIND,
@@ -19,49 +19,6 @@ import { pluginApi } from '../api/plugin-api.ts'
 import { PluginDetail } from './PluginDetail.tsx'
 import { PluginGitSourceForm } from './PluginGitSourceForm.tsx'
 import type { PluginEntryVo } from '../types/plugin-vo.ts'
-
-function CatalogIcon({
-  iconId,
-  iconDarkId,
-  market = false,
-}: {
-  iconId?: string
-  iconDarkId?: string
-  market?: boolean
-}) {
-  const [failedKey, setFailedKey] = useState('')
-  const iconKey = `${iconId}:${iconDarkId}`
-  if (!iconId || failedKey === iconKey)
-    return market ? (
-      <Store aria-hidden className="size-4 text-muted" />
-    ) : (
-      <Package aria-hidden className="size-4 text-muted" />
-    )
-  return (
-    <span className="block size-6 shrink-0">
-      <img
-        src={pluginApi.iconUrl(iconId)}
-        alt=""
-        aria-hidden
-        loading="lazy"
-        decoding="async"
-        className={`size-6 object-contain ${iconDarkId ? 'dark:hidden' : ''}`}
-        onError={() => setFailedKey(iconKey)}
-      />
-      {iconDarkId ? (
-        <img
-          src={pluginApi.iconUrl(iconDarkId)}
-          alt=""
-          aria-hidden
-          loading="lazy"
-          decoding="async"
-          className="hidden size-6 object-contain dark:block"
-          onError={() => setFailedKey(iconKey)}
-        />
-      ) : null}
-    </span>
-  )
-}
 
 /** 以市场为首页，沿用设置卡片进入市场插件、已安装和直接安装。 */
 export function PluginsSettingsSection({
@@ -82,6 +39,7 @@ export function PluginsSettingsSection({
   const [offset, setOffset] = useState(0)
   const [entry, setEntry] = useState<PluginEntryVo>()
   const [installationId, setInstallationId] = useState(initialPluginId)
+  const [connectAfterInstallId, setConnectAfterInstallId] = useState<string>()
   const [notice, setNotice] = useState('')
   const dirty = useRef(false)
   const state = usePluginSettings(
@@ -135,6 +93,7 @@ export function PluginsSettingsSection({
     const installedPage = showInstalled || directDetail
     setEntry(undefined)
     setInstallationId(undefined)
+    setConnectAfterInstallId(undefined)
     setDirectDetail(false)
     setShowInstalled(installedPage)
     state.setError('')
@@ -173,6 +132,15 @@ export function PluginsSettingsSection({
     markDirty(false)
     setAdding(undefined)
     setDirectDetail(true)
+  }
+  const openInstalled = (id: string, connect = false) => {
+    markDirty(false)
+    setEntry(undefined)
+    setDirectDetail(false)
+    setShowInstalled(true)
+    setInstallationId(id)
+    setConnectAfterInstallId(connect ? id : undefined)
+    state.setError('')
   }
   const changeMarket = async (id: string, remove = false) => {
     if (remove && !window.confirm('移除此插件市场？已安装的插件会保留。'))
@@ -231,16 +199,16 @@ export function PluginsSettingsSection({
             </>
           }
           description={item.manifest.description}
-          icon={<Package aria-hidden className="size-4 text-muted" />}
+          icon={<PluginIcon installationId={item.id} />}
           openLabel={`管理插件 ${item.manifest.displayName}`}
           isDisabled={state.busy}
-          onOpen={() => setInstallationId(item.id)}
+          onOpen={() => openInstalled(item.id)}
           actions={
             <Button
               className="h-7 min-h-0 rounded-full !px-2.5 !text-xs"
               variant="outline"
               isDisabled={state.busy}
-              onPress={() => setInstallationId(item.id)}
+              onPress={() => openInstalled(item.id)}
             >
               管理
             </Button>
@@ -306,7 +274,7 @@ export function PluginsSettingsSection({
                 : item.description
             }
             icon={
-              <CatalogIcon iconId={item.iconId} iconDarkId={item.iconDarkId} />
+              <PluginIcon iconId={item.iconId} iconDarkId={item.iconDarkId} />
             }
             openLabel={`查看插件 ${item.displayName}`}
             onOpen={() => setEntry(item)}
@@ -376,6 +344,11 @@ export function PluginsSettingsSection({
                     : '返回市场插件'
                 }
                 onBack={() => void closeDetail()}
+                onInstalled={openInstalled}
+                showConnectionGuide={
+                  !!connectAfterInstallId &&
+                  connectAfterInstallId === selected?.id
+                }
                 onDirtyChange={markDirty}
               />
             </SettingsEditorCard>
@@ -470,7 +443,7 @@ export function PluginsSettingsSection({
                       : `${item.pluginCount} 个插件 · ${item.url}`)
                   }
                   icon={
-                    <CatalogIcon
+                    <PluginIcon
                       iconId={item.iconId}
                       iconDarkId={item.iconDarkId}
                       market

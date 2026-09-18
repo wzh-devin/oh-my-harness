@@ -51,7 +51,7 @@
       "displayName": "GitHub 协作",
       "description": "组合仓库协作指南与 GitHub 官方 MCP 服务。",
       "category": "协作",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "source": {
         "kind": "bundled",
         "path": "plugins/github-collaboration"

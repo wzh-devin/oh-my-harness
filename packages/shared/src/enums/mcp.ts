@@ -31,3 +31,36 @@ export const MCP_ERROR_CODE = {
   REQUEST_REJECTED: 'MCP_REQUEST_REJECTED',
 } as const
 export type McpErrorCode = (typeof MCP_ERROR_CODE)[keyof typeof MCP_ERROR_CODE]
+
+export const MCP_AUTH_STATUS = {
+  NOT_CONNECTED: 'not_connected',
+  AUTHORIZING: 'authorizing',
+  AUTHORIZED: 'authorized',
+  RECONNECT_REQUIRED: 'reconnect_required',
+  SETUP_REQUIRED: 'setup_required',
+  ERROR: 'error',
+} as const
+export type McpAuthStatus =
+  (typeof MCP_AUTH_STATUS)[keyof typeof MCP_AUTH_STATUS]
+export const MCP_AUTH_METHOD = {
+  OAUTH: 'oauth',
+  DEVICE: 'device',
+  CREDENTIALS: 'credentials',
+} as const
+export type McpAuthMethod =
+  (typeof MCP_AUTH_METHOD)[keyof typeof MCP_AUTH_METHOD]
+export const MCP_AUTH_SESSION_STATUS = {
+  AUTHORIZING: 'authorizing',
+  AUTHORIZED: 'authorized',
+  CANCELLED: 'cancelled',
+  EXPIRED: 'expired',
+  ERROR: 'error',
+} as const
+export type McpAuthSessionStatus =
+  (typeof MCP_AUTH_SESSION_STATUS)[keyof typeof MCP_AUTH_SESSION_STATUS]
+export const MCP_AUTH_POLICY = {
+  ON_INSTALL: 'ON_INSTALL',
+  ON_USE: 'ON_USE',
+} as const
+export type McpAuthPolicy =
+  (typeof MCP_AUTH_POLICY)[keyof typeof MCP_AUTH_POLICY]

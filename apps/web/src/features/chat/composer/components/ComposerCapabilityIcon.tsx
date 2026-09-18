@@ -1,6 +1,6 @@
-import { BookOpen, Box, FilePlus, Terminal } from '@gravity-ui/icons'
-import githubIcon from '@lobehub/icons-static-svg/icons/github.svg'
-import mcpIcon from '@lobehub/icons-static-svg/icons/mcp.svg'
+import { BookOpen, FilePlus, Terminal } from '@gravity-ui/icons'
+import { PluginIcon } from '../../../settings/plugins/components/PluginIcon.tsx'
+import { McpIcon } from '../../../settings/mcp/components/McpIcon.tsx'
 import {
   COMPOSER_CAPABILITY_KIND,
   type ComposerCapabilityKind,
@@ -10,26 +10,24 @@ const ICONS = {
   [COMPOSER_CAPABILITY_KIND.ATTACHMENT]: FilePlus,
   [COMPOSER_CAPABILITY_KIND.COMMAND]: Terminal,
   [COMPOSER_CAPABILITY_KIND.SKILL]: BookOpen,
-  [COMPOSER_CAPABILITY_KIND.PLUGIN]: Box,
 }
 
+/** 按稳定能力身份展示图标，菜单、草稿和历史消息保持一致。 */
 export function ComposerCapabilityIcon({
   kind,
-  label,
+  sourceId,
   className,
 }: {
   kind: ComposerCapabilityKind
-  label: string
+  sourceId?: string
   className: string
 }) {
-  if (kind === COMPOSER_CAPABILITY_KIND.MCP)
+  if (kind === COMPOSER_CAPABILITY_KIND.PLUGIN)
     return (
-      <img
-        alt=""
-        src={label.toLowerCase() === 'github' ? githubIcon : mcpIcon}
-        className={`${className} dark:invert`}
-      />
+      <PluginIcon installationId={sourceId} composer className={className} />
     )
+  if (kind === COMPOSER_CAPABILITY_KIND.MCP)
+    return <McpIcon serverId={sourceId} className={className} />
   const Icon = ICONS[kind]
   return <Icon aria-hidden className={className} />
 }

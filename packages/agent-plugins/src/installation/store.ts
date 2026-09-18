@@ -37,6 +37,7 @@ export type PluginInstallationSource =
       commit: string
     }
 export interface PluginInstallation {
+  normalizationVersion?: 2
   id: string
   entryId: string
   source: PluginInstallationSource
@@ -243,6 +244,7 @@ export class PluginStore {
         (value): PluginInstallation => {
           const item = objectFields(value, [
             'id',
+            'normalizationVersion',
             'entryId',
             'source',
             'revision',
@@ -276,7 +278,7 @@ export class PluginStore {
           const serverIds = objectFields(item.serverIds)
           for (const [key, id] of Object.entries(serverIds)) {
             if (
-              !/^[a-z0-9-]{1,64}$/u.test(key) ||
+              !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u.test(key) ||
               typeof id !== 'string' ||
               !UUID_PATTERN.test(id) ||
               servers.has(id)
@@ -300,6 +302,9 @@ export class PluginStore {
           )
             throw new Error('invalid hook trust')
           return {
+            ...(item.normalizationVersion === 2
+              ? { normalizationVersion: 2 as const }
+              : {}),
             id: item.id,
             entryId: item.entryId,
             source,

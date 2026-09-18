@@ -76,7 +76,7 @@ export function ComposerCapabilityMenu({
                         <span className="flex size-6 items-center justify-center text-muted">
                           <ComposerCapabilityIcon
                             kind={item.kind}
-                            label={item.label}
+                            sourceId={item.sourceId}
                             className="size-4"
                           />
                         </span>

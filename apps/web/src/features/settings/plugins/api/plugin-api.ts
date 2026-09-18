@@ -36,6 +36,10 @@ const request = async <T>(
 }
 export const pluginApi = {
   iconUrl: (id: string) => `/api/plugins/icons/${encodeURIComponent(id)}`,
+  installationIconUrl: (id: string, dark = false, composer = false) =>
+    `/api/plugins/installations/${encodeURIComponent(id)}/icon?theme=${dark ? 'dark' : 'light'}&variant=${composer ? 'composer' : 'logo'}`,
+  mcpIconUrl: (id: string, dark = false) =>
+    `/api/plugins/mcp/${encodeURIComponent(id)}/icon?theme=${dark ? 'dark' : 'light'}`,
   catalog: (
     signal: AbortSignal,
     query: string,

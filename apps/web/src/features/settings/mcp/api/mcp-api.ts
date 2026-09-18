@@ -1,5 +1,7 @@
 import type {
   McpConfigVo,
+  McpAuthVo,
+  McpAuthSessionVo,
   McpListVo,
   McpPreviewVo,
   McpToolVo,
@@ -34,6 +36,36 @@ async function request<T>(
 }
 
 export const mcpApi = {
+  auth: (id: string, signal: AbortSignal) =>
+    request<McpAuthVo>(`servers/${encodeURIComponent(id)}/auth`, signal),
+  authStart: (id: string, signal: AbortSignal) =>
+    request<McpAuthSessionVo>(
+      `servers/${encodeURIComponent(id)}/auth/sessions`,
+      signal,
+      'POST',
+      {},
+    ),
+  authSession: (id: string, sessionId: string, signal: AbortSignal) =>
+    request<McpAuthSessionVo>(
+      `servers/${encodeURIComponent(id)}/auth/sessions/${encodeURIComponent(sessionId)}`,
+      signal,
+    ),
+  authCancel: (id: string, sessionId: string, signal: AbortSignal) =>
+    request(
+      `servers/${encodeURIComponent(id)}/auth/sessions/${encodeURIComponent(sessionId)}`,
+      signal,
+      'DELETE',
+      {},
+    ),
+  authDisconnect: (id: string, signal: AbortSignal) =>
+    request(`servers/${encodeURIComponent(id)}/auth`, signal, 'DELETE', {}),
+  authCredentials: (id: string, value: unknown, signal: AbortSignal) =>
+    request(
+      `servers/${encodeURIComponent(id)}/auth/credentials`,
+      signal,
+      'PUT',
+      value,
+    ),
   list: (signal: AbortSignal) => request<McpListVo>('servers', signal),
   config: (signal: AbortSignal) => request<McpConfigVo>('config', signal),
   secret: (id: string, key: string, revision: number, signal: AbortSignal) =>

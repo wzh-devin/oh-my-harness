@@ -57,7 +57,8 @@ export const createPluginController = (
             latestVersion: entry?.version,
             servers: connected.servers
               .filter((server) => server.owner?.id === item.id)
-              .map(({ id, name, status, error, toolCount }) => ({
+              .map(({ id, name, status, error, toolCount, auth }) => ({
+                auth,
                 id,
                 name,
                 status,
@@ -68,6 +69,19 @@ export const createPluginController = (
         }),
       ),
     }
+  }
+  /** 图片响应只暴露校验后的包内资源；内容变更时浏览器重新验证缓存。 */
+  const installationIcon = async (c: Context, id: string) => {
+    const { bytes, mime, etag } = await plugins.icon(
+      id,
+      c.req.query('theme') === 'dark',
+      c.req.query('variant') === 'composer',
+    )
+    c.header('Cache-Control', 'private, no-cache')
+    c.header('ETag', etag)
+    c.header('X-Content-Type-Options', 'nosniff')
+    if (c.req.header('if-none-match') === etag) return c.body(null, 304)
+    return c.body(new Uint8Array(bytes), 200, { 'Content-Type': mime })
   }
   const mutate = async (operation: () => Promise<unknown>) => {
     await runtime.withCapabilityMutation(async () => {
@@ -80,7 +94,7 @@ export const createPluginController = (
       try {
         await mcp.setManagedServers((await plugins.capabilities()).servers)
       } catch {
-        await mcp.setManagedServers([])
+        await mcp.setManagedServers([], true)
         throw new PluginError(
           PLUGIN_ERROR_CODE.UNAVAILABLE,
           '插件运行注册失败，已停止插件工具；请刷新后重试或重启服务。',
@@ -112,6 +126,19 @@ export const createPluginController = (
       }
     }
   return {
+    installationIcon: protect((c) => installationIcon(c, c.req.param('id')!)),
+    mcpIcon: protect(async (c) => {
+      const server = (await mcp.list()).servers.find(
+        (item) => item.id === c.req.param('id'),
+      )
+      if (!server?.owner)
+        throw new PluginError(
+          PLUGIN_ERROR_CODE.NOT_FOUND,
+          '服务未提供插件图标。',
+          404,
+        )
+      return installationIcon(c, server.owner.id)
+    }),
     icon: protect(async (c) => {
       const { bytes, mime } = await plugins.catalog.icon(c.req.param('id')!)
       return c.body(new Uint8Array(bytes), 200, {
