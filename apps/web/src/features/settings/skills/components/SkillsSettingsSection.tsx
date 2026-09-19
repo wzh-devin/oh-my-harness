@@ -1,13 +1,13 @@
 import { useState } from 'react'
-import { Code } from '@gravity-ui/icons'
 import { Button, Input, TextField } from '@heroui/react'
 import { useCapabilitySettings } from '../../providers/contexts/capability-settings-context.ts'
 import { SettingsItemCard } from '../../shared/components/SettingsItemCard.tsx'
 import { SettingsAddButton } from '../../shared/components/SettingsAddButton.tsx'
+import { SkillIcon } from './SkillIcon.tsx'
 import { SkillImportForm } from './SkillImportForm.tsx'
 import { SkillDetail } from './SkillDetail.tsx'
 
-/** 仅管理独立 Skills，保留导入、详情与可恢复删除。 */
+/** 展示技能及所属插件图标，保留独立技能导入和详情入口。 */
 export function SkillsSettingsSection({
   onOpenPlugin,
 }: {
@@ -110,7 +110,7 @@ export function SkillsSettingsSection({
                       </Button>
                     }
                     description={skill.description}
-                    icon={<Code aria-hidden className="size-4 text-muted" />}
+                    icon={<SkillIcon skillId={skill.id} />}
                     title={
                       <>
                         <span className="truncate">{skill.name}</span>

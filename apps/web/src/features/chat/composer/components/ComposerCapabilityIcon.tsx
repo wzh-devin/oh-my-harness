@@ -1,6 +1,7 @@
-import { BookOpen, FilePlus, Terminal } from '@gravity-ui/icons'
+import { FilePlus, Terminal } from '@gravity-ui/icons'
 import { PluginIcon } from '../../../settings/plugins/components/PluginIcon.tsx'
 import { McpIcon } from '../../../settings/mcp/components/McpIcon.tsx'
+import { SkillIcon } from '../../../settings/skills/components/SkillIcon.tsx'
 import {
   COMPOSER_CAPABILITY_KIND,
   type ComposerCapabilityKind,
@@ -9,7 +10,6 @@ import {
 const ICONS = {
   [COMPOSER_CAPABILITY_KIND.ATTACHMENT]: FilePlus,
   [COMPOSER_CAPABILITY_KIND.COMMAND]: Terminal,
-  [COMPOSER_CAPABILITY_KIND.SKILL]: BookOpen,
 }
 
 /** 按稳定能力身份展示图标，菜单、草稿和历史消息保持一致。 */
@@ -28,6 +28,8 @@ export function ComposerCapabilityIcon({
     )
   if (kind === COMPOSER_CAPABILITY_KIND.MCP)
     return <McpIcon serverId={sourceId} className={className} />
+  if (kind === COMPOSER_CAPABILITY_KIND.SKILL)
+    return <SkillIcon skillId={sourceId} composer className={className} />
   const Icon = ICONS[kind]
   return <Icon aria-hidden className={className} />
 }
