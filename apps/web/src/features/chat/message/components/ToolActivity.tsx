@@ -17,7 +17,7 @@ import type {
   ChatAssistantStatus,
   ChatMessageActivity,
   ChatMessageTool,
-} from '../../data/chat-types.ts'
+} from '../../types/chat-types.ts'
 import {
   getToolGroupLabel,
   getToolActivitySummary,

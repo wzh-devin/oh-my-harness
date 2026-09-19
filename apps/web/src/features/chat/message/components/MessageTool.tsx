@@ -16,7 +16,7 @@ import {
   ToolFallbackRoot,
   ToolFallbackTrigger,
 } from '../../../../components/assistant-ui/index.ts'
-import type { ChatMessageTool } from '../../data/chat-types.ts'
+import type { ChatMessageTool } from '../../types/chat-types.ts'
 import { useChatWorkspace } from '../../workspace/index.ts'
 import {
   getBashOutcomeLabel,

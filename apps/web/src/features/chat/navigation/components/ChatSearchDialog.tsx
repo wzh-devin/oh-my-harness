@@ -1,7 +1,7 @@
 import { Command } from '@agile-avocation/ui-pro/command'
 import { Comment, Magnifier } from '@gravity-ui/icons'
 import { Kbd } from '@heroui/react'
-import type { ChatThread } from '../../data/chat-types.ts'
+import type { ChatThread } from '../../types/chat-types.ts'
 
 interface ChatSearchDialogProps {
   isOpen: boolean

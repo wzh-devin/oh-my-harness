@@ -3,9 +3,10 @@ import { CHAT_ASSISTANT_STATUS, MESSAGE_ROLE } from '@oh-my-harness/shared'
 import { ChatMessage as ChatMessagePrimitive } from '@agile-avocation/ui-pro/chat-message'
 import { ChatSources } from '@agile-avocation/ui-pro/chat-source'
 import { TextShimmer } from '@agile-avocation/ui-pro/text-shimmer'
-import type { ChatMessage } from '../../data/chat-types.ts'
+import type { ChatMessage } from '../../types/chat-types.ts'
 import { ChatAttachmentList } from '../../composer/components/ChatAttachmentList.tsx'
 import { ComposerContextBar } from '../../composer/components/ComposerContextBar.tsx'
+import { MessageTokenUsage } from './MessageTokenUsage.tsx'
 import { MessageActions } from './MessageActions.tsx'
 import { MessageMarkdown } from './MessageMarkdown.tsx'
 import { MessageSource } from './MessageSource.tsx'
@@ -55,6 +56,14 @@ export function ThreadMessage({ compact, message }: ThreadMessageProps) {
         />
         <ChatMessagePrimitive.Body>
           <ToolActivity activity={message.activity} status={message.status} />
+          {message.tokenUsage &&
+          message.status === CHAT_ASSISTANT_STATUS.COMPLETE ? (
+            <MessageTokenUsage
+              usage={message.tokenUsage}
+              modelId={message.modelId}
+              providerId={message.providerId}
+            />
+          ) : null}
         </ChatMessagePrimitive.Body>
       </ChatMessagePrimitive.Assistant>
     )
@@ -150,7 +159,13 @@ export function ThreadMessage({ compact, message }: ThreadMessageProps) {
             ))}
 
             {message.actions ? (
-              <MessageActions compact={compact} variant={message.actions} />
+              <MessageActions
+                compact={compact}
+                variant={message.actions}
+                tokenUsage={message.tokenUsage}
+                modelId={message.modelId}
+                providerId={message.providerId}
+              />
             ) : null}
           </>
         ) : null}

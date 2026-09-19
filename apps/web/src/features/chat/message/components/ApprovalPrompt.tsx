@@ -3,7 +3,7 @@ import { CHAT_TOOL_KIND } from '@oh-my-harness/shared'
 import { useEffect } from 'react'
 import { Button, Kbd } from '@heroui/react'
 import { FileTextIcon, HandIcon, PencilIcon, TerminalIcon } from 'lucide-react'
-import type { ChatMessageTool } from '../../data/chat-types.ts'
+import type { ChatMessageTool } from '../../types/chat-types.ts'
 import type { ApprovalDecision } from '../types/approval.ts'
 import { getToolApprovalPresentation } from '../utils/tool-display.ts'
 

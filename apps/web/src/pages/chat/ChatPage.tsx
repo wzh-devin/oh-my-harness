@@ -200,6 +200,7 @@ export function ChatPage({
             <ChatComposer
               activePermission={activePermission}
               contextUsage={thread.contextUsage}
+              tokenUsage={thread.tokenUsage}
               error={error}
               fixedWorkspaceId={thread.workspaceId ?? undefined}
               initialModelId={thread.modelId}

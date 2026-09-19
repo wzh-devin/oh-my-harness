@@ -9,9 +9,11 @@ export const contextUsagePercent = (
   contextWindow: number,
 ) => Math.min(100, (usedTokens / contextWindow) * 100)
 
-/** 避免把真实存在的低占用显示成 0%。 */
-export const formatContextUsagePercent = (percent: number) =>
-  percent > 0 && percent < 1 ? '<1%' : `${Math.round(percent)}%`
+/** 未知占用显示占位百分比，避免与零占用或真实低占用混淆。 */
+export const formatContextUsagePercent = (percent: number | undefined) => {
+  if (percent === undefined) return '—%'
+  return percent > 0 && percent < 1 ? '<1%' : `${Math.round(percent)}%`
+}
 
 /** 使用稳定的 K/M 单位展示近似 token 数。 */
 export const formatContextTokens = (tokens: number) =>

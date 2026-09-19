@@ -3,7 +3,7 @@ import type {
   ChatMessageActivityPart,
   ChatMessageTool,
   ChatThread,
-} from '../../data/index.ts'
+} from '../../types/chat-types.ts'
 import {
   CHAT_ASSISTANT_STATUS,
   MESSAGE_PART_TYPE,
@@ -95,6 +95,9 @@ export const toChatMessage = (message: AgentSessionMessageVo): ChatMessage => ({
       ? CHAT_ASSISTANT_STATUS.COMPLETE
       : undefined,
   text: message.content,
+  tokenUsage: message.tokenUsage,
+  modelId: message.modelId,
+  providerId: message.providerId,
   tools: message.tools?.map(toChatTool),
 })
 
@@ -116,6 +119,9 @@ const toActivityMessage = (
   id: `activity-${message.id}`,
   role: MESSAGE_ROLE.ASSISTANT,
   status: message.status,
+  tokenUsage: message.tokenUsage,
+  modelId: message.modelId,
+  providerId: message.providerId,
 })
 
 const mergeActivityMessage = (
@@ -124,6 +130,9 @@ const mergeActivityMessage = (
   source: AgentSessionMessageVo,
 ): ChatMessage => ({
   ...activityMessage,
+  tokenUsage: message.tokenUsage,
+  modelId: message.modelId,
+  providerId: message.providerId,
   activity: {
     ...activityMessage.activity,
     parts: [

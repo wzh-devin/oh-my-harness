@@ -21,6 +21,14 @@ export interface AgentSessionVo {
   workspaceId: null | string
 }
 
+export interface TokenUsageVo {
+  cacheRead: number
+  cacheWrite: number
+  input: number
+  output: number
+  total: number
+}
+
 export interface ContextUsageVo {
   contextWindow: number
   messageTokens: number
@@ -43,6 +51,9 @@ export interface AgentSessionDetailVo extends AgentSessionVo {
 }
 
 export interface AgentSessionMessageVo {
+  modelId?: string
+  providerId?: string
+  tokenUsage?: TokenUsageVo
   attachments?: AgentSessionMessageAttachmentVo[]
   content: string
   contextItems?: AgentSessionMessageContextItemVo[]
@@ -81,6 +92,7 @@ export type AgentSessionMessagePartVo =
   | { tool: AgentSessionToolVo; type: typeof MESSAGE_PART_TYPE.TOOL }
 
 export interface AgentSessionMessagePageVo {
+  tokenUsage: TokenUsageVo
   items: AgentSessionMessageVo[]
   nextCursor: number | null
   todos?: AgentTodoItemVo[]

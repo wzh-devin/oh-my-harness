@@ -11,7 +11,7 @@ import type {
   ChatAssistantStatus,
   ChatMessageActivityPart,
   ChatMessageTool,
-} from '../../data/chat-types.ts'
+} from '../../types/chat-types.ts'
 
 export type ToolActivityDisplayPart =
   | Exclude<ChatMessageActivityPart, { type: typeof MESSAGE_PART_TYPE.TOOL }>

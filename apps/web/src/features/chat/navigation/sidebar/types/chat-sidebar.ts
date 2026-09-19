@@ -1,4 +1,4 @@
-import type { ChatActivePage, ChatThread } from '../../../data/chat-types.ts'
+import type { ChatActivePage, ChatThread } from '../../../types/chat-types.ts'
 import type { ChatWorkspace } from '../../../workspace/data/workspace-data.ts'
 
 export interface ChatSidebarProps {

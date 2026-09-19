@@ -15,8 +15,8 @@ import {
 } from '@gravity-ui/icons'
 import { Button, Dropdown, Tooltip } from '@heroui/react'
 import { DestructiveActionDialog } from '../../../../../components/index.ts'
-import { CHAT_NAV_ITEMS } from '../../../data/chat-navigation.ts'
-import type { ChatThread } from '../../../data/chat-types.ts'
+import { CHAT_NAV_ITEMS } from '../../../constants/chat-navigation.ts'
+import type { ChatThread } from '../../../types/chat-types.ts'
 import type { ChatSidebarProps } from '../types/chat-sidebar.ts'
 
 interface SidebarContentsProps extends Omit<

@@ -3,8 +3,12 @@ export type {
   ChatSubmitPayload,
   ComposerContextItem,
 } from './composer/index.ts'
-export { SUGGESTED_PROMPTS } from './data/index.ts'
-export type { ChatActivePage, ChatThread, ChatTodoItem } from './data/index.ts'
+export { SUGGESTED_PROMPTS } from './constants/chat-navigation.ts'
+export type {
+  ChatActivePage,
+  ChatThread,
+  ChatTodoItem,
+} from './types/chat-types.ts'
 export { ApprovalPrompt, ThreadMessage } from './message/index.ts'
 export type { ApprovalDecision } from './message/index.ts'
 export {

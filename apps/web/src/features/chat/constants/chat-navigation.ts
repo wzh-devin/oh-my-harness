@@ -1,6 +1,6 @@
 import { SquarePlus } from '@gravity-ui/icons'
 import { CHAT_ROUTE_KIND } from '@oh-my-harness/shared'
-import type { ChatNavItem, ChatSearchMode } from './chat-types.ts'
+import type { ChatNavItem, ChatSearchMode } from '../types/chat-types.ts'
 
 export const CHAT_NAV_ITEMS: readonly ChatNavItem[] = [
   {

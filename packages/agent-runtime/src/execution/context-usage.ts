@@ -17,7 +17,7 @@ export interface ContextUsageSnapshot {
 }
 
 interface PersistedContextUsageSnapshot extends ContextUsageSnapshot {
-  schemaVersion: 1
+  schemaVersion: 3
 }
 
 const tokenFields = [
@@ -60,17 +60,18 @@ export const calculateContextUsage = (
   }
 }
 
-/** 在 JSONL 边界校验快照，非法版本或模型不匹配时忽略。 */
+/** 恢复上次运行的合法快照，选择其他模型不会让已发生的上下文失效。 */
 export const parseContextUsageSnapshot = (
   value: unknown,
-  model: Pick<ContextUsageSnapshot, 'modelId' | 'providerId'>,
 ): ContextUsageSnapshot | undefined => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return
   const snapshot = value as Record<string, unknown>
   if (
-    snapshot.schemaVersion !== 1 ||
-    snapshot.modelId !== model.modelId ||
-    snapshot.providerId !== model.providerId ||
+    snapshot.schemaVersion !== 3 ||
+    typeof snapshot.modelId !== 'string' ||
+    !snapshot.modelId.trim() ||
+    typeof snapshot.providerId !== 'string' ||
+    !snapshot.providerId.trim() ||
     !tokenFields.every(
       (field) =>
         Number.isSafeInteger(snapshot[field]) &&
@@ -86,4 +87,4 @@ export const parseContextUsageSnapshot = (
 
 export const persistedContextUsageSnapshot = (
   snapshot: ContextUsageSnapshot,
-): PersistedContextUsageSnapshot => ({ ...snapshot, schemaVersion: 1 })
+): PersistedContextUsageSnapshot => ({ ...snapshot, schemaVersion: 3 })

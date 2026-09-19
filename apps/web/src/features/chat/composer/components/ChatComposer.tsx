@@ -49,7 +49,10 @@ import { ComposerModelMenu } from './ComposerModelMenu.tsx'
 import { ComposerPermissionMenu } from './ComposerPermissionMenu.tsx'
 import { ChatAttachmentList } from './ChatAttachmentList.tsx'
 import { ContextUsageMeter } from './ContextUsageMeter.tsx'
-import type { ChatContextUsage } from '../../data/index.ts'
+import type {
+  ChatContextUsage,
+  ChatTokenUsage,
+} from '../../types/chat-types.ts'
 import { getNonImageClipboardFiles } from '../utils/clipboard-files.ts'
 import { useMcpServers } from '../../../settings/mcp/hooks/use-mcp-servers.ts'
 import { useInstalledPlugins } from '../../../settings/plugins/hooks/use-installed-plugins.ts'
@@ -74,6 +77,7 @@ interface ChatComposerProps {
   activePermission?: PermissionId
   className?: string
   contextUsage?: ChatContextUsage
+  tokenUsage?: ChatTokenUsage
   error?: string
   fixedWorkspaceId?: string
   initialModelId?: string
@@ -103,6 +107,7 @@ export function ChatComposer({
   activePermission,
   className,
   contextUsage,
+  tokenUsage,
   error,
   fixedWorkspaceId,
   initialModelId = 'gpt-5.4',
@@ -160,12 +165,6 @@ export function ChatComposer({
   const selectedProvider = modelGroups.find((group) =>
     group.models.some((model) => model.key === selectedModelKey),
   )
-  const visibleContextUsage =
-    contextUsage &&
-    contextUsage.modelId === selectedModel?.id &&
-    contextUsage.providerId === selectedProvider?.id
-      ? contextUsage
-      : undefined
   const selectedThinkingLevel = resolveModelThinkingLevel(
     selectedModel?.thinkingLevels ?? ['off'],
     thinkingLevel,
@@ -645,8 +644,11 @@ export function ChatComposer({
                   </PromptInput.ToolbarStart>
 
                   <PromptInput.ToolbarEnd className="shrink-0 gap-2">
-                    {visibleContextUsage ? (
-                      <ContextUsageMeter usage={visibleContextUsage} />
+                    {contextUsage || tokenUsage ? (
+                      <ContextUsageMeter
+                        usage={contextUsage}
+                        tokenUsage={tokenUsage}
+                      />
                     ) : null}
                     <PromptInput.Send
                       aria-label={isGenerating ? '停止生成' : '发送消息'}

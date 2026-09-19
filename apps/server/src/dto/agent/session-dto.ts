@@ -33,6 +33,14 @@ export interface AgentSessionDto {
   workspaceId: null | string
 }
 
+export interface TokenUsageDto {
+  cacheRead: number
+  cacheWrite: number
+  input: number
+  output: number
+  total: number
+}
+
 export interface ContextUsageDto {
   contextWindow: number
   messageTokens: number
@@ -55,6 +63,9 @@ export interface AgentSessionDetailDto extends AgentSessionDto {
 }
 
 export interface AgentSessionMessageDto {
+  modelId?: string
+  providerId?: string
+  tokenUsage?: TokenUsageDto
   attachments?: AgentSessionMessageAttachmentDto[]
   content: string
   contextItems?: AgentSessionMessageContextItemDto[]
@@ -91,6 +102,7 @@ export type AgentSessionMessagePartDto =
   | { tool: AgentSessionToolDto; type: typeof MESSAGE_PART_TYPE.TOOL }
 
 export interface AgentSessionMessagePageDto {
+  tokenUsage: TokenUsageDto
   items: AgentSessionMessageDto[]
   nextCursor: number | null
   todos?: AgentTodoItemDto[]

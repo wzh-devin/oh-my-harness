@@ -1,5 +1,5 @@
 import { ChatSource } from '@agile-avocation/ui-pro/chat-source'
-import type { ChatMessageSource } from '../../data/chat-types.ts'
+import type { ChatMessageSource } from '../../types/chat-types.ts'
 
 interface MessageSourceProps {
   source: ChatMessageSource

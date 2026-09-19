@@ -50,6 +50,11 @@ import {
   type AgentTrajectoryRecord,
 } from '../trajectory/agent-trajectory.ts'
 import { SESSION_CUSTOM_TYPE } from './session-custom-type.ts'
+import {
+  addTokenUsage,
+  emptyTokenUsage,
+  type TokenUsage,
+} from '../execution/token-usage.ts'
 
 export interface AgentSessionModelConfig {
   modelId: string
@@ -110,6 +115,9 @@ export interface AgentSessionMessage {
   role: MessageRole
   seq: number
   stopReason?: string
+  modelId?: string
+  providerId?: string
+  tokenUsage?: TokenUsage
   timestamp: number
   tools?: AgentSessionTool[]
 }
@@ -132,6 +140,7 @@ export type AgentSessionMessagePart =
   | { tool: AgentSessionTool; type: typeof MESSAGE_PART_TYPE.TOOL }
 
 export interface AgentSessionMessagePage {
+  tokenUsage: TokenUsage
   items: AgentSessionMessage[]
   nextCursor: number | null
   todos?: TodoItem[]
@@ -455,7 +464,11 @@ function toMessage(
     role: message.role,
     seq: entry.seq,
     ...(message.role === MESSAGE_ROLE.ASSISTANT
-      ? { stopReason: message.stopReason }
+      ? {
+          stopReason: message.stopReason,
+          modelId: message.model,
+          providerId: message.provider,
+        }
       : {}),
     timestamp: message.timestamp,
     ...(tools.length ? { tools } : {}),
@@ -619,7 +632,6 @@ export class AgentSessionService {
         contextUsageEntry?.type === 'custom'
           ? contextUsageEntry.data
           : undefined,
-        opened.config,
       )
       return {
         ...toInfo(opened.metadata, opened.config, name, opened.archived),
@@ -725,7 +737,18 @@ export class AgentSessionService {
       // Run 快照保留名称，待审批或中断、尚无 toolResult 时也能恢复可读标签。
       const toolLabels = new Map<string, string>()
       let currentLabels: Record<string, unknown> = {}
+      const tokenUsage = emptyTokenUsage()
+      const runUsageByEntry = new Map<string, TokenUsage>()
+      let runUsage = emptyTokenUsage()
+      let lastAssistantId: string | undefined
       for (const entry of branchEntries.toReversed()) {
+        if (
+          entry.type === 'custom' &&
+          entry.customType === SESSION_CUSTOM_TYPE.RUN_STARTED
+        ) {
+          runUsage = emptyTokenUsage()
+          lastAssistantId = undefined
+        }
         if (
           entry.type === 'custom' &&
           entry.customType === SESSION_CUSTOM_TYPE.RUN_POLICY
@@ -740,6 +763,11 @@ export class AgentSessionService {
           entry.type === 'message' &&
           entry.message.role === 'assistant'
         ) {
+          addTokenUsage(tokenUsage, entry.message.usage)
+          addTokenUsage(runUsage, entry.message.usage)
+          if (lastAssistantId) runUsageByEntry.delete(lastAssistantId)
+          lastAssistantId = entry.id
+          runUsageByEntry.set(entry.id, runUsage)
           for (const content of entry.message.content) {
             if (content.type !== 'toolCall') continue
             const label = currentLabels[content.name]
@@ -752,12 +780,18 @@ export class AgentSessionService {
         if (options.before !== undefined && entry.seq >= options.before)
           continue
         const message = toMessage(entry, toolResults, toolLabels)
-        if (message) candidates.push(message)
+        if (message) {
+          const runTokenUsage = runUsageByEntry.get(entry.id)
+          candidates.push(
+            runTokenUsage ? { ...message, tokenUsage: runTokenUsage } : message,
+          )
+        }
         if (candidates.length > options.limit) break
       }
       const selected = candidates.slice(0, options.limit)
       return {
         items: selected.toReversed(),
+        tokenUsage,
         nextCursor:
           candidates.length > options.limit
             ? (selected.at(-1)?.seq ?? null)

@@ -3,7 +3,7 @@ import { CHAT_ROUTE_KIND } from '@oh-my-harness/shared'
 import { Navbar } from '@agile-avocation/ui-pro/navbar'
 import { Magnifier } from '@gravity-ui/icons'
 import { Button, Kbd, Tooltip } from '@heroui/react'
-import type { ChatActivePage } from '../../data/chat-types.ts'
+import type { ChatActivePage } from '../../types/chat-types.ts'
 
 const NAV_TITLES: Record<
   Exclude<ChatActivePage['kind'], typeof CHAT_ROUTE_KIND.THREAD>,

@@ -17,7 +17,7 @@ import type {
   ChatMessage,
   ChatMessageActivityPart,
   ChatThread,
-} from '../../data/index.ts'
+} from '../../types/chat-types.ts'
 import type { ApprovalDecision } from '../../message/index.ts'
 import {
   abortAgentSession,
@@ -306,9 +306,13 @@ export function useAgentSessions() {
       const messages = []
       let before: number | undefined
       let todos: ChatThread['todos']
+      let tokenUsage: ChatThread['tokenUsage']
       do {
         const page = await listAgentSessionMessages(sessionId, before)
-        if (before === undefined) todos = page.todos
+        if (before === undefined) {
+          todos = page.todos
+          tokenUsage = page.tokenUsage
+        }
         messages.push(...page.items)
         before = page.nextCursor ?? undefined
       } while (before !== undefined)
@@ -319,6 +323,7 @@ export function useAgentSessions() {
       updateThread(sessionId, (thread) => ({
         ...thread,
         messages: chatMessages,
+        tokenUsage,
         preview: chatMessages.at(-1)?.text ?? thread.preview,
         todos,
       }))
@@ -336,11 +341,8 @@ export function useAgentSessions() {
           return existing
             ? {
                 ...next,
-                contextUsage:
-                  existing.modelId === session.modelId &&
-                  existing.providerId === session.providerId
-                    ? existing.contextUsage
-                    : undefined,
+                contextUsage: existing.contextUsage,
+                tokenUsage: existing.tokenUsage,
                 messages: existing.messages,
                 preview: existing.preview || next.preview,
                 todos: existing.todos,
@@ -431,7 +433,10 @@ export function useAgentSessions() {
             ...current,
             [sessionId]: current[sessionId] ?? pendingApproval,
           }))
-          const next = toChatThread(session)
+          const next = {
+            ...toChatThread(session),
+            tokenUsage: firstPage.tokenUsage,
+          }
           const firstMessages = firstPage.items
           setThreads((threads) => {
             const existing = threads.find((thread) => thread.id === sessionId)
@@ -544,7 +549,6 @@ export function useAgentSessions() {
         const session = await updateAgentSessionModel(sessionId, input)
         updateThread(sessionId, (thread) => ({
           ...thread,
-          contextUsage: undefined,
           modelId: session.modelId,
           providerId: session.providerId,
         }))

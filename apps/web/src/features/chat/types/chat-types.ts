@@ -117,6 +117,8 @@ export interface ChatMessageActivity {
 }
 
 export interface ChatMessage {
+  modelId?: string
+  providerId?: string
   actions?: 'full' | 'minimal'
   activity?: ChatMessageActivity
   attachments?: readonly ChatMessageAttachment[]
@@ -140,9 +142,11 @@ export interface ChatMessage {
   status?: ChatAssistantStatus
   text?: string
   tools?: readonly ChatMessageTool[]
+  tokenUsage?: ChatTokenUsage
 }
 
 export interface ChatThread {
+  tokenUsage?: ChatTokenUsage
   archived: boolean
   contextUsage?: ChatContextUsage | undefined
   id: string
@@ -160,6 +164,14 @@ export interface ChatThread {
     email: string
     name: string
   }
+}
+
+export interface ChatTokenUsage {
+  cacheRead: number
+  cacheWrite: number
+  input: number
+  output: number
+  total: number
 }
 
 export interface ChatContextUsage {

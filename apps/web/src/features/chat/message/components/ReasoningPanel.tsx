@@ -4,7 +4,7 @@ import {
   ReasoningText,
   ReasoningTrigger,
 } from '../../../../components/assistant-ui/index.ts'
-import type { ChatMessageReasoning } from '../../data/chat-types.ts'
+import type { ChatMessageReasoning } from '../../types/chat-types.ts'
 
 interface ReasoningPanelProps {
   reasoning: ChatMessageReasoning
