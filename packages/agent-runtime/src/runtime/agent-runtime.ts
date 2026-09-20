@@ -20,6 +20,7 @@ import {
   BUILTIN_TOOL_NAME,
   createSkillResourceTool,
   createTodoWriteTool,
+  createReadToolResultTool,
   createWorkspaceTools,
   createMcpTools,
   type McpService,
@@ -54,6 +55,12 @@ import {
 import { AgentCapabilityService } from '../capability/capability-service.ts'
 import { AttachmentStore } from '../attachment/attachment-store.ts'
 import { compactSessionIfNeeded } from '../compaction/session-compaction.ts'
+import {
+  assertContextFits,
+  buildContextView,
+  contextBudget,
+  isTaskMessage,
+} from '../compaction/context-view.ts'
 import { AgentRuntimeError } from '../error/agent-runtime-error.ts'
 import { toolFilePath } from '../execution/tool-file-path.ts'
 import {
@@ -771,29 +778,21 @@ export class AgentRuntime {
             )
           : createUserMessage(input.content)
         : undefined
-      let entries = await this.repairInterruptedTools(
+      const entries = await this.repairInterruptedTools(
         opened.session,
         opened.entries,
         id,
       )
-      try {
-        entries = await compactSessionIfNeeded({
-          entries,
-          ...(incoming ? { incoming } : {}),
-          model,
-          models: this.models.models,
-          session: opened.session,
-          signal: operation.controller.signal,
-        })
-      } catch (error) {
-        await this.sessions.changed(id)
-        throw error
-      }
-      if (entries !== opened.entries) await this.sessions.changed(id)
       const context = buildSessionContext(entries)
-      const currentTodos = incoming
-        ? undefined
-        : projectRecoverableTodos(entries)
+      let currentTodos = incoming ? undefined : projectRecoverableTodos(entries)
+      const taskEntry = [...entries]
+        .reverse()
+        .find(
+          (entry) => entry.type === 'message' && isTaskMessage(entry.message),
+        )
+      const task =
+        incoming ??
+        (taskEntry?.type === 'message' ? taskEntry.message : undefined)
       if (!incoming) {
         const last = context.messages.at(-1)
         if (
@@ -891,6 +890,7 @@ export class AgentRuntime {
             todos: snapshot,
           },
         )
+        currentTodos = snapshot
         this.sessions.changed(id)
         events.push({
           todos: snapshot,
@@ -902,6 +902,27 @@ export class AgentRuntime {
         ...(workspaceTools?.tools ?? []),
         ...(skillResourceTool ? [skillResourceTool] : []),
         todoTool,
+        createReadToolResultTool(async (toolCallId) => {
+          // ponytail: 按需扫描当前分支；回读成为热点时再按 toolCallId 建索引。
+          const result = (
+            await opened.session.findEntriesOnBranch({
+              type: 'message',
+              order: 'newestFirst',
+            })
+          ).find(
+            (entry) =>
+              entry.type === 'message' &&
+              entry.message.role === 'toolResult' &&
+              entry.message.toolCallId === toolCallId,
+          )
+          return result?.type === 'message' &&
+            result.message.role === 'toolResult'
+            ? result.message.content
+                .filter((block) => block.type === 'text')
+                .map((block) => block.text)
+                .join('\n')
+            : undefined
+        }, contextBudget(model).toolResultChars),
       ]
       if (tools.length) {
         await opened.session.appendCustomEntry(SESSION_CUSTOM_TYPE.RUN_POLICY, {
@@ -917,13 +938,9 @@ export class AgentRuntime {
           runId,
         })
       }
-      const systemPrompt = buildSystemPrompt({
-        permission,
-        currentTodos,
-        hasWorkspaceTools: Boolean(workspaceTools),
-        skills: resolved?.catalog.skills ?? [],
-      })
+      const systemPrompt = buildSystemPrompt()
       const contextMessages: AgentMessage[] = []
+      const pinnedContext: AgentMessage[] = []
       const appendContext = (
         source: string,
         content: string,
@@ -939,19 +956,22 @@ export class AgentRuntime {
                 (message.details as { source?: string } | undefined)?.source ===
                   source,
             )
-          if (previous?.role === 'custom' && previous.content === content)
+          if (previous?.role === 'custom' && previous.content === content) {
+            pinnedContext.push(previous)
             return
+          }
         }
-        if (content)
-          contextMessages.push(
-            createCustomMessage(
-              SESSION_CUSTOM_TYPE.AGENT_CONTEXT,
-              content,
-              false,
-              { source, snapshot },
-              Date.now(),
-            ),
+        if (content) {
+          const message = createCustomMessage(
+            SESSION_CUSTOM_TYPE.AGENT_CONTEXT,
+            content,
+            false,
+            { source, snapshot },
+            Date.now(),
           )
+          contextMessages.push(message)
+          if (source !== 'task-recovery') pinnedContext.push(message)
+        }
       }
       appendContext(
         'runtime',
@@ -1067,12 +1087,50 @@ export class AgentRuntime {
         previousHeader?.type === 'custom'
           ? JSON.stringify(previousHeader.data)
           : ''
-      const agent = new Agent({
+      assertContextFits(
+        {
+          messages: buildContextView(
+            [],
+            task,
+            currentTodos,
+            contextBudget(model).toolResultChars,
+            pinnedContext,
+          ),
+          systemPrompt,
+          tools,
+        },
+        model,
+      )
+      let contextError: unknown
+      const agent: Agent = new Agent({
+        transformContext: async (messages) => {
+          try {
+            const next = await compactSessionIfNeeded({
+              messages,
+              task,
+              todos: currentTodos,
+              pinned: pinnedContext,
+              systemPrompt,
+              tools,
+              model,
+              models: this.models.models,
+              session: opened.session,
+              signal: operation.controller.signal,
+            })
+            messages.splice(0, messages.length, ...next)
+            agent.state.messages = [...next]
+            return next
+          } catch (error) {
+            contextError = error
+            throw error
+          }
+        },
         beforeToolCall: async (call, signal) =>
           mcpTools?.has(call.toolCall.name)
             ? mcpTools.beforeToolCall(call, signal)
             : call.toolCall.name === BUILTIN_TOOL_NAME.LOAD_SKILL_RESOURCE ||
-                call.toolCall.name === BUILTIN_TOOL_NAME.TODO_WRITE
+                call.toolCall.name === BUILTIN_TOOL_NAME.TODO_WRITE ||
+                call.toolCall.name === BUILTIN_TOOL_NAME.READ_TOOL_RESULT
               ? undefined
               : workspaceTools?.beforeToolCall(call, signal),
         initialState: {
@@ -1085,6 +1143,9 @@ export class AgentRuntime {
         convertToLlm,
         sessionId: id,
         streamFn: async (streamModel, streamContext, options) => {
+          const { outputTokens } = contextBudget(streamModel)
+          streamModel = { ...streamModel, maxTokens: outputTokens }
+          options = { ...options, maxTokens: outputTokens }
           const header = redactTrajectoryValue({
             config: {
               provider: streamModel.provider,
@@ -1153,6 +1214,7 @@ export class AgentRuntime {
         publishTrajectory,
         trajectory,
         contextMessages,
+        contextError: () => contextError,
         session: opened.session,
         sessionId: id,
       }).finally(() => this.release(id, operation))
@@ -1195,6 +1257,7 @@ export class AgentRuntime {
     publishTrajectory: (active?: boolean) => Promise<void>
     trajectory: TrajectoryStream
     contextMessages: AgentMessage[]
+    contextError: () => unknown
     session: Awaited<ReturnType<AgentSessionService['open']>>['session']
     sessionId: string
   }) {
@@ -1412,11 +1475,13 @@ export class AgentRuntime {
         return
       }
       if (finalMessage.stopReason === 'error') {
-        terminal = {
-          code: 'AGENT_RUN_FAILED',
-          message: '模型调用失败。',
-          type: AGENT_RUN_EVENT_TYPE.ERROR,
-        }
+        terminal = options.contextError()
+          ? runtimeEventError(options.contextError())
+          : {
+              code: 'AGENT_RUN_FAILED',
+              message: '模型调用失败。',
+              type: AGENT_RUN_EVENT_TYPE.ERROR,
+            }
         return
       }
       if (finalMessage.stopReason === 'pending') {

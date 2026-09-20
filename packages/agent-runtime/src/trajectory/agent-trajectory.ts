@@ -570,6 +570,13 @@ export const projectAgentTrajectory = (options: {
         const preview = redactTrajectoryText(assistantResultText(message))
         const requestRecord =
           openRequestIndex === undefined ? undefined : records[openRequestIndex]
+        if (!requestRecord) {
+          // 上下文准备失败或提前取消时，Pi 仍会落一条终止消息，未发起模型请求。
+          requireFact(
+            message.stopReason === 'error' || message.stopReason === 'aborted',
+          )
+          continue
+        }
         requireFact(
           requestRecord?.kind === AGENT_TRAJECTORY_RECORD_KIND.REQUEST,
         )

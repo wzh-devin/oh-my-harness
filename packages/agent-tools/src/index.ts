@@ -6,6 +6,7 @@ export {
   type SkillResourceRoot,
 } from './skills/read-resource.ts'
 export { createBashTool, parseBashInput } from './tools/bash.ts'
+export { createReadToolResultTool } from './tools/read-tool-result.ts'
 export type { BashInput, BashOutcome } from './tools/bash.ts'
 export {
   createTodoWriteTool,

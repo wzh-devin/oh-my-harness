@@ -5,6 +5,7 @@ export const BUILTIN_TOOL_NAME = {
   BASH: 'bash',
   LOAD_SKILL_RESOURCE: 'load_skill_resource',
   TODO_WRITE: 'todo_write',
+  READ_TOOL_RESULT: 'read_tool_result',
 } as const
 export type BuiltinToolName =
   (typeof BUILTIN_TOOL_NAME)[keyof typeof BUILTIN_TOOL_NAME]

@@ -97,7 +97,7 @@ const resultText = (
 /** 在固定工作区中执行一条完整 Bash 命令；审批由本轮 Policy 决定。 */
 export const createBashTool = (cwd: string, fullAccess = false): AgentTool => ({
   description:
-    'Run a complete Bash command in the workspace. Pipes, redirections, conditionals, and multiple commands are supported. ' +
+    'Run a complete Bash command in the workspace for builds, tests, Git, directory listing, file discovery, content search, or scripts that perform computation or format conversion. To inspect known file contents, use read, including when inspecting several files or a line range; do not batch cat/head/tail/sed reads or printing loops through bash. A targeted command fallback is allowed when read reports a content limitation; permission denials must never be bypassed. Pipes, redirections, conditionals, and multiple commands are supported for command tasks. ' +
     (fullAccess
       ? 'Calls are authorized by the full-access run policy.'
       : 'Every call requires user approval.'),
