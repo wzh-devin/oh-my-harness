@@ -182,7 +182,7 @@ export function ProviderModelCatalog({
                     <Input
                       max={model.maxOutputTokensLimit}
                       min={1}
-                      placeholder="默认 16384"
+                      placeholder="使用模型上限"
                       step={1}
                       type="number"
                       value={model.maxOutputTokens?.toString() ?? ''}
@@ -198,8 +198,8 @@ export function ProviderModelCatalog({
                     </FieldError>
                     <p className="px-1 text-[11px] leading-4 text-muted">
                       {model.maxOutputTokensLimit === undefined
-                        ? '留空使用默认值。'
-                        : `留空使用默认值；当前上限 ${model.maxOutputTokensLimit.toLocaleString()}。`}
+                        ? '留空使用模型上限。'
+                        : `留空使用模型上限 ${model.maxOutputTokensLimit.toLocaleString()}。`}
                     </p>
                   </TextField>
                   <Button

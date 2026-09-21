@@ -31,10 +31,7 @@ const emptyUsage: Usage = {
   totalTokens: 0,
 }
 
-const maxOutputTokensLimit = (model: {
-  contextWindow: number
-  maxTokens: number
-}) => Math.min(model.maxTokens, Math.floor(model.contextWindow / 4))
+const maxOutputTokensLimit = (model: { maxTokens: number }) => model.maxTokens
 
 function toMessage(
   message: CompletionMessage,

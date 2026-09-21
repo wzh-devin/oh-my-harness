@@ -19,24 +19,38 @@ type RequestContext = {
 
 export const contextBudget = (
   model: Model<Api>,
-  configuredMaxOutputTokens = 16_384,
+  configuredMaxOutputTokens?: number,
 ) => {
+  const safetyTokens = Math.min(4096, Math.ceil(model.contextWindow / 16))
   const outputTokens = Math.max(
     1,
+    Math.min(model.maxTokens, configuredMaxOutputTokens ?? model.maxTokens),
+  )
+  const hardInputTokens = Math.max(0, model.contextWindow - safetyTokens - 1)
+  const inputTokens = Math.min(
+    hardInputTokens,
+    Math.floor(model.contextWindow * 0.8),
+  )
+  const summaryOutputTokens = Math.max(
+    1,
     Math.min(
+      8192,
       model.maxTokens,
-      configuredMaxOutputTokens,
-      Math.max(1, Math.floor(model.contextWindow / 4)),
+      Math.max(1, Math.floor((model.contextWindow - safetyTokens) / 4)),
     ),
   )
-  const safetyTokens = Math.min(4096, Math.ceil(model.contextWindow / 16))
-  const inputTokens = Math.max(
-    0,
-    model.contextWindow - outputTokens - safetyTokens,
-  )
   return {
+    compactionRetries: 1,
+    contextWindow: model.contextWindow,
     outputTokens,
     inputTokens,
+    retainTokens: Math.min(
+      Math.floor(model.contextWindow * 0.16),
+      Math.max(0, inputTokens - 1),
+    ),
+    safetyTokens,
+    summaryOutputTokens,
+    summaryReserveTokens: Math.ceil(summaryOutputTokens / 0.8),
     toolResultChars: Math.max(1024, Math.min(16_000, inputTokens)),
   }
 }
@@ -79,13 +93,31 @@ export const requestTokenParts = (context: RequestContext) => {
 export const assertContextFits = (
   context: RequestContext,
   budget: ContextBudget,
+  reservedOutputTokens = 1,
 ) => {
-  if (requestTokenParts(context).usedTokens > budget.inputTokens)
+  const inputLimit = Math.max(
+    0,
+    budget.contextWindow - budget.safetyTokens - reservedOutputTokens,
+  )
+  const usedTokens = requestTokenParts(context).usedTokens
+  if (usedTokens > inputLimit)
     throw new AgentRuntimeError(
       'CONTEXT_TOO_LARGE',
       '当前消息超过模型上下文限制。',
       413,
     )
+  return usedTokens
+}
+
+/** 按当前完整输入动态收窄普通回答输出，避免输入和输出共同越过窗口。 */
+export const requestOutputTokens = (
+  context: RequestContext,
+  budget: ContextBudget,
+) => {
+  const usedTokens = assertContextFits(context, budget)
+  const availableTokens =
+    budget.contextWindow - budget.safetyTokens - usedTokens
+  return Math.max(1, Math.min(budget.outputTokens, availableTokens))
 }
 
 export const isTaskMessage = (message: AgentMessage) =>

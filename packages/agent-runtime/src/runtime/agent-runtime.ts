@@ -60,6 +60,7 @@ import {
   buildContextView,
   contextBudget,
   isTaskMessage,
+  requestOutputTokens,
 } from '../compaction/context-view.ts'
 import { AgentRuntimeError } from '../error/agent-runtime-error.ts'
 import { toolFilePath } from '../execution/tool-file-path.ts'
@@ -1192,7 +1193,7 @@ export class AgentRuntime {
         convertToLlm,
         sessionId: id,
         streamFn: async (streamModel, streamContext, options) => {
-          const { outputTokens } = budget
+          const outputTokens = requestOutputTokens(streamContext, budget)
           streamModel = { ...streamModel, maxTokens: outputTokens }
           options = { ...options, maxTokens: outputTokens }
           const header = redactTrajectoryValue({
