@@ -2,6 +2,8 @@ export const SESSION_CUSTOM_TYPE = {
   AGENT_CONTEXT: 'agent/context',
   APPROVAL_REQUESTED: 'approval/requested',
   APPROVAL_RESOLVED: 'approval/resolved',
+  CONTEXT_COMPACTION_COMPLETED: 'context/compaction-completed',
+  CONTEXT_COMPACTION_STARTED: 'context/compaction-started',
   CONTEXT_USAGE_SNAPSHOT: 'context_usage_snapshot',
   LLM_REQUEST_COMPLETED: 'llm/request-completed',
   LLM_REQUEST_STARTED: 'llm/request-started',
@@ -22,9 +24,18 @@ export type SessionCustomType =
 
 export const MESSAGE_PART_TYPE = {
   REASONING: 'reasoning',
+  RUNTIME_ACTIVITY: 'runtime-activity',
   TEXT: 'text',
   TOOL: 'tool',
 } as const
+
+export const CONTEXT_COMPACTION_STATUS = {
+  ABORTED: 'aborted',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+} as const
+export type ContextCompactionStatus =
+  (typeof CONTEXT_COMPACTION_STATUS)[keyof typeof CONTEXT_COMPACTION_STATUS]
 
 export const SESSION_TOOL_STATE = {
   INPUT_AVAILABLE: 'input-available',
@@ -42,6 +53,9 @@ export const AGENT_RUN_EVENT_TYPE = {
   TEXT_DELTA: 'text_delta',
   REASONING_DELTA: 'reasoning_delta',
   TODO_UPDATED: 'todo_updated',
+  CONTEXT_COMPACTION_STARTED: 'context_compaction_started',
+  CONTEXT_COMPACTION_COMPLETED: 'context_compaction_completed',
+  CONTEXT_USAGE_UPDATED: 'context_usage_updated',
   TOOL_START: 'tool_start',
   TOOL_END: 'tool_end',
   TOOL_APPROVAL_REQUIRED: 'tool_approval_required',

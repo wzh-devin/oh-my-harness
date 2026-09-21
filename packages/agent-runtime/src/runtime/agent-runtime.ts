@@ -562,10 +562,12 @@ export class AgentRuntime {
         )
       }
       operation.controller.signal.throwIfAborted()
-      const model = await this.models.resolveModel(
-        opened.config.providerId,
-        opened.config.modelId,
-      )
+      const { configuredMaxOutputTokens, model } =
+        await this.models.resolveAgentModel(
+          opened.config.providerId,
+          opened.config.modelId,
+        )
+      const budget = contextBudget(model, configuredMaxOutputTokens)
       const thinkingLevel = input?.thinkingLevel ?? 'off'
       if (!getSupportedThinkingLevels(model).includes(thinkingLevel)) {
         throw new AgentRuntimeError(
@@ -922,7 +924,7 @@ export class AgentRuntime {
                 .map((block) => block.text)
                 .join('\n')
             : undefined
-        }, contextBudget(model).toolResultChars),
+        }, budget.toolResultChars),
       ]
       if (tools.length) {
         await opened.session.appendCustomEntry(SESSION_CUSTOM_TYPE.RUN_POLICY, {
@@ -1093,15 +1095,33 @@ export class AgentRuntime {
             [],
             task,
             currentTodos,
-            contextBudget(model).toolResultChars,
+            budget.toolResultChars,
             pinnedContext,
           ),
           systemPrompt,
           tools,
         },
-        model,
+        budget,
       )
       let contextError: unknown
+      let lastContextUsage = ''
+      const publishContextUsage = async (
+        state: Parameters<typeof calculateContextUsage>[0],
+      ) => {
+        const contextUsage = calculateContextUsage(state, budget.inputTokens)
+        const persisted = persistedContextUsageSnapshot(contextUsage)
+        const serialized = JSON.stringify(persisted)
+        if (serialized === lastContextUsage) return
+        await opened.session.appendCustomEntry(
+          SESSION_CUSTOM_TYPE.CONTEXT_USAGE_SNAPSHOT,
+          persisted,
+        )
+        lastContextUsage = serialized
+        events.push({
+          contextUsage,
+          type: AGENT_RUN_EVENT_TYPE.CONTEXT_USAGE_UPDATED,
+        })
+      }
       const agent: Agent = new Agent({
         transformContext: async (messages) => {
           try {
@@ -1113,12 +1133,41 @@ export class AgentRuntime {
               systemPrompt,
               tools,
               model,
+              budget,
               models: this.models.models,
               session: opened.session,
               signal: operation.controller.signal,
+              onCompactionStarted: async (activity) => {
+                const activityId = await opened.session.appendCustomEntry(
+                  SESSION_CUSTOM_TYPE.CONTEXT_COMPACTION_STARTED,
+                  { ...activity, runId, schemaVersion: 1 },
+                )
+                events.push({
+                  ...activity,
+                  activityId,
+                  type: AGENT_RUN_EVENT_TYPE.CONTEXT_COMPACTION_STARTED,
+                })
+                return activityId
+              },
+              onCompactionCompleted: async (activity) => {
+                await opened.session.appendCustomEntry(
+                  SESSION_CUSTOM_TYPE.CONTEXT_COMPACTION_COMPLETED,
+                  { ...activity, runId, schemaVersion: 1 },
+                )
+                events.push({
+                  ...activity,
+                  type: AGENT_RUN_EVENT_TYPE.CONTEXT_COMPACTION_COMPLETED,
+                })
+              },
             })
             messages.splice(0, messages.length, ...next)
             agent.state.messages = [...next]
+            await publishContextUsage({
+              messages: next,
+              model,
+              systemPrompt,
+              tools,
+            })
             return next
           } catch (error) {
             contextError = error
@@ -1143,7 +1192,7 @@ export class AgentRuntime {
         convertToLlm,
         sessionId: id,
         streamFn: async (streamModel, streamContext, options) => {
-          const { outputTokens } = contextBudget(streamModel)
+          const { outputTokens } = budget
           streamModel = { ...streamModel, maxTokens: outputTokens }
           options = { ...options, maxTokens: outputTokens }
           const header = redactTrajectoryValue({
@@ -1211,6 +1260,7 @@ export class AgentRuntime {
         operation,
         runId,
         requestState,
+        publishContextUsage,
         publishTrajectory,
         trajectory,
         contextMessages,
@@ -1254,6 +1304,9 @@ export class AgentRuntime {
       firstTokenAt?: number
       turn: number
     }
+    publishContextUsage: (
+      state: Parameters<typeof calculateContextUsage>[0],
+    ) => Promise<void>
     publishTrajectory: (active?: boolean) => Promise<void>
     trajectory: TrajectoryStream
     contextMessages: AgentMessage[]
@@ -1424,6 +1477,11 @@ export class AgentRuntime {
           finalMessage = durableMessage
           await completeRequest(durableMessage)
         }
+        if (
+          durableMessage.role === MESSAGE_ROLE.ASSISTANT ||
+          durableMessage.role === 'toolResult'
+        )
+          await options.publishContextUsage(options.agent.state)
       } catch (error) {
         persistenceError = error
         throw error
@@ -1493,20 +1551,10 @@ export class AgentRuntime {
       }
       const usage = finalMessage.usage
       runStatus = 'completed'
-      let contextUsage
-      try {
-        contextUsage = calculateContextUsage(options.agent.state)
-        await options.session.appendCustomEntry(
-          SESSION_CUSTOM_TYPE.CONTEXT_USAGE_SNAPSHOT,
-          persistedContextUsageSnapshot(contextUsage),
-        )
-      } catch {
-        contextUsage = undefined
-      }
+      await options.publishContextUsage(options.agent.state)
       options.events.push({
         cacheRead: usage.cacheRead,
         cacheWrite: usage.cacheWrite,
-        ...(contextUsage ? { contextUsage } : {}),
         input: usage.input,
         output: usage.output,
         total: usage.totalTokens,

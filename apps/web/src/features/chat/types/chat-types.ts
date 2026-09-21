@@ -5,6 +5,7 @@ import {
   CHAT_MESSAGE_SOURCE_TYPE,
   CHAT_ROUTE_KIND,
   MESSAGE_PART_TYPE,
+  type ContextCompactionStatus,
   type ChatAssistantStatus,
   type ChatRouteKind,
   type ChatToolKind,
@@ -98,12 +99,29 @@ export interface ChatTodoItem {
   status: TodoStatus
 }
 
+export interface ChatRuntimeActivity {
+  afterTokens?: number
+  beforeTokens: number
+  completedAt?: number
+  errorCode?: string
+  id: string
+  inputLimit: number
+  reclaimedTokens?: number
+  startedAt: number
+  status?: ContextCompactionStatus
+  type: 'context-compaction'
+}
+
 export type ChatMessageActivityPart =
   | {
       reasoning: ChatMessageReasoning
       type: typeof MESSAGE_PART_TYPE.REASONING
     }
   | { text: string; type: typeof MESSAGE_PART_TYPE.TEXT }
+  | {
+      runtimeActivity: ChatRuntimeActivity
+      type: typeof MESSAGE_PART_TYPE.RUNTIME_ACTIVITY
+    }
   | { tool: ChatMessageTool; type: typeof MESSAGE_PART_TYPE.TOOL }
 
 export interface ChatMessageActivity {
@@ -111,6 +129,7 @@ export interface ChatMessageActivity {
   hasError?: boolean
   parts?: readonly ChatMessageActivityPart[]
   reasoning?: ChatMessageReasoning
+  runtimeActivities: readonly ChatRuntimeActivity[]
   startedAt?: number
   text?: string
   tools: readonly ChatMessageTool[]
@@ -135,6 +154,7 @@ export interface ChatMessage {
   markdown?: string
   parts?: readonly ChatMessageActivityPart[]
   reasoning?: ChatMessageReasoning
+  runtimeActivities?: readonly ChatRuntimeActivity[]
   role: MessageRole
   showAvatar?: boolean
   sourceGroup?: ChatMessageSourceGroup
@@ -176,6 +196,7 @@ export interface ChatTokenUsage {
 
 export interface ChatContextUsage {
   contextWindow: number
+  inputLimit?: number
   messageTokens: number
   modelId: string
   providerId: string

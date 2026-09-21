@@ -15,6 +15,8 @@ export type ProviderConfigStatusVo = ProviderConfigStatus
 
 export interface ProviderModelInfoVo {
   id: string
+  maxOutputTokens?: number
+  maxOutputTokensLimit?: number
   name: string
   thinkingLevels?: ModelThinkingLevel[]
 }

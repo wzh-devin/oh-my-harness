@@ -17,10 +17,17 @@ type RequestContext = {
   tools?: readonly Tool[]
 }
 
-export const contextBudget = (model: Model<Api>) => {
+export const contextBudget = (
+  model: Model<Api>,
+  configuredMaxOutputTokens = 16_384,
+) => {
   const outputTokens = Math.max(
     1,
-    Math.min(model.maxTokens, 16_384, Math.floor(model.contextWindow / 4)),
+    Math.min(
+      model.maxTokens,
+      configuredMaxOutputTokens,
+      Math.max(1, Math.floor(model.contextWindow / 4)),
+    ),
   )
   const safetyTokens = Math.min(4096, Math.ceil(model.contextWindow / 16))
   const inputTokens = Math.max(
@@ -33,6 +40,8 @@ export const contextBudget = (model: Model<Api>) => {
     toolResultChars: Math.max(1024, Math.min(16_000, inputTokens)),
   }
 }
+
+export type ContextBudget = ReturnType<typeof contextBudget>
 
 /** 重新估算当前视图，历史 usage 不能用于已经裁剪或换模型的消息前缀。 */
 export const requestTokenParts = (context: RequestContext) => {
@@ -69,9 +78,9 @@ export const requestTokenParts = (context: RequestContext) => {
 
 export const assertContextFits = (
   context: RequestContext,
-  model: Model<Api>,
+  budget: ContextBudget,
 ) => {
-  if (requestTokenParts(context).usedTokens > contextBudget(model).inputTokens)
+  if (requestTokenParts(context).usedTokens > budget.inputTokens)
     throw new AgentRuntimeError(
       'CONTEXT_TOO_LARGE',
       '当前消息超过模型上下文限制。',

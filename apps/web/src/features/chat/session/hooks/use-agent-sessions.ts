@@ -16,6 +16,7 @@ import type { ChatSubmitPayload } from '../../composer/index.ts'
 import type {
   ChatMessage,
   ChatMessageActivityPart,
+  ChatRuntimeActivity,
   ChatThread,
 } from '../../types/chat-types.ts'
 import type { ApprovalDecision } from '../../message/index.ts'
@@ -35,7 +36,7 @@ import {
   updateAgentSessionModel,
   updateAgentSessionArchived,
 } from '../api/index.ts'
-import { toChatMessages, toChatThread } from '../data/index.ts'
+import { toChatMessages, toChatThread } from '../session-adapter.ts'
 import type { PendingToolApprovalVo } from '../types/index.ts'
 
 type PendingApprovalMap = Record<string, PendingToolApprovalVo | undefined>
@@ -227,11 +228,69 @@ export const updateStreamingTool = (
     activity: {
       parts,
       reasoning: message.activity?.reasoning ?? message.reasoning,
+      runtimeActivities:
+        message.activity?.runtimeActivities ?? message.runtimeActivities ?? [],
       startedAt: message.activity?.startedAt ?? startedAt,
       text: message.activity?.text ?? message.text,
       tools,
     },
     reasoning: undefined,
+    parts: undefined,
+    text: undefined,
+    tools: undefined,
+  }
+}
+
+/** 将同一 Runtime Activity 的开始与完成事件合并到当前 Assistant 消息。 */
+export const updateStreamingRuntimeActivity = (
+  message: ChatMessage,
+  runtimeActivity: ChatRuntimeActivity,
+  startedAt: number,
+) => {
+  const runtimeActivities = [
+    ...(message.activity?.runtimeActivities ?? message.runtimeActivities ?? []),
+  ]
+  const index = runtimeActivities.findIndex(
+    (candidate) => candidate.id === runtimeActivity.id,
+  )
+  if (index === -1) runtimeActivities.push(runtimeActivity)
+  else
+    runtimeActivities[index] = {
+      ...runtimeActivities[index],
+      ...runtimeActivity,
+    }
+  const parts = messageActivityParts(message)
+  const partIndex = parts.findIndex(
+    (part) =>
+      part.type === MESSAGE_PART_TYPE.RUNTIME_ACTIVITY &&
+      part.runtimeActivity.id === runtimeActivity.id,
+  )
+  if (partIndex === -1)
+    parts.push({
+      runtimeActivity,
+      type: MESSAGE_PART_TYPE.RUNTIME_ACTIVITY,
+    })
+  else {
+    const part = parts[partIndex]
+    if (part?.type === MESSAGE_PART_TYPE.RUNTIME_ACTIVITY)
+      parts[partIndex] = {
+        ...part,
+        runtimeActivity: { ...part.runtimeActivity, ...runtimeActivity },
+      }
+  }
+  return {
+    ...message,
+    actions: undefined,
+    activity: {
+      parts,
+      reasoning: message.activity?.reasoning ?? message.reasoning,
+      runtimeActivities,
+      startedAt: message.activity?.startedAt ?? startedAt,
+      text: message.activity?.text ?? message.text,
+      tools: message.activity?.tools ?? message.tools ?? [],
+    },
+    reasoning: undefined,
+    runtimeActivities: undefined,
     parts: undefined,
     text: undefined,
     tools: undefined,
@@ -413,8 +472,7 @@ export function useAgentSessions() {
               todos: event.todos.length ? event.todos : undefined,
             }))
           } else if (
-            event.type === AGENT_RUN_EVENT_TYPE.USAGE &&
-            event.contextUsage
+            event.type === AGENT_RUN_EVENT_TYPE.CONTEXT_USAGE_UPDATED
           ) {
             updateThread(sessionId, (thread) => ({
               ...thread,
@@ -758,6 +816,63 @@ export function useAgentSessions() {
                   todos: event.todos.length ? event.todos : undefined,
                 }))
                 break
+              case AGENT_RUN_EVENT_TYPE.CONTEXT_USAGE_UPDATED:
+                updateThread(sessionId, (thread) => ({
+                  ...thread,
+                  contextUsage: event.contextUsage,
+                }))
+                break
+              case AGENT_RUN_EVENT_TYPE.CONTEXT_COMPACTION_STARTED:
+                updateThread(sessionId, (thread) => ({
+                  ...thread,
+                  messages: thread.messages.map((item) =>
+                    item.id === assistantId
+                      ? updateStreamingRuntimeActivity(
+                          item,
+                          {
+                            beforeTokens: event.beforeTokens,
+                            id: event.activityId,
+                            inputLimit: event.inputLimit,
+                            startedAt: event.startedAt,
+                            type: 'context-compaction',
+                          },
+                          startedAt,
+                        )
+                      : item,
+                  ),
+                }))
+                break
+              case AGENT_RUN_EVENT_TYPE.CONTEXT_COMPACTION_COMPLETED:
+                updateThread(sessionId, (thread) => ({
+                  ...thread,
+                  messages: thread.messages.map((item) =>
+                    item.id === assistantId
+                      ? updateStreamingRuntimeActivity(
+                          item,
+                          {
+                            ...(event.afterTokens === undefined
+                              ? {}
+                              : { afterTokens: event.afterTokens }),
+                            beforeTokens: event.beforeTokens,
+                            completedAt: event.completedAt,
+                            ...(event.errorCode === undefined
+                              ? {}
+                              : { errorCode: event.errorCode }),
+                            id: event.activityId,
+                            inputLimit: event.inputLimit,
+                            ...(event.reclaimedTokens === undefined
+                              ? {}
+                              : { reclaimedTokens: event.reclaimedTokens }),
+                            startedAt: event.startedAt,
+                            status: event.status,
+                            type: 'context-compaction',
+                          },
+                          startedAt,
+                        )
+                      : item,
+                  ),
+                }))
+                break
               case AGENT_RUN_EVENT_TYPE.TOOL_START:
                 updateThread(sessionId, (thread) => ({
                   ...thread,
@@ -895,12 +1010,6 @@ export function useAgentSessions() {
                 }))
                 break
               case AGENT_RUN_EVENT_TYPE.USAGE:
-                if (event.contextUsage) {
-                  updateThread(sessionId, (thread) => ({
-                    ...thread,
-                    contextUsage: event.contextUsage,
-                  }))
-                }
                 break
             }
           },

@@ -8,6 +8,7 @@ import type {
 import {
   AGENT_RUN_EVENT_TYPE,
   TOOL_ACTIVITY_KIND,
+  type ContextCompactionStatus,
   type TodoStatus,
   type TrajectoryStreamBlock,
 } from '@oh-my-harness/shared'
@@ -64,6 +65,29 @@ export type AgentRunEventDto =
         status: TodoStatus
       }[]
       type: typeof AGENT_RUN_EVENT_TYPE.TODO_UPDATED
+    }
+  | {
+      activityId: string
+      beforeTokens: number
+      inputLimit: number
+      startedAt: number
+      type: typeof AGENT_RUN_EVENT_TYPE.CONTEXT_COMPACTION_STARTED
+    }
+  | {
+      activityId: string
+      afterTokens?: number
+      beforeTokens: number
+      completedAt: number
+      errorCode?: string
+      inputLimit: number
+      reclaimedTokens?: number
+      startedAt: number
+      status: ContextCompactionStatus
+      type: typeof AGENT_RUN_EVENT_TYPE.CONTEXT_COMPACTION_COMPLETED
+    }
+  | {
+      contextUsage: ContextUsageDto
+      type: typeof AGENT_RUN_EVENT_TYPE.CONTEXT_USAGE_UPDATED
     }
   | {
       input: unknown
@@ -124,7 +148,6 @@ export type AgentRunEventDto =
   | {
       cacheRead: number
       cacheWrite: number
-      contextUsage?: ContextUsageDto
       input: number
       output: number
       total: number

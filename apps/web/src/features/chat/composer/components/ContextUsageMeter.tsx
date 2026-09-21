@@ -116,6 +116,14 @@ export function ContextUsageMeter({
                 </div>
               </div>
               <dl className="mt-3 space-y-2 text-xs">
+                {usage.inputLimit === undefined ? null : (
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="text-muted">输入上限</dt>
+                    <dd className="tabular-nums text-foreground">
+                      ~{formatContextTokens(usage.inputLimit)}
+                    </dd>
+                  </div>
+                )}
                 {categories.map((category) => (
                   <div
                     className="flex items-center justify-between gap-4"

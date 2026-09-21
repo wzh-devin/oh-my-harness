@@ -14,7 +14,7 @@ interface OAuthSessionInputRequest {
 }
 
 interface ProviderConfigUpdate {
-  models: Array<{ id: string; name?: string }>
+  models: Array<{ id: string; name?: string; maxOutputTokens?: number }>
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

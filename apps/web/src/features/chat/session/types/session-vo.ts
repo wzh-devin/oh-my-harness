@@ -5,6 +5,7 @@ import {
   MESSAGE_PART_TYPE,
   TOOL_ACTIVITY_KIND,
   type AgentContextKind,
+  type ContextCompactionStatus,
   type MessageRole,
   type SessionToolState,
   type TodoStatus,
@@ -31,6 +32,7 @@ export interface TokenUsageVo {
 
 export interface ContextUsageVo {
   contextWindow: number
+  inputLimit?: number
   messageTokens: number
   modelId: string
   providerId: string
@@ -60,11 +62,25 @@ export interface AgentSessionMessageVo {
   entryId: string
   parts?: AgentSessionMessagePartVo[]
   reasoning?: string
+  runtimeActivities?: AgentSessionRuntimeActivityVo[]
   role: MessageRole
   seq: number
   stopReason?: string
   timestamp: number
   tools?: AgentSessionToolVo[]
+}
+
+export interface AgentSessionRuntimeActivityVo {
+  afterTokens?: number
+  beforeTokens: number
+  completedAt?: number
+  errorCode?: string
+  id: string
+  inputLimit: number
+  reclaimedTokens?: number
+  startedAt: number
+  status?: ContextCompactionStatus
+  type: 'context-compaction'
 }
 
 export interface AgentSessionToolVo {
@@ -88,6 +104,10 @@ export interface BashOutcomeVo {
 
 export type AgentSessionMessagePartVo =
   | { reasoning: string; type: typeof MESSAGE_PART_TYPE.REASONING }
+  | {
+      runtimeActivity: AgentSessionRuntimeActivityVo
+      type: typeof MESSAGE_PART_TYPE.RUNTIME_ACTIVITY
+    }
   | { text: string; type: typeof MESSAGE_PART_TYPE.TEXT }
   | { tool: AgentSessionToolVo; type: typeof MESSAGE_PART_TYPE.TOOL }
 
@@ -121,6 +141,29 @@ export type AgentRunEventVo =
   | {
       todos: AgentTodoItemVo[]
       type: typeof AGENT_RUN_EVENT_TYPE.TODO_UPDATED
+    }
+  | {
+      activityId: string
+      beforeTokens: number
+      inputLimit: number
+      startedAt: number
+      type: typeof AGENT_RUN_EVENT_TYPE.CONTEXT_COMPACTION_STARTED
+    }
+  | {
+      activityId: string
+      afterTokens?: number
+      beforeTokens: number
+      completedAt: number
+      errorCode?: string
+      inputLimit: number
+      reclaimedTokens?: number
+      startedAt: number
+      status: ContextCompactionStatus
+      type: typeof AGENT_RUN_EVENT_TYPE.CONTEXT_COMPACTION_COMPLETED
+    }
+  | {
+      contextUsage: ContextUsageVo
+      type: typeof AGENT_RUN_EVENT_TYPE.CONTEXT_USAGE_UPDATED
     }
   | {
       input: unknown
@@ -181,7 +224,6 @@ export type AgentRunEventVo =
   | {
       cacheRead: number
       cacheWrite: number
-      contextUsage?: ContextUsageVo
       input: number
       output: number
       total: number

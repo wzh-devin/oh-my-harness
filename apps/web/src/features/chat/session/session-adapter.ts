@@ -1,15 +1,16 @@
 import type {
   ChatMessage,
   ChatMessageActivityPart,
+  ChatRuntimeActivity,
   ChatMessageTool,
   ChatThread,
-} from '../../types/chat-types.ts'
+} from '../types/chat-types.ts'
 import {
   CHAT_ASSISTANT_STATUS,
   MESSAGE_PART_TYPE,
   MESSAGE_ROLE,
 } from '@oh-my-harness/shared'
-import type { AgentSessionMessageVo, AgentSessionVo } from '../types/index.ts'
+import type { AgentSessionMessageVo, AgentSessionVo } from './types/index.ts'
 
 const SESSION_USER = {
   avatar: '',
@@ -44,6 +45,10 @@ const toChatTool = (
   label: tool.label,
 })
 
+const toRuntimeActivity = (
+  activity: NonNullable<AgentSessionMessageVo['runtimeActivities']>[number],
+): ChatRuntimeActivity => ({ ...activity })
+
 /** 保留服务端消息块顺序，并为旧响应生成兼容的活动块。 */
 const toActivityParts = (
   message: AgentSessionMessageVo,
@@ -59,7 +64,12 @@ const toActivityParts = (
         type: MESSAGE_PART_TYPE.REASONING,
       }
     }
-    if (part.type === 'text') return part
+    if (part.type === MESSAGE_PART_TYPE.TEXT) return part
+    if (part.type === MESSAGE_PART_TYPE.RUNTIME_ACTIVITY)
+      return {
+        runtimeActivity: toRuntimeActivity(part.runtimeActivity),
+        type: MESSAGE_PART_TYPE.RUNTIME_ACTIVITY,
+      }
     return { tool: toChatTool(part.tool), type: MESSAGE_PART_TYPE.TOOL }
   }) ?? [
     ...(chatMessage.reasoning
@@ -73,6 +83,10 @@ const toActivityParts = (
     ...(chatMessage.text
       ? [{ text: chatMessage.text, type: 'text' as const }]
       : []),
+    ...(chatMessage.runtimeActivities ?? []).map((runtimeActivity) => ({
+      runtimeActivity,
+      type: MESSAGE_PART_TYPE.RUNTIME_ACTIVITY,
+    })),
     ...(chatMessage.tools ?? []).map((tool) => ({
       tool,
       type: MESSAGE_PART_TYPE.TOOL,
@@ -89,6 +103,7 @@ export const toChatMessage = (message: AgentSessionMessageVo): ChatMessage => ({
         steps: [{ content: message.reasoning, label: '思考过程' }],
       }
     : undefined,
+  runtimeActivities: message.runtimeActivities?.map(toRuntimeActivity),
   role: message.role,
   status:
     message.role === MESSAGE_ROLE.ASSISTANT
@@ -112,6 +127,7 @@ const toActivityMessage = (
   activity: {
     parts: toActivityParts(source, message),
     reasoning: message.reasoning,
+    runtimeActivities: message.runtimeActivities ?? [],
     startedAt,
     text: message.text,
     tools: message.tools ?? [],
@@ -149,6 +165,10 @@ const mergeActivityMessage = (
             ],
           }
         : undefined,
+    runtimeActivities: [
+      ...(activityMessage.activity?.runtimeActivities ?? []),
+      ...(message.runtimeActivities ?? []),
+    ],
     text: appendActivityText(activityMessage.activity?.text, message.text),
     tools: [
       ...(activityMessage.activity?.tools ?? []),
@@ -168,7 +188,9 @@ export const toChatMessages = (
     const chatMessage = toChatMessage(message)
     const isToolActivity =
       message.role === MESSAGE_ROLE.ASSISTANT &&
-      (message.stopReason === 'toolUse' || Boolean(message.tools?.length))
+      (message.stopReason === 'toolUse' ||
+        Boolean(message.tools?.length) ||
+        Boolean(message.runtimeActivities?.length))
     const previous = chatMessages.at(-1)
 
     if (message.role === MESSAGE_ROLE.USER) {

@@ -2,6 +2,7 @@ import type { ToolCallMessagePartStatus } from '@assistant-ui/react'
 import {
   CHAT_ASSISTANT_STATUS,
   CHAT_TOOL_KIND,
+  CONTEXT_COMPACTION_STATUS,
   MESSAGE_PART_TYPE,
   SESSION_TOOL_STATE,
   TOOL_EXECUTION_STATE,
@@ -10,6 +11,7 @@ import {
 import type {
   ChatAssistantStatus,
   ChatMessageActivityPart,
+  ChatRuntimeActivity,
   ChatMessageTool,
 } from '../../types/chat-types.ts'
 
@@ -38,9 +40,11 @@ export const isToolActivityRunning = (
   tools: readonly ChatMessageTool[],
   status?: ChatAssistantStatus,
   hasEnded = false,
+  runtimeActivities: readonly ChatRuntimeActivity[] = [],
 ) =>
   !hasEnded &&
   (status === CHAT_ASSISTANT_STATUS.STREAMING ||
+    runtimeActivities.some((activity) => activity.status === undefined) ||
     tools.some(
       (tool) =>
         tool.state === 'input-streaming' ||
@@ -70,6 +74,7 @@ export const getToolActivitySummary = (
   hasRunError = false,
   durationMs?: number,
   hasEnded = false,
+  runtimeActivities: readonly ChatRuntimeActivity[] = [],
 ): ToolActivitySummary => {
   const durationLabel =
     durationMs === undefined
@@ -82,7 +87,37 @@ export const getToolActivitySummary = (
     }
   }
 
-  const isRunning = isToolActivityRunning(tools, status, hasEnded)
+  if (tools.length === 0 && runtimeActivities.length === 1) {
+    const [activity] = runtimeActivities
+    if (
+      activity?.status === CONTEXT_COMPACTION_STATUS.FAILED ||
+      activity?.status === CONTEXT_COMPACTION_STATUS.ABORTED
+    )
+      return {
+        label: durationLabel
+          ? `上下文压缩失败 · ${durationLabel}`
+          : '上下文压缩失败',
+        state: TOOL_EXECUTION_STATE.FAILED,
+      }
+    if (activity?.status === CONTEXT_COMPACTION_STATUS.COMPLETED)
+      return {
+        label: durationLabel
+          ? `已压缩上下文 · ${durationLabel}`
+          : '已压缩上下文',
+        state: TOOL_EXECUTION_STATE.COMPLETE,
+      }
+    return {
+      label: '正在压缩上下文',
+      state: TOOL_EXECUTION_STATE.RUNNING,
+    }
+  }
+
+  const isRunning = isToolActivityRunning(
+    tools,
+    status,
+    hasEnded,
+    runtimeActivities,
+  )
   if (isRunning) {
     return {
       label: durationLabel ?? '正在使用工具',

@@ -23,10 +23,12 @@ import type {
   UserMessage,
 } from '@earendil-works/pi-ai'
 import {
+  CONTEXT_COMPACTION_STATUS,
   MESSAGE_PART_TYPE,
   MESSAGE_ROLE,
   SESSION_TOOL_STATE,
   TODO_STATUS,
+  type ContextCompactionStatus,
   type MessageRole,
   type SessionToolState,
 } from '@oh-my-harness/shared'
@@ -112,6 +114,7 @@ export interface AgentSessionMessage {
   entryId: string
   parts?: AgentSessionMessagePart[]
   reasoning?: string
+  runtimeActivities?: AgentSessionRuntimeActivity[]
   role: MessageRole
   seq: number
   stopReason?: string
@@ -120,6 +123,19 @@ export interface AgentSessionMessage {
   tokenUsage?: TokenUsage
   timestamp: number
   tools?: AgentSessionTool[]
+}
+
+export interface AgentSessionRuntimeActivity {
+  afterTokens?: number
+  beforeTokens: number
+  completedAt?: number
+  errorCode?: string
+  id: string
+  inputLimit: number
+  reclaimedTokens?: number
+  startedAt: number
+  status?: ContextCompactionStatus
+  type: 'context-compaction'
 }
 
 export interface AgentSessionTool {
@@ -136,6 +152,10 @@ export interface AgentSessionTool {
 
 export type AgentSessionMessagePart =
   | { reasoning: string; type: typeof MESSAGE_PART_TYPE.REASONING }
+  | {
+      runtimeActivity: AgentSessionRuntimeActivity
+      type: typeof MESSAGE_PART_TYPE.RUNTIME_ACTIVITY
+    }
   | { text: string; type: typeof MESSAGE_PART_TYPE.TEXT }
   | { tool: AgentSessionTool; type: typeof MESSAGE_PART_TYPE.TOOL }
 
@@ -386,6 +406,114 @@ export function projectRecoverableTodos(entries: readonly Entry[]) {
     return undefined
   }
   return state.todos
+}
+
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === 'object' && !Array.isArray(value)
+
+interface ParsedContextCompactionCompletion {
+  activityId: string
+  afterTokens?: number
+  beforeTokens: number
+  completedAt: number
+  errorCode?: string
+  reclaimedTokens?: number
+  status: ContextCompactionStatus
+}
+
+function contextCompactionCompletion(
+  entry: Entry,
+): ParsedContextCompactionCompletion | undefined {
+  if (
+    entry.type !== 'custom' ||
+    entry.customType !== SESSION_CUSTOM_TYPE.CONTEXT_COMPACTION_COMPLETED ||
+    !isObject(entry.data) ||
+    entry.data.schemaVersion !== 1 ||
+    typeof entry.data.activityId !== 'string' ||
+    !entry.data.activityId ||
+    !Number.isSafeInteger(entry.data.beforeTokens) ||
+    (entry.data.beforeTokens as number) < 0 ||
+    !Number.isSafeInteger(entry.data.completedAt) ||
+    (entry.data.completedAt as number) < 0 ||
+    (entry.data.status !== CONTEXT_COMPACTION_STATUS.COMPLETED &&
+      entry.data.status !== CONTEXT_COMPACTION_STATUS.FAILED &&
+      entry.data.status !== CONTEXT_COMPACTION_STATUS.ABORTED)
+  )
+    return
+  const data = entry.data
+  const number = (key: string) =>
+    Number.isSafeInteger(data[key]) && (data[key] as number) >= 0
+      ? (data[key] as number)
+      : undefined
+  const afterTokens = number('afterTokens')
+  const reclaimedTokens = number('reclaimedTokens')
+  return {
+    activityId: data.activityId as string,
+    ...(afterTokens === undefined ? {} : { afterTokens }),
+    beforeTokens: data.beforeTokens as number,
+    completedAt: data.completedAt as number,
+    ...(typeof data.errorCode === 'string'
+      ? { errorCode: data.errorCode }
+      : {}),
+    ...(reclaimedTokens === undefined ? {} : { reclaimedTokens }),
+    status: data.status as ContextCompactionStatus,
+  }
+}
+
+function toContextCompactionMessage(
+  entry: Entry,
+  completion: ReturnType<typeof contextCompactionCompletion>,
+) {
+  if (
+    entry.type !== 'custom' ||
+    entry.customType !== SESSION_CUSTOM_TYPE.CONTEXT_COMPACTION_STARTED ||
+    !isObject(entry.data) ||
+    entry.data.schemaVersion !== 1 ||
+    !Number.isSafeInteger(entry.data.beforeTokens) ||
+    (entry.data.beforeTokens as number) < 0 ||
+    !Number.isSafeInteger(entry.data.inputLimit) ||
+    (entry.data.inputLimit as number) < 1 ||
+    !Number.isSafeInteger(entry.data.startedAt) ||
+    (entry.data.startedAt as number) < 0 ||
+    (completion && completion.beforeTokens !== entry.data.beforeTokens)
+  )
+    return
+  const activity: AgentSessionRuntimeActivity = {
+    id: entry.id,
+    beforeTokens: entry.data.beforeTokens as number,
+    inputLimit: entry.data.inputLimit as number,
+    startedAt: entry.data.startedAt as number,
+    type: 'context-compaction',
+    ...(completion
+      ? {
+          ...(completion.afterTokens === undefined
+            ? {}
+            : { afterTokens: completion.afterTokens }),
+          completedAt: completion.completedAt,
+          ...(completion.errorCode === undefined
+            ? {}
+            : { errorCode: completion.errorCode }),
+          ...(completion.reclaimedTokens === undefined
+            ? {}
+            : { reclaimedTokens: completion.reclaimedTokens }),
+          status: completion.status,
+        }
+      : {}),
+  }
+  return {
+    content: '',
+    entryId: entry.id,
+    parts: [
+      {
+        runtimeActivity: activity,
+        type: MESSAGE_PART_TYPE.RUNTIME_ACTIVITY,
+      },
+    ],
+    role: MESSAGE_ROLE.ASSISTANT,
+    runtimeActivities: [activity],
+    seq: entry.seq,
+    timestamp: activity.startedAt,
+  } satisfies AgentSessionMessage
 }
 
 function toMessage(
@@ -734,6 +862,15 @@ export class AgentSessionService {
           toolResults.set(entry.message.toolCallId, entry.message)
         }
       }
+      const compactionCompletions = new Map<
+        string,
+        NonNullable<ReturnType<typeof contextCompactionCompletion>>
+      >()
+      for (const entry of branchEntries) {
+        const completion = contextCompactionCompletion(entry)
+        if (completion && !compactionCompletions.has(completion.activityId))
+          compactionCompletions.set(completion.activityId, completion)
+      }
       // Run 快照保留名称，待审批或中断、尚无 toolResult 时也能恢复可读标签。
       const toolLabels = new Map<string, string>()
       let currentLabels: Record<string, unknown> = {}
@@ -776,10 +913,16 @@ export class AgentSessionService {
         }
       }
       const candidates: AgentSessionMessage[] = []
-      for (const entry of entries) {
+      for (const entry of branchEntries) {
         if (options.before !== undefined && entry.seq >= options.before)
           continue
-        const message = toMessage(entry, toolResults, toolLabels)
+        const message =
+          entry.type === 'message'
+            ? toMessage(entry, toolResults, toolLabels)
+            : toContextCompactionMessage(
+                entry,
+                compactionCompletions.get(entry.id),
+              )
         if (message) {
           const runTokenUsage = runUsageByEntry.get(entry.id)
           candidates.push(

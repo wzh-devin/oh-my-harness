@@ -17,6 +17,8 @@ export interface ApiKeyCredentialRequestDto {
 
 export interface ProviderModelInfoDto {
   id: string
+  maxOutputTokens?: number
+  maxOutputTokensLimit?: number
   name: string
   thinkingLevels?: ModelThinkingLevelDto[]
 }
@@ -35,5 +37,5 @@ export interface ProviderInfoDto {
 }
 
 export interface ProviderConfigUpdateDto {
-  models: Array<{ id: string; name?: string }>
+  models: Array<{ id: string; name?: string; maxOutputTokens?: number }>
 }

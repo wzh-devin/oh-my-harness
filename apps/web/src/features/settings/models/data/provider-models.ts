@@ -16,6 +16,8 @@ export type { ApiProtocol } from '@oh-my-harness/shared'
 
 export interface ProviderModelConfig {
   id: string
+  maxOutputTokens?: number
+  maxOutputTokensLimit?: number
   name: string
   thinkingLevels?: ModelThinkingLevel[]
 }

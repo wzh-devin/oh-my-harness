@@ -3,12 +3,15 @@ import { chmod, mkdir, open, readFile, rename, rm } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
 import { getDefaultDataDirectory } from '../auth/credential-store.ts'
-import type { ProviderModelInfo } from './provider-types.ts'
+import type { ProviderModelConfig } from './provider-types.ts'
 
 interface ProviderConfigDocument {
-  providers: Record<string, { models: ProviderModelInfo[] }>
+  providers: Record<string, { models: ProviderModelConfig[] }>
   version: 1
 }
+
+const isPositiveSafeInteger = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value > 0
 
 function parseDocument(source: string): ProviderConfigDocument {
   let value: unknown
@@ -43,13 +46,18 @@ function parseDocument(source: string): ProviderConfigDocument {
           !model ||
           typeof model !== 'object' ||
           typeof (model as { id?: unknown }).id !== 'string' ||
-          typeof (model as { name?: unknown }).name !== 'string',
+          typeof (model as { name?: unknown }).name !== 'string' ||
+          ((model as { maxOutputTokens?: unknown }).maxOutputTokens !==
+            undefined &&
+            !isPositiveSafeInteger(
+              (model as { maxOutputTokens?: unknown }).maxOutputTokens,
+            )),
       )
     ) {
       throw new Error('Provider Config 模型内容无效，已保留原文件。')
     }
     const modelIds = new Set<string>()
-    for (const model of models as ProviderModelInfo[]) {
+    for (const model of models as ProviderModelConfig[]) {
       if (
         !model.id ||
         model.id !== model.id.trim() ||
@@ -90,7 +98,7 @@ export class FileProviderConfigStore {
     )
   }
 
-  async replace(providerId: string, models: ProviderModelInfo[]) {
+  async replace(providerId: string, models: ProviderModelConfig[]) {
     await this.serialize(async () => {
       const document = await this.readDocument()
       document.providers[providerId] = { models: structuredClone(models) }

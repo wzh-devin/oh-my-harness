@@ -4,6 +4,7 @@ import {
   AGENT_TRAJECTORY_RECORD_KIND,
   MESSAGE_PART_TYPE,
   type AgentContextKind,
+  type ContextCompactionStatus,
   type AgentTrajectoryLane,
   type AgentTrajectoryRecordKind,
   type AgentTrajectoryStatus,
@@ -43,6 +44,7 @@ export interface TokenUsageDto {
 
 export interface ContextUsageDto {
   contextWindow: number
+  inputLimit?: number
   messageTokens: number
   modelId: string
   providerId: string
@@ -72,11 +74,25 @@ export interface AgentSessionMessageDto {
   entryId: string
   parts?: AgentSessionMessagePartDto[]
   reasoning?: string
+  runtimeActivities?: AgentSessionRuntimeActivityDto[]
   role: MessageRole
   seq: number
   stopReason?: string
   timestamp: number
   tools?: AgentSessionToolDto[]
+}
+
+export interface AgentSessionRuntimeActivityDto {
+  afterTokens?: number
+  beforeTokens: number
+  completedAt?: number
+  errorCode?: string
+  id: string
+  inputLimit: number
+  reclaimedTokens?: number
+  startedAt: number
+  status?: ContextCompactionStatus
+  type: 'context-compaction'
 }
 
 export interface AgentSessionToolDto {
@@ -98,6 +114,10 @@ export interface AgentSessionToolDto {
 
 export type AgentSessionMessagePartDto =
   | { reasoning: string; type: typeof MESSAGE_PART_TYPE.REASONING }
+  | {
+      runtimeActivity: AgentSessionRuntimeActivityDto
+      type: typeof MESSAGE_PART_TYPE.RUNTIME_ACTIVITY
+    }
   | { text: string; type: typeof MESSAGE_PART_TYPE.TEXT }
   | { tool: AgentSessionToolDto; type: typeof MESSAGE_PART_TYPE.TOOL }
 

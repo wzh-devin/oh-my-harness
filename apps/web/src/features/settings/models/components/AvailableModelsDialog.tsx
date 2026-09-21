@@ -90,6 +90,13 @@ export function AvailableModelsDialog({
                               {model.name}
                             </span>
                           ) : null}
+                          {model.maxOutputTokensLimit !== undefined ? (
+                            <span className="mt-0.5 text-xs text-muted">
+                              最大输出{' '}
+                              {model.maxOutputTokensLimit.toLocaleString()}{' '}
+                              Token
+                            </span>
+                          ) : null}
                         </span>
                         {isConfigured ? (
                           <span className="shrink-0 text-xs text-muted">

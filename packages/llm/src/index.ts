@@ -18,5 +18,6 @@ export type {
   ProviderConfig,
   ProviderConfigStatus,
   ProviderInfo,
+  ProviderModelConfig,
   ProviderModelInfo,
 } from './provider/provider-types.ts'

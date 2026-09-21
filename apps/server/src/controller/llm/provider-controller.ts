@@ -12,6 +12,9 @@ import type {
   ProviderModelInfoDto,
 } from '../../dto/llm/provider-dto.ts'
 
+const isPositiveSafeInteger = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+
 function isProviderConfig(value: unknown): value is ProviderConfigUpdateDto {
   if (!value || typeof value !== 'object') return false
   const models = (value as { models?: unknown }).models
@@ -24,6 +27,11 @@ function isProviderConfig(value: unknown): value is ProviderConfigUpdateDto {
         typeof model === 'object' &&
         typeof (model as { id?: unknown }).id === 'string' &&
         (model as { id: string }).id.length <= 512 &&
+        ((model as { maxOutputTokens?: unknown }).maxOutputTokens ===
+          undefined ||
+          isPositiveSafeInteger(
+            (model as { maxOutputTokens?: unknown }).maxOutputTokens,
+          )) &&
         ((model as { name?: unknown }).name === undefined ||
           (typeof (model as { name?: unknown }).name === 'string' &&
             (model as { name: string }).name.length <= 512)),

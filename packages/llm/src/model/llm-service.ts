@@ -17,6 +17,7 @@ import type { FileProviderConfigStore } from '../provider/provider-config-store.
 import type {
   ProviderConfig,
   ProviderInfo,
+  ProviderModelConfig,
   ProviderModelInfo,
 } from '../provider/provider-types.ts'
 import type { CompletionMessage, CompletionRequest } from './model-types.ts'
@@ -29,6 +30,11 @@ const emptyUsage: Usage = {
   output: 0,
   totalTokens: 0,
 }
+
+const maxOutputTokensLimit = (model: {
+  contextWindow: number
+  maxTokens: number
+}) => Math.min(model.maxTokens, Math.floor(model.contextWindow / 4))
 
 function toMessage(
   message: CompletionMessage,
@@ -101,6 +107,9 @@ export class ModelService {
             const model = this.models.getModel(provider.id, selectedModel.id)
             return {
               ...selectedModel,
+              ...(model
+                ? { maxOutputTokensLimit: maxOutputTokensLimit(model) }
+                : {}),
               thinkingLevels: model
                 ? getSupportedThinkingLevels(model)
                 : [MODEL_THINKING_LEVEL.OFF],
@@ -125,12 +134,12 @@ export class ModelService {
     return this.models.getModels(providerId).map((model) => ({
       id: model.id,
       name: model.id,
+      maxOutputTokensLimit: maxOutputTokensLimit(model),
       thinkingLevels: getSupportedThinkingLevels(model),
     }))
   }
 
-  /** 解析已启用且已认证的模型，供 Agent Runtime 安全复用。 */
-  async resolveModel(providerId: string, modelId: string) {
+  private async resolveConfiguredModel(providerId: string, modelId: string) {
     if (!this.models.getProvider(providerId)) {
       throw new ModelServiceError(
         'PROVIDER_NOT_FOUND',
@@ -139,7 +148,8 @@ export class ModelService {
       )
     }
     const selectedModels = await this.configurations.read(providerId)
-    if (!selectedModels.some((model) => model.id === modelId)) {
+    const configuration = selectedModels.find((model) => model.id === modelId)
+    if (!configuration) {
       throw new ModelServiceError(
         'MODEL_NOT_ENABLED',
         '模型尚未在该提供方中启用。',
@@ -158,7 +168,24 @@ export class ModelService {
     if (!model) {
       throw new ModelServiceError('MODEL_NOT_FOUND', '模型不存在。', 404)
     }
-    return model
+    return { configuration, model }
+  }
+
+  /** 解析已启用且已认证的模型，供普通 Completion 保持原契约。 */
+  async resolveModel(providerId: string, modelId: string) {
+    return (await this.resolveConfiguredModel(providerId, modelId)).model
+  }
+
+  /** 解析 Agent 模型能力及用户配置；每个 Run 只需读取一次。 */
+  async resolveAgentModel(providerId: string, modelId: string) {
+    const { configuration, model } = await this.resolveConfiguredModel(
+      providerId,
+      modelId,
+    )
+    return {
+      configuredMaxOutputTokens: configuration.maxOutputTokens,
+      model,
+    }
   }
 
   /** 校验并原子替换用户显式启用的模型列表。 */
@@ -171,8 +198,8 @@ export class ModelService {
       )
     }
 
-    const catalogIds = new Set(
-      this.models.getModels(providerId).map((model) => model.id),
+    const catalogModels = new Map(
+      this.models.getModels(providerId).map((model) => [model.id, model]),
     )
     const modelIds = new Set<string>()
     const models = configuration.models.map((model) => {
@@ -184,15 +211,44 @@ export class ModelService {
           400,
         )
       }
-      if (!catalogIds.has(id)) {
+      const catalogModel = catalogModels.get(id)
+      if (!catalogModel) {
         throw new ModelServiceError(
           'MODEL_NOT_FOUND',
           `Pi AI 当前目录中不存在模型：${id}`,
           400,
         )
       }
+      if (
+        model.maxOutputTokens !== undefined &&
+        (!Number.isSafeInteger(model.maxOutputTokens) ||
+          model.maxOutputTokens <= 0)
+      ) {
+        throw new ModelServiceError(
+          'INVALID_PROVIDER_CONFIG',
+          `模型 ${id} 的最大输出 Token 必须是正安全整数。`,
+          400,
+        )
+      }
+      const limit = maxOutputTokensLimit(catalogModel)
+      if (
+        model.maxOutputTokens !== undefined &&
+        model.maxOutputTokens > limit
+      ) {
+        throw new ModelServiceError(
+          'INVALID_PROVIDER_CONFIG',
+          `模型 ${id} 的最大输出 Token 不能超过 ${limit}。`,
+          400,
+        )
+      }
       modelIds.add(id)
-      return { id, name: model.name?.trim() || id }
+      return {
+        id,
+        name: model.name?.trim() || id,
+        ...(model.maxOutputTokens === undefined
+          ? {}
+          : { maxOutputTokens: model.maxOutputTokens }),
+      } satisfies ProviderModelConfig
     })
 
     await this.configurations.replace(providerId, models)

@@ -55,7 +55,7 @@ export function ProviderModelCatalog({
 
   const updateModel = (
     index: number,
-    field: keyof ProviderModelConfig,
+    field: 'id' | 'name',
     nextValue: string,
   ) => {
     setCatalogMessage('')
@@ -73,11 +73,25 @@ export function ProviderModelCatalog({
     )
   }
 
+  const updateMaxOutputTokens = (index: number, nextValue: string) => {
+    setCatalogMessage('')
+    onChange(
+      value.map((model, modelIndex) =>
+        modelIndex === index
+          ? {
+              ...model,
+              maxOutputTokens: nextValue === '' ? undefined : Number(nextValue),
+            }
+          : model,
+      ),
+    )
+  }
+
   const addSelectedModels = (selectedModels: ProviderModelConfig[]) => {
     onChange(
       mergeProviderModels(
         value,
-        selectedModels.map((model) => ({ id: model.id, name: model.id })),
+        selectedModels.map((model) => ({ ...model })),
       ),
     )
     setCatalogMessage('')
@@ -111,18 +125,19 @@ export function ProviderModelCatalog({
           </p>
         ) : (
           <>
-            <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2 px-1 pb-1.5 text-xs font-medium text-muted sm:grid">
+            <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(10rem,0.8fr)_auto] items-center gap-2 px-1 pb-1.5 text-xs font-medium text-muted sm:grid">
               <span>
                 模型 ID <span className="text-danger">*</span>
               </span>
               <span>显示名称</span>
+              <span>最大输出 Token</span>
               <span className="w-14" aria-hidden />
             </div>
             <div className="divide-y divide-divider">
               {value.map((model, index) => (
                 <div
                   key={index}
-                  className="grid grid-cols-1 gap-2 py-2 first:pt-0 last:pb-0 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-center"
+                  className="grid grid-cols-1 gap-2 py-2 first:pt-0 last:pb-0 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(10rem,0.8fr)_auto] sm:items-start"
                 >
                   <TextField isRequired aria-label={`模型 ID ${index + 1}`}>
                     <Label className="text-xs text-muted sm:sr-only">
@@ -150,6 +165,42 @@ export function ProviderModelCatalog({
                         updateModel(index, 'name', event.target.value)
                       }
                     />
+                  </TextField>
+                  <TextField
+                    aria-label={`最大输出 Token ${index + 1}`}
+                    isInvalid={
+                      model.maxOutputTokens !== undefined &&
+                      (!Number.isSafeInteger(model.maxOutputTokens) ||
+                        model.maxOutputTokens <= 0 ||
+                        (model.maxOutputTokensLimit !== undefined &&
+                          model.maxOutputTokens > model.maxOutputTokensLimit))
+                    }
+                  >
+                    <Label className="text-xs text-muted sm:sr-only">
+                      最大输出 Token
+                    </Label>
+                    <Input
+                      max={model.maxOutputTokensLimit}
+                      min={1}
+                      placeholder="默认 16384"
+                      step={1}
+                      type="number"
+                      value={model.maxOutputTokens?.toString() ?? ''}
+                      variant="secondary"
+                      onChange={(event) =>
+                        updateMaxOutputTokens(index, event.target.value)
+                      }
+                    />
+                    <FieldError>
+                      {model.maxOutputTokensLimit === undefined
+                        ? '请输入正整数。'
+                        : `请输入 1–${model.maxOutputTokensLimit.toLocaleString()}。`}
+                    </FieldError>
+                    <p className="px-1 text-[11px] leading-4 text-muted">
+                      {model.maxOutputTokensLimit === undefined
+                        ? '留空使用默认值。'
+                        : `留空使用默认值；当前上限 ${model.maxOutputTokensLimit.toLocaleString()}。`}
+                    </p>
                   </TextField>
                   <Button
                     className="h-9 min-h-0 w-fit justify-self-start rounded-full px-3 text-xs sm:justify-self-auto"

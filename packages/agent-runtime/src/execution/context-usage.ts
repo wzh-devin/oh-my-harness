@@ -3,6 +3,7 @@ import { requestTokenParts } from '../compaction/context-view.ts'
 
 export interface ContextUsageSnapshot {
   contextWindow: number
+  inputLimit?: number
   messageTokens: number
   modelId: string
   providerId: string
@@ -12,7 +13,8 @@ export interface ContextUsageSnapshot {
 }
 
 interface PersistedContextUsageSnapshot extends ContextUsageSnapshot {
-  schemaVersion: 3
+  inputLimit: number
+  schemaVersion: 4
 }
 
 const tokenFields = [
@@ -26,9 +28,11 @@ const tokenFields = [
 /** 估算下一轮请求的稳定上下文规模及模型可见组成。 */
 export const calculateContextUsage = (
   state: Pick<AgentState, 'messages' | 'model' | 'systemPrompt' | 'tools'>,
-): ContextUsageSnapshot => {
+  inputLimit: number,
+): ContextUsageSnapshot & { inputLimit: number } => {
   return {
     contextWindow: state.model.contextWindow,
+    inputLimit,
     modelId: state.model.id,
     providerId: state.model.provider,
     ...requestTokenParts(state),
@@ -42,7 +46,7 @@ export const parseContextUsageSnapshot = (
   if (!value || typeof value !== 'object' || Array.isArray(value)) return
   const snapshot = value as Record<string, unknown>
   if (
-    snapshot.schemaVersion !== 3 ||
+    (snapshot.schemaVersion !== 3 && snapshot.schemaVersion !== 4) ||
     typeof snapshot.modelId !== 'string' ||
     !snapshot.modelId.trim() ||
     typeof snapshot.providerId !== 'string' ||
@@ -51,15 +55,21 @@ export const parseContextUsageSnapshot = (
       (field) =>
         Number.isSafeInteger(snapshot[field]) &&
         (snapshot[field] as number) >= (field === 'contextWindow' ? 1 : 0),
-    )
+    ) ||
+    (snapshot.schemaVersion === 4 &&
+      (!Number.isSafeInteger(snapshot.inputLimit) ||
+        (snapshot.inputLimit as number) < 0))
   ) {
     return
   }
-  const { schemaVersion: _schemaVersion, ...result } =
-    snapshot as unknown as PersistedContextUsageSnapshot
-  return result
+  const { schemaVersion, ...result } = snapshot
+  return schemaVersion === 4
+    ? (result as unknown as ContextUsageSnapshot)
+    : (Object.fromEntries(
+        Object.entries(result).filter(([key]) => key !== 'inputLimit'),
+      ) as unknown as ContextUsageSnapshot)
 }
 
 export const persistedContextUsageSnapshot = (
-  snapshot: ContextUsageSnapshot,
-): PersistedContextUsageSnapshot => ({ ...snapshot, schemaVersion: 3 })
+  snapshot: ContextUsageSnapshot & { inputLimit: number },
+): PersistedContextUsageSnapshot => ({ ...snapshot, schemaVersion: 4 })

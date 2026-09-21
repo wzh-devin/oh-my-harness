@@ -357,7 +357,13 @@ export function ModelsSettingsSection() {
         credentialChanged = true
       }
       await saveProviderConfig(authProvider.id, {
-        models: providerConfiguration.models,
+        models: providerConfiguration.models.map(
+          ({ id, maxOutputTokens, name }) => ({
+            id,
+            name,
+            ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+          }),
+        ),
       })
       await refreshProviders()
       closeEditor()

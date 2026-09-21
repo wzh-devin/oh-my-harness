@@ -6,6 +6,7 @@ import {
 } from '@oh-my-harness/agent-policy/contracts'
 import {
   AGENT_RUN_EVENT_TYPE,
+  CONTEXT_COMPACTION_STATUS,
   TODO_STATUS,
   TOOL_ACTIVITY_KIND,
 } from '@oh-my-harness/shared'
@@ -154,6 +155,7 @@ const contextUsage = (value: unknown): ContextUsageVo | undefined => {
     typeof usage.providerId !== 'string' ||
     ![
       'contextWindow',
+      'inputLimit',
       'messageTokens',
       'systemTokens',
       'toolsTokens',
@@ -320,6 +322,78 @@ function toRunEvent(value: unknown): AgentRunEventVo {
       if (todos) return { todos, type: AGENT_RUN_EVENT_TYPE.TODO_UPDATED }
       break
     }
+    case AGENT_RUN_EVENT_TYPE.CONTEXT_USAGE_UPDATED: {
+      const parsed = contextUsage(event.contextUsage)
+      if (parsed)
+        return {
+          contextUsage: parsed,
+          type: AGENT_RUN_EVENT_TYPE.CONTEXT_USAGE_UPDATED,
+        }
+      break
+    }
+    case AGENT_RUN_EVENT_TYPE.CONTEXT_COMPACTION_STARTED:
+      if (
+        typeof event.activityId === 'string' &&
+        event.activityId &&
+        Number.isSafeInteger(event.beforeTokens) &&
+        (event.beforeTokens as number) >= 0 &&
+        Number.isSafeInteger(event.inputLimit) &&
+        (event.inputLimit as number) > 0 &&
+        Number.isSafeInteger(event.startedAt) &&
+        (event.startedAt as number) >= 0
+      )
+        return {
+          activityId: event.activityId,
+          beforeTokens: event.beforeTokens as number,
+          inputLimit: event.inputLimit as number,
+          startedAt: event.startedAt as number,
+          type: AGENT_RUN_EVENT_TYPE.CONTEXT_COMPACTION_STARTED,
+        }
+      break
+    case AGENT_RUN_EVENT_TYPE.CONTEXT_COMPACTION_COMPLETED: {
+      const status = event.status
+      if (
+        typeof event.activityId !== 'string' ||
+        !event.activityId ||
+        !Number.isSafeInteger(event.beforeTokens) ||
+        (event.beforeTokens as number) < 0 ||
+        !Number.isSafeInteger(event.completedAt) ||
+        (event.completedAt as number) < 0 ||
+        !Number.isSafeInteger(event.inputLimit) ||
+        (event.inputLimit as number) < 1 ||
+        !Number.isSafeInteger(event.startedAt) ||
+        (event.startedAt as number) < 0 ||
+        (status !== CONTEXT_COMPACTION_STATUS.COMPLETED &&
+          status !== CONTEXT_COMPACTION_STATUS.FAILED &&
+          status !== CONTEXT_COMPACTION_STATUS.ABORTED)
+      )
+        break
+      const optionalToken = (key: string) =>
+        event[key] === undefined ||
+        (Number.isSafeInteger(event[key]) && (event[key] as number) >= 0)
+      if (!optionalToken('afterTokens') || !optionalToken('reclaimedTokens'))
+        break
+      if (event.errorCode !== undefined && typeof event.errorCode !== 'string')
+        break
+      return {
+        activityId: event.activityId,
+        ...(event.afterTokens === undefined
+          ? {}
+          : { afterTokens: event.afterTokens as number }),
+        beforeTokens: event.beforeTokens as number,
+        completedAt: event.completedAt as number,
+        ...(typeof event.errorCode === 'string'
+          ? { errorCode: event.errorCode }
+          : {}),
+        inputLimit: event.inputLimit as number,
+        ...(event.reclaimedTokens === undefined
+          ? {}
+          : { reclaimedTokens: event.reclaimedTokens as number }),
+        status,
+        startedAt: event.startedAt as number,
+        type: AGENT_RUN_EVENT_TYPE.CONTEXT_COMPACTION_COMPLETED,
+      }
+    }
     case AGENT_RUN_EVENT_TYPE.TOOL_START:
       if (
         typeof event.toolCallId === 'string' &&
@@ -371,15 +445,9 @@ function toRunEvent(value: unknown): AgentRunEventVo {
           (key) => typeof event[key] === 'number',
         )
       ) {
-        const parsedContextUsage =
-          event.contextUsage === undefined
-            ? undefined
-            : contextUsage(event.contextUsage)
-        if (event.contextUsage !== undefined && !parsedContextUsage) break
         return {
           cacheRead: event.cacheRead as number,
           cacheWrite: event.cacheWrite as number,
-          ...(parsedContextUsage ? { contextUsage: parsedContextUsage } : {}),
           input: event.input as number,
           output: event.output as number,
           total: event.total as number,

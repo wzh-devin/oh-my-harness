@@ -12,9 +12,14 @@ export type {
   ProviderConfigStatus,
 } from '@oh-my-harness/shared'
 
-export interface ProviderModelInfo {
+export interface ProviderModelConfig {
   id: string
   name: string
+  maxOutputTokens?: number
+}
+
+export interface ProviderModelInfo extends ProviderModelConfig {
+  maxOutputTokensLimit?: number
   thinkingLevels?: ModelThinkingLevel[]
 }
 
@@ -30,5 +35,5 @@ export interface ProviderInfo {
 }
 
 export interface ProviderConfig {
-  models: Array<{ id: string; name?: string }>
+  models: Array<{ id: string; name?: string; maxOutputTokens?: number }>
 }

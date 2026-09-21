@@ -1,10 +1,15 @@
 import { useEffect, useState } from 'react'
-import { MESSAGE_PART_TYPE, TOOL_EXECUTION_STATE } from '@oh-my-harness/shared'
+import {
+  CONTEXT_COMPACTION_STATUS,
+  MESSAGE_PART_TYPE,
+  TOOL_EXECUTION_STATE,
+} from '@oh-my-harness/shared'
 import { ChatMessage as ChatMessagePrimitive } from '@agile-avocation/ui-pro/chat-message'
 import { TextShimmer } from '@agile-avocation/ui-pro/text-shimmer'
 import {
   ChevronDownIcon,
   LoaderCircleIcon,
+  Minimize2Icon,
   WrenchIcon,
   XCircleIcon,
 } from 'lucide-react'
@@ -17,7 +22,9 @@ import type {
   ChatAssistantStatus,
   ChatMessageActivity,
   ChatMessageTool,
+  ChatRuntimeActivity,
 } from '../../types/chat-types.ts'
+import { formatContextTokens } from '../../composer/utils/context-usage.ts'
 import {
   getToolGroupLabel,
   getToolActivitySummary,
@@ -65,11 +72,54 @@ function ToolCallGroup({ tools }: { tools: readonly ChatMessageTool[] }) {
   )
 }
 
+function RuntimeActivity({ activity }: { activity: ChatRuntimeActivity }) {
+  const running = activity.status === undefined
+  const failed =
+    activity.status === CONTEXT_COMPACTION_STATUS.FAILED ||
+    activity.status === CONTEXT_COMPACTION_STATUS.ABORTED
+  const detail =
+    activity.afterTokens === undefined
+      ? failed
+        ? activity.errorCode
+        : `约 ${formatContextTokens(activity.beforeTokens)} Token`
+      : `约 ${formatContextTokens(activity.beforeTokens)} → ${formatContextTokens(activity.afterTokens)} Token${activity.reclaimedTokens === undefined ? '' : `，释放 ${formatContextTokens(activity.reclaimedTokens)}`}`
+  return (
+    <div className="flex min-w-0 items-center gap-2 py-1 text-sm text-muted">
+      {running ? (
+        <LoaderCircleIcon
+          aria-hidden="true"
+          className="size-4 shrink-0 animate-spin motion-reduce:animate-none"
+        />
+      ) : failed ? (
+        <XCircleIcon
+          aria-hidden="true"
+          className="size-4 shrink-0 text-danger"
+        />
+      ) : (
+        <Minimize2Icon aria-hidden="true" className="size-4 shrink-0" />
+      )}
+      <span className="shrink-0">
+        {running
+          ? '正在压缩上下文'
+          : failed
+            ? '上下文压缩失败'
+            : '已压缩上下文'}
+      </span>
+      {detail ? <span className="min-w-0 truncate">{detail}</span> : null}
+    </div>
+  )
+}
+
 /** 默认折叠连续工具调用，并保留可展开的过程详情。 */
 export function ToolActivity({ activity, status }: ToolActivityProps) {
   const [now, setNow] = useState(() => Date.now())
   const hasEnded = activity.endedAt !== undefined
-  const isRunning = isToolActivityRunning(activity.tools, status, hasEnded)
+  const isRunning = isToolActivityRunning(
+    activity.tools,
+    status,
+    hasEnded,
+    activity.runtimeActivities,
+  )
   useEffect(() => {
     if (activity.startedAt === undefined || !isRunning) return
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
@@ -86,6 +136,7 @@ export function ToolActivity({ activity, status }: ToolActivityProps) {
     activity.hasError,
     durationMs,
     hasEnded,
+    activity.runtimeActivities,
   )
   const StatusIcon = ACTIVITY_ICONS[summary.state]
   const parts = activity.parts ?? [
@@ -98,6 +149,10 @@ export function ToolActivity({ activity, status }: ToolActivityProps) {
         ]
       : []),
     ...(activity.text ? [{ text: activity.text, type: 'text' as const }] : []),
+    ...activity.runtimeActivities.map((runtimeActivity) => ({
+      runtimeActivity,
+      type: MESSAGE_PART_TYPE.RUNTIME_ACTIVITY,
+    })),
     ...activity.tools.map((tool) => ({
       tool,
       type: MESSAGE_PART_TYPE.TOOL,
@@ -151,6 +206,14 @@ export function ToolActivity({ activity, status }: ToolActivityProps) {
                 <ChatMessagePrimitive.Content key={`text-${index}`}>
                   <MessageMarkdown>{part.text}</MessageMarkdown>
                 </ChatMessagePrimitive.Content>
+              )
+            }
+            if (part.type === MESSAGE_PART_TYPE.RUNTIME_ACTIVITY) {
+              return (
+                <RuntimeActivity
+                  activity={part.runtimeActivity}
+                  key={part.runtimeActivity.id}
+                />
               )
             }
             if (part.type === 'tool-group') {

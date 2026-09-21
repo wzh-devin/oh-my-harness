@@ -6,6 +6,10 @@ import type { ToolPermission } from '@oh-my-harness/agent-policy'
 import type { BashOutcome, TodoItem } from '@oh-my-harness/agent-tools'
 
 import type { ContextUsageSnapshot } from './context-usage.ts'
+import type {
+  ContextCompactionCompleted,
+  ContextCompactionStarted,
+} from '../compaction/session-compaction.ts'
 import type { TrajectoryUpdate } from '../trajectory/trajectory-stream.ts'
 import {
   AGENT_RUN_EVENT_TYPE,
@@ -24,6 +28,17 @@ export type AgentRuntimeEvent =
   | { delta: string; type: typeof AGENT_RUN_EVENT_TYPE.TEXT_DELTA }
   | { delta: string; type: typeof AGENT_RUN_EVENT_TYPE.REASONING_DELTA }
   | { todos: TodoItem[]; type: typeof AGENT_RUN_EVENT_TYPE.TODO_UPDATED }
+  | (ContextCompactionStarted & {
+      activityId: string
+      type: typeof AGENT_RUN_EVENT_TYPE.CONTEXT_COMPACTION_STARTED
+    })
+  | (ContextCompactionCompleted & {
+      type: typeof AGENT_RUN_EVENT_TYPE.CONTEXT_COMPACTION_COMPLETED
+    })
+  | {
+      contextUsage: ContextUsageSnapshot
+      type: typeof AGENT_RUN_EVENT_TYPE.CONTEXT_USAGE_UPDATED
+    }
   | {
       input: unknown
       toolCallId: string
@@ -47,7 +62,6 @@ export type AgentRuntimeEvent =
   | {
       cacheRead: number
       cacheWrite: number
-      contextUsage?: ContextUsageSnapshot
       input: number
       output: number
       total: number
