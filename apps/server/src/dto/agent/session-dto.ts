@@ -1,4 +1,7 @@
-import type { ToolActivityKind } from '@oh-my-harness/agent-runtime'
+import type {
+  AgentSessionDetail,
+  ToolActivityKind,
+} from '@oh-my-harness/agent-runtime'
 import {
   AGENT_TRAJECTORY_LANE,
   AGENT_TRAJECTORY_RECORD_KIND,
@@ -55,6 +58,7 @@ export interface ContextUsageDto {
 
 export interface AgentSessionDetailDto extends AgentSessionDto {
   contextUsage?: ContextUsageDto
+  permission: AgentSessionDetail['permission']
   stats: {
     cachedTokens: number
     costTotal: number

@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react'
 import type { ToolPartState } from '@agile-avocation/ui-pro/chat-tool'
+import type { ToolPermission } from '@oh-my-harness/agent-policy/contracts'
 import type { ComposerContextItem } from '../composer/capabilities/composer-capabilities.ts'
 import {
   CHAT_MESSAGE_SOURCE_TYPE,
@@ -172,6 +173,7 @@ export interface ChatThread {
   id: string
   messages: readonly ChatMessage[]
   modelId: string
+  permission: ToolPermission
   preview: string
   providerId?: string
   searchModeId: string

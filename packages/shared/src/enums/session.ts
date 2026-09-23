@@ -49,6 +49,7 @@ export const AGENT_RUN_EVENT_TYPE = {
   TRAJECTORY_UPDATED: 'trajectory_updated',
   TRAJECTORY_DELTA: 'trajectory_delta',
   START: 'start',
+  STEERING_APPLIED: 'steering_applied',
   TRAJECTORY_CHANGED: 'trajectory_changed',
   TEXT_DELTA: 'text_delta',
   REASONING_DELTA: 'reasoning_delta',

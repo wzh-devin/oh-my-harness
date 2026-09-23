@@ -22,6 +22,18 @@ export function createAgentRunRouter(runtime: AgentRuntime) {
   )
   router.get('/:id/events/stream', controller.reconnect)
   router.post(
+    '/:id/steer',
+    bodyLimit({
+      maxSize: 1024 * 1024 + 4096,
+      onError: (context) =>
+        context.json(
+          { code: 'REQUEST_TOO_LARGE', message: '请求内容过大。' },
+          413,
+        ),
+    }),
+    controller.steer,
+  )
+  router.post(
     '/:id/continue/stream',
     bodyLimit({ maxSize: 4096 }),
     controller.continue,

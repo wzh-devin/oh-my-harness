@@ -17,6 +17,11 @@ import {
   parseTodoWriteInput,
   type TodoItem,
 } from '@oh-my-harness/agent-tools'
+import {
+  TOOL_PERMISSION,
+  isToolPermission,
+  type ToolPermission,
+} from '@oh-my-harness/agent-policy/contracts'
 import type {
   AssistantMessage,
   ToolResultMessage,
@@ -104,6 +109,7 @@ export interface AgentSessionProjection {
 
 export interface AgentSessionDetail extends AgentSessionInfo {
   contextUsage?: ContextUsageSnapshot
+  permission: ToolPermission
   stats: SessionStats
 }
 
@@ -243,6 +249,21 @@ function archiveState(entry: Entry | undefined) {
     throw new Error('Session archive entry is invalid')
   }
   return (entry.data as { archived: boolean }).archived
+}
+
+function permissionState(entry: Entry | undefined): ToolPermission {
+  if (entry === undefined) return TOOL_PERMISSION.WORKSPACE_WRITE
+  if (
+    entry.type !== 'custom' ||
+    entry.customType !== SESSION_CUSTOM_TYPE.RUN_POLICY ||
+    !entry.data ||
+    typeof entry.data !== 'object' ||
+    Array.isArray(entry.data) ||
+    !isToolPermission((entry.data as Record<string, unknown>).permission)
+  ) {
+    throw new Error('Session run policy entry is invalid')
+  }
+  return (entry.data as { permission: ToolPermission }).permission
 }
 
 function messageText(message: AssistantMessage | UserMessage) {
@@ -747,15 +768,21 @@ export class AgentSessionService {
   async get(id: string): Promise<AgentSessionDetail> {
     const opened = await this.openSession(id)
     try {
-      const [name, stats, contextUsageEntry] = await Promise.all([
-        opened.session.getName(),
-        opened.session.getStats(),
-        opened.session.findEntryOnBranch({
-          customType: SESSION_CUSTOM_TYPE.CONTEXT_USAGE_SNAPSHOT,
-          order: 'newestFirst',
-          type: 'custom',
-        }),
-      ])
+      const [name, stats, contextUsageEntry, runPolicyEntry] =
+        await Promise.all([
+          opened.session.getName(),
+          opened.session.getStats(),
+          opened.session.findEntryOnBranch({
+            customType: SESSION_CUSTOM_TYPE.CONTEXT_USAGE_SNAPSHOT,
+            order: 'newestFirst',
+            type: 'custom',
+          }),
+          opened.session.findEntryOnBranch({
+            customType: SESSION_CUSTOM_TYPE.RUN_POLICY,
+            order: 'newestFirst',
+            type: 'custom',
+          }),
+        ])
       const contextUsage = parseContextUsageSnapshot(
         contextUsageEntry?.type === 'custom'
           ? contextUsageEntry.data
@@ -764,6 +791,7 @@ export class AgentSessionService {
       return {
         ...toInfo(opened.metadata, opened.config, name, opened.archived),
         ...(contextUsage ? { contextUsage } : {}),
+        permission: permissionState(runPolicyEntry),
         stats,
       }
     } catch (error) {

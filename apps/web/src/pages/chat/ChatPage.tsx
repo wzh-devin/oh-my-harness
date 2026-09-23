@@ -33,6 +33,7 @@ interface ChatPageProps {
     selection: Pick<ChatSubmitPayload, 'modelId' | 'providerId'>,
   ) => Promise<boolean>
   onRestore: () => Promise<string>
+  onSteer: (message: string) => boolean | Promise<boolean>
   onSubmit: (payload: ChatSubmitPayload) => boolean | Promise<boolean>
 }
 
@@ -44,6 +45,7 @@ export function ChatPage({
   onModelChange,
   onApprovalResolve,
   onStop,
+  onSteer,
   onSubmit,
   onRestore,
   pendingApproval,
@@ -209,6 +211,7 @@ export function ChatPage({
               status={status}
               value={draft}
               onModelChange={onModelChange}
+              onSteer={onSteer}
               onStop={onStop}
               onSubmit={onSubmit}
               onValueChange={setDraft}

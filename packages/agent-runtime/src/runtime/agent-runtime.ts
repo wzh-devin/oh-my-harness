@@ -107,6 +107,14 @@ interface ActiveOperation {
   finish(): void
   kind: AgentOperationKind
   settled: Promise<void>
+  steering?: Map<
+    AgentMessage,
+    {
+      content: string
+      reject(error: AgentRuntimeError): void
+      resolve(entryId: string): void
+    }
+  >
 }
 
 interface AgentRuntimeToolOptions {
@@ -508,6 +516,41 @@ export class AgentRuntime {
           type: AGENT_RUN_EVENT_TYPE.START,
         })
       : undefined
+  }
+
+  /** 将文字排入当前 Run，并在消息持久化后确认成功。 */
+  steer(id: string, content: string) {
+    this.assertOpen()
+    if (!content.trim() || content.length > 1_000_000) {
+      throw new AgentRuntimeError(
+        'INVALID_STEERING_MESSAGE',
+        '补充消息内容无效。',
+        400,
+      )
+    }
+    const operation = this.active.get(id)
+    const agent = operation?.agent
+    if (
+      !operation ||
+      operation.kind !== AGENT_OPERATION_KIND.RUN ||
+      operation.controller.signal.aborted ||
+      agent?.signal?.aborted
+    ) {
+      throw new AgentRuntimeError(
+        'NO_ACTIVE_RUN',
+        '当前会话没有正在运行的任务。',
+        409,
+      )
+    }
+
+    const message = createUserMessage(content)
+    const applied = new Promise<string>((resolve, reject) => {
+      const steering = operation.steering ?? new Map()
+      operation.steering = steering
+      steering.set(message, { content, reject, resolve })
+    })
+    agent?.steer(message)
+    return applied
   }
 
   abort(id: string) {
@@ -927,20 +970,18 @@ export class AgentRuntime {
             : undefined
         }, budget.toolResultChars),
       ]
-      if (tools.length) {
-        await opened.session.appendCustomEntry(SESSION_CUSTOM_TYPE.RUN_POLICY, {
-          activeToolNames: tools.map((tool) => tool.name),
-          ...(mcpTools?.tools.length
-            ? {
-                toolLabels: Object.fromEntries(
-                  mcpTools.tools.map((tool) => [tool.name, tool.label]),
-                ),
-              }
-            : {}),
-          permission,
-          runId,
-        })
-      }
+      await opened.session.appendCustomEntry(SESSION_CUSTOM_TYPE.RUN_POLICY, {
+        activeToolNames: tools.map((tool) => tool.name),
+        ...(mcpTools?.tools.length
+          ? {
+              toolLabels: Object.fromEntries(
+                mcpTools.tools.map((tool) => [tool.name, tool.label]),
+              ),
+            }
+          : {}),
+        permission,
+        runId,
+      })
       const systemPrompt = buildSystemPrompt()
       const contextMessages: AgentMessage[] = []
       const pinnedContext: AgentMessage[] = []
@@ -1245,6 +1286,8 @@ export class AgentRuntime {
         toolExecution: 'sequential',
       })
       operation.agent = agent
+      for (const message of operation.steering?.keys() ?? [])
+        agent.steer(message)
       await opened.session.appendCustomEntry(SESSION_CUSTOM_TYPE.RUN_STARTED, {
         runId,
         startedAt: Date.now(),
@@ -1483,6 +1526,16 @@ export class AgentRuntime {
           durableMessage.role === 'toolResult'
         )
           await options.publishContextUsage(options.agent.state)
+        const steering = options.operation.steering?.get(event.message)
+        if (steering) {
+          options.operation.steering?.delete(event.message)
+          options.events.push({
+            content: steering.content,
+            entryId,
+            type: AGENT_RUN_EVENT_TYPE.STEERING_APPLIED,
+          })
+          steering.resolve(entryId)
+        }
       } catch (error) {
         persistenceError = error
         throw error
@@ -1809,6 +1862,14 @@ export class AgentRuntime {
   }
 
   private release(id: string, operation: ActiveOperation) {
+    const steeringError = new AgentRuntimeError(
+      'STEERING_NOT_APPLIED',
+      '运行在补充消息应用前已经结束。',
+      409,
+    )
+    for (const request of operation.steering?.values() ?? [])
+      request.reject(steeringError)
+    operation.steering?.clear()
     if (this.active.get(id) === operation) this.active.delete(id)
     operation.finish()
   }

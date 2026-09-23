@@ -26,6 +26,22 @@ export const PERMISSION_OPTIONS = TOOL_PERMISSIONS.map((id) => ({
 }))
 export type PermissionId = ToolPermission
 
+export interface PermissionSelection {
+  permission: PermissionId
+  scope: string
+  sessionPermission: PermissionId
+}
+
+/** 切换会话或恢复服务端权限时丢弃旧草稿，当前会话内保留未发送选择。 */
+export const resolvePermissionSelection = (
+  current: PermissionSelection,
+  scope: string,
+  sessionPermission: PermissionId,
+): PermissionSelection =>
+  current.scope === scope && current.sessionPermission === sessionPermission
+    ? current
+    : { permission: sessionPermission, scope, sessionPermission }
+
 interface PermissionSettingsContextValue {
   permission: PermissionId
   setPermission: (permission: PermissionId) => void

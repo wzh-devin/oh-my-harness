@@ -1,4 +1,3 @@
-import { TOOL_PERMISSION } from '@oh-my-harness/agent-policy/contracts'
 import { MODEL_THINKING_LEVEL } from '@oh-my-harness/shared'
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { getProviders } from '../../models/api/index.ts'
@@ -12,6 +11,8 @@ import { ModelSettingsContext } from '../contexts/model-settings-context.ts'
 import {
   PermissionSettingsContext,
   type PermissionId,
+  type PermissionSelection,
+  resolvePermissionSelection,
 } from '../contexts/permission-settings-context.ts'
 import {
   CapabilitySettingsContext,
@@ -21,15 +22,17 @@ import {
 
 interface SettingsProviderProps {
   children: ReactNode
-  selectedWorkspaceId: string
   permissionScope: string
+  selectedWorkspaceId: string
+  sessionPermission: PermissionId
 }
 
 /** 持有模型、权限、当前工作区 Skills 与命令状态。 */
 export function SettingsProvider({
   children,
-  selectedWorkspaceId,
   permissionScope,
+  selectedWorkspaceId,
+  sessionPermission,
 }: SettingsProviderProps) {
   const [providers, setProviders] = useState(createInitialModelProviders)
   const [isLoadingProviders, setIsLoadingProviders] = useState(true)
@@ -37,23 +40,27 @@ export function SettingsProvider({
   const [thinkingLevel, setThinkingLevel] = useState<ModelThinkingLevel>(
     MODEL_THINKING_LEVEL.OFF,
   )
-  const [permissionSelection, setPermissionSelection] = useState<{
-    scope: string
-    permission: PermissionId
-  }>({ scope: permissionScope, permission: TOOL_PERMISSION.WORKSPACE_WRITE })
-  const permission =
-    permissionSelection.scope === permissionScope
-      ? permissionSelection.permission
-      : TOOL_PERMISSION.WORKSPACE_WRITE
-  if (permissionSelection.scope !== permissionScope) {
-    setPermissionSelection({
+  const [permissionSelection, setPermissionSelection] =
+    useState<PermissionSelection>({
+      permission: sessionPermission,
       scope: permissionScope,
-      permission: TOOL_PERMISSION.WORKSPACE_WRITE,
+      sessionPermission,
     })
+  const resolvedPermissionSelection = resolvePermissionSelection(
+    permissionSelection,
+    permissionScope,
+    sessionPermission,
+  )
+  if (resolvedPermissionSelection !== permissionSelection) {
+    setPermissionSelection(resolvedPermissionSelection)
   }
-  /** 新会话或工作区不继承上一处的完全访问选择。 */
+  const permission = resolvedPermissionSelection.permission
   const setPermission = (next: PermissionId) =>
-    setPermissionSelection({ scope: permissionScope, permission: next })
+    setPermissionSelection({
+      permission: next,
+      scope: permissionScope,
+      sessionPermission,
+    })
   const [skills, setSkills] = useState<AssistantSkill[]>([])
   const [commands, setCommands] = useState<CapabilityCommand[]>([])
   const [capabilityError, setCapabilityError] = useState<string | null>(null)

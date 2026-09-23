@@ -5,6 +5,7 @@ import {
   SETTINGS_SECTION,
   type SettingsSection,
 } from '@oh-my-harness/shared'
+import { TOOL_PERMISSION } from '@oh-my-harness/agent-policy/contracts'
 import { AppLayout } from '@agile-avocation/ui-pro/app-layout'
 import '../styles/ChatLayout.css'
 import {
@@ -95,6 +96,9 @@ export function ChatLayout({
   const activeWorkspaceId = isThreadPage
     ? activePage.thread.workspaceId
     : undefined
+  const sessionPermission = isThreadPage
+    ? activePage.thread.permission
+    : TOOL_PERMISSION.WORKSPACE_WRITE
 
   const handleThreadSelect = useCallback(
     (thread: ChatThread) => {
@@ -232,6 +236,7 @@ export function ChatLayout({
     <SettingsProvider
       permissionScope={`${activePageId}:${activeWorkspaceId ?? selectedWorkspaceId}`}
       selectedWorkspaceId={selectedWorkspaceId}
+      sessionPermission={sessionPermission}
     >
       <ChatWorkspaceContext.Provider
         value={{

@@ -88,6 +88,7 @@ interface ChatComposerProps {
   onModelChange?: (
     selection: Pick<ChatSubmitPayload, 'modelId' | 'providerId'>,
   ) => boolean | Promise<boolean>
+  onSteer?: (message: string) => boolean | Promise<boolean>
   onStop?: () => void
   onSubmit: (payload: ChatSubmitPayload) => boolean | Promise<boolean>
   onValueChange: (value: string) => void
@@ -114,6 +115,7 @@ export function ChatComposer({
   initialModelKey,
   isDisabled = false,
   onModelChange,
+  onSteer,
   onSubmit,
   onStop,
   onValueChange,
@@ -226,9 +228,22 @@ export function ChatComposer({
     if (menuState || submitPendingRef.current) return
 
     const message = value.trim()
+    const isGenerating = status === 'submitted' || status === 'streaming'
+
+    if (isGenerating) {
+      if (isDisabled || !message || !onSteer) return
+      submitPendingRef.current = true
+      let accepted = false
+      try {
+        accepted = await onSteer(message)
+      } finally {
+        submitPendingRef.current = false
+      }
+      if (accepted) onValueChange('')
+      return
+    }
 
     if (
-      status !== 'ready' ||
       isDisabled ||
       isModelUpdating ||
       !selectedModel ||
@@ -510,7 +525,9 @@ export function ChatComposer({
         onFilesSelected={appendAttachments}
       >
         <PromptInput
+          allowSubmitWhileRunning
           className="w-full"
+          lockInputOnRun={false}
           status={status}
           value={value}
           variant="primary"
@@ -651,9 +668,15 @@ export function ChatComposer({
                       />
                     ) : null}
                     <PromptInput.Send
-                      aria-label={isGenerating ? '停止生成' : '发送消息'}
+                      aria-label={
+                        isGenerating
+                          ? value.trim()
+                            ? '发送补充消息'
+                            : '停止生成'
+                          : '发送消息'
+                      }
                       className="size-9 min-h-9 min-w-9"
-                      isDisabled={!canSend && !isGenerating}
+                      isDisabled={isGenerating ? undefined : !canSend}
                     />
                   </PromptInput.ToolbarEnd>
                 </PromptInput.Toolbar>

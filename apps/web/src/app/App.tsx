@@ -48,6 +48,7 @@ export function App() {
     renameSession,
     resolveApproval,
     sendMessage,
+    steerMessage,
     statuses,
     runPermissions,
     setSessionArchived,
@@ -270,6 +271,7 @@ export function App() {
               updateModel(activePage.thread.id, selection)
             }
             onStop={() => void abort(activePage.thread.id)}
+            onSteer={(message) => steerMessage(activePage.thread.id, message)}
             onApprovalResolve={(decision) =>
               resolveApproval(activePage.thread.id, decision)
             }

@@ -18,6 +18,7 @@ export interface AgentSessionVo {
   id: string
   modelId: string
   name: null | string
+  permission?: PermissionId
   providerId: string
   workspaceId: null | string
 }
@@ -43,6 +44,7 @@ export interface ContextUsageVo {
 
 export interface AgentSessionDetailVo extends AgentSessionVo {
   contextUsage?: ContextUsageVo
+  permission: PermissionId
   stats: {
     cachedTokens: number
     costTotal: number
@@ -130,6 +132,11 @@ export type AgentRunEventVo =
       sessionId: string
       mcpUnavailable?: string[]
       type: typeof AGENT_RUN_EVENT_TYPE.START
+    }
+  | {
+      content: string
+      entryId: string
+      type: typeof AGENT_RUN_EVENT_TYPE.STEERING_APPLIED
     }
   | { type: typeof AGENT_RUN_EVENT_TYPE.TRAJECTORY_CHANGED }
   | {

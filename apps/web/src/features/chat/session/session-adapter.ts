@@ -10,6 +10,7 @@ import {
   MESSAGE_PART_TYPE,
   MESSAGE_ROLE,
 } from '@oh-my-harness/shared'
+import { TOOL_PERMISSION } from '@oh-my-harness/agent-policy/contracts'
 import type { AgentSessionMessageVo, AgentSessionVo } from './types/index.ts'
 
 const SESSION_USER = {
@@ -254,6 +255,7 @@ export const toChatThread = (
   id: session.id,
   messages: [],
   modelId: session.modelId,
+  permission: session.permission ?? TOOL_PERMISSION.WORKSPACE_WRITE,
   preview: session.modelId,
   providerId: session.providerId,
   searchModeId: '',
@@ -268,6 +270,7 @@ export const createPendingChatThread = (sessionId: string): ChatThread => ({
   id: sessionId,
   messages: [],
   modelId: '',
+  permission: TOOL_PERMISSION.WORKSPACE_WRITE,
   preview: '',
   searchModeId: '',
   title: '会话',

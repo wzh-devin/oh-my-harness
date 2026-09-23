@@ -32,6 +32,7 @@ import {
   reconnectAgentRun,
   renameAgentSession,
   resolveToolApproval,
+  steerAgentSession,
   streamAgentMessage,
   updateAgentSessionModel,
   updateAgentSessionArchived,
@@ -403,6 +404,7 @@ export function useAgentSessions() {
                 contextUsage: existing.contextUsage,
                 tokenUsage: existing.tokenUsage,
                 messages: existing.messages,
+                permission: existing.permission,
                 preview: existing.preview || next.preview,
                 todos: existing.todos,
               }
@@ -453,6 +455,10 @@ export function useAgentSessions() {
               ...current,
               [sessionId]: event.permission,
             }))
+            updateThread(sessionId, (thread) => ({
+              ...thread,
+              permission: event.permission,
+            }))
           } else if (
             event.type === AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED
           ) {
@@ -478,6 +484,8 @@ export function useAgentSessions() {
               ...thread,
               contextUsage: event.contextUsage,
             }))
+          } else if (event.type === AGENT_RUN_EVENT_TYPE.STEERING_APPLIED) {
+            void loadMessages(sessionId)
           } else if (event.type === AGENT_RUN_EVENT_TYPE.ERROR) {
             setErrors((current) => ({
               ...current,
@@ -699,7 +707,7 @@ export function useAgentSessions() {
     ) => {
       const startedAt = Date.now()
       const userId = `pending-user-${crypto.randomUUID()}`
-      const assistantId = `pending-assistant-${crypto.randomUUID()}`
+      let assistantId = `pending-assistant-${crypto.randomUUID()}`
       const previewUrls: string[] = []
       const attachments = payload.attachments.map((file) => {
         const src = file.type.startsWith('image/')
@@ -783,13 +791,52 @@ export function useAgentSessions() {
                 break
               case AGENT_RUN_EVENT_TYPE.START:
                 accepted = true
-                onAccepted?.(true)
                 setRunPermissions((current) => ({
                   ...current,
                   [sessionId]: event.permission,
                 }))
+                updateThread(sessionId, (thread) => ({
+                  ...thread,
+                  permission: event.permission,
+                }))
                 setStatus(sessionId, 'streaming')
+                onAccepted?.(true)
                 break
+              case AGENT_RUN_EVENT_TYPE.STEERING_APPLIED: {
+                const previousAssistantId = assistantId
+                assistantId = `pending-assistant-${crypto.randomUUID()}`
+                updateThread(sessionId, (thread) => ({
+                  ...thread,
+                  messages: [
+                    ...thread.messages.map((item) =>
+                      item.id === previousAssistantId
+                        ? {
+                            ...item,
+                            ...(item.activity
+                              ? {
+                                  activity: {
+                                    ...item.activity,
+                                    endedAt: Date.now(),
+                                  },
+                                }
+                              : {}),
+                            status: CHAT_ASSISTANT_STATUS.COMPLETE,
+                          }
+                        : item,
+                    ),
+                    {
+                      id: event.entryId,
+                      role: MESSAGE_ROLE.USER,
+                      text: event.content,
+                    },
+                    streamingAssistant(assistantId),
+                  ],
+                  preview: event.content,
+                  todos: undefined,
+                  updatedAt: '刚刚',
+                }))
+                break
+              }
               case AGENT_RUN_EVENT_TYPE.TEXT_DELTA:
                 updateThread(sessionId, (thread) => ({
                   ...thread,
@@ -1072,6 +1119,23 @@ export function useAgentSessions() {
     [loadMessages, setStatus, updateThread],
   )
 
+  const steerMessage = useCallback(
+    async (sessionId: string, content: string) => {
+      setErrors((current) => ({ ...current, [sessionId]: '' }))
+      try {
+        await steerAgentSession(sessionId, content)
+        return true
+      } catch (error) {
+        setErrors((current) => ({
+          ...current,
+          [sessionId]: errorMessage(error),
+        }))
+        return false
+      }
+    },
+    [],
+  )
+
   const resolveApproval = useCallback(
     async (sessionId: string, decision: ApprovalDecision) => {
       const approval = pendingApprovals[sessionId]
@@ -1131,6 +1195,7 @@ export function useAgentSessions() {
     renameSession,
     resolveApproval,
     sendMessage,
+    steerMessage,
     statuses,
     runPermissions,
     setSessionArchived,

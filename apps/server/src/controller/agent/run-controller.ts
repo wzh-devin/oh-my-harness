@@ -17,6 +17,7 @@ import { MODEL_THINKING_LEVEL } from '@oh-my-harness/shared'
 import type {
   AgentRunEventDto,
   SendAgentMessageDto,
+  SteerAgentMessageDto,
 } from '../../dto/agent/run-dto.ts'
 import { agentErrorResponse } from './error-response.ts'
 
@@ -111,6 +112,21 @@ function parseMessage(
       ? {}
       : { thinkingLevel: record.thinkingLevel as ModelThinkingLevel }),
   }
+}
+
+function parseSteeringMessage(
+  value: unknown,
+): SteerAgentMessageDto | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return
+  const record = value as Record<string, unknown>
+  if (
+    Object.keys(record).length !== 1 ||
+    typeof record.content !== 'string' ||
+    !record.content.trim() ||
+    record.content.length > 1_000_000
+  )
+    return
+  return { content: record.content }
 }
 
 const detectedImageMimeType = (bytes: Uint8Array) => {
@@ -277,6 +293,26 @@ export function createAgentRunController(runtime: AgentRuntime) {
       try {
         const run = runtime.reconnect(context.req.param('id')!)
         return run ? streamRun(context, run) : context.body(null, 204)
+      } catch (error) {
+        return agentErrorResponse(context, error)
+      }
+    },
+    steer: async (context: Context) => {
+      const input = parseSteeringMessage(
+        await context.req.json<unknown>().catch(() => undefined),
+      )
+      if (!input) {
+        return context.json(
+          {
+            code: 'INVALID_STEERING_MESSAGE',
+            message: '补充消息内容无效。',
+          },
+          400,
+        )
+      }
+      try {
+        await runtime.steer(context.req.param('id')!, input.content)
+        return context.body(null, 204)
       } catch (error) {
         return agentErrorResponse(context, error)
       }

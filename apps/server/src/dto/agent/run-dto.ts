@@ -37,6 +37,10 @@ export interface SendAgentMessageDto {
   thinkingLevel?: ModelThinkingLevel
 }
 
+export interface SteerAgentMessageDto {
+  content: string
+}
+
 export type AgentRunEventDto =
   | {
       type: typeof AGENT_RUN_EVENT_TYPE.TRAJECTORY_UPDATED
@@ -55,6 +59,11 @@ export type AgentRunEventDto =
       sessionId: string
       mcpUnavailable?: string[]
       type: typeof AGENT_RUN_EVENT_TYPE.START
+    }
+  | {
+      content: string
+      entryId: string
+      type: typeof AGENT_RUN_EVENT_TYPE.STEERING_APPLIED
     }
   | { type: typeof AGENT_RUN_EVENT_TYPE.TRAJECTORY_CHANGED }
   | { delta: string; type: typeof AGENT_RUN_EVENT_TYPE.TEXT_DELTA }

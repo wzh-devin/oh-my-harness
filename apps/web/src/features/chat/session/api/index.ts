@@ -11,6 +11,7 @@ export {
   parseAgentSseFrames,
   reconnectAgentRun,
   renameAgentSession,
+  steerAgentSession,
   streamAgentMessage,
   resolveToolApproval,
   updateAgentSessionModel,

@@ -129,6 +129,7 @@ function sessionDetailDto(
   return {
     ...sessionDto(session, workspaceId),
     ...(session.contextUsage ? { contextUsage: session.contextUsage } : {}),
+    permission: session.permission,
     stats: session.stats,
   }
 }

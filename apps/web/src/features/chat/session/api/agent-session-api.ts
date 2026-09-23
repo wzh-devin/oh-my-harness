@@ -311,6 +311,19 @@ function toRunEvent(value: unknown): AgentRunEventVo {
         }
       }
       break
+    case AGENT_RUN_EVENT_TYPE.STEERING_APPLIED:
+      if (
+        typeof event.content === 'string' &&
+        typeof event.entryId === 'string' &&
+        event.entryId
+      ) {
+        return {
+          content: event.content,
+          entryId: event.entryId,
+          type: AGENT_RUN_EVENT_TYPE.STEERING_APPLIED,
+        }
+      }
+      break
     case AGENT_RUN_EVENT_TYPE.TEXT_DELTA:
     case AGENT_RUN_EVENT_TYPE.REASONING_DELTA:
       if (typeof event.delta === 'string') {
@@ -580,6 +593,13 @@ export const listAgentSessionMessages = (
 
 export const abortAgentSession = (sessionId: string) =>
   request<void>(`${sessionPath(sessionId)}/abort`, { method: 'POST' })
+
+export const steerAgentSession = (sessionId: string, content: string) =>
+  request<void>(`${sessionPath(sessionId)}/steer`, {
+    body: JSON.stringify({ content }),
+    headers: { 'content-type': 'application/json' },
+    method: 'POST',
+  })
 
 /** 查询断线或刷新后仍在等待的服务端工具审批。 */
 export const getPendingToolApproval = async (

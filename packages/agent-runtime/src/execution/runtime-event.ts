@@ -24,6 +24,11 @@ export type AgentRuntimeEvent =
       mcpUnavailable?: string[]
       type: typeof AGENT_RUN_EVENT_TYPE.START
     }
+  | {
+      content: string
+      entryId: string
+      type: typeof AGENT_RUN_EVENT_TYPE.STEERING_APPLIED
+    }
   | { type: typeof AGENT_RUN_EVENT_TYPE.TRAJECTORY_CHANGED }
   | { delta: string; type: typeof AGENT_RUN_EVENT_TYPE.TEXT_DELTA }
   | { delta: string; type: typeof AGENT_RUN_EVENT_TYPE.REASONING_DELTA }
