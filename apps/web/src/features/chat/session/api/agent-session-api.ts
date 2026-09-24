@@ -223,6 +223,8 @@ const parseToolApproval = (
     toolCallId: event.toolCallId,
     type: AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED,
   }
+  const sessionCapability =
+    event.canApproveSession === true ? { canApproveSession: true as const } : {}
   if (
     event.kind === TOOL_ACTIVITY_KIND.TOOL &&
     typeof event.serverId === 'string' &&
@@ -250,6 +252,7 @@ const parseToolApproval = (
     if (input)
       return {
         ...common,
+        ...sessionCapability,
         kind: TOOL_ACTIVITY_KIND.COMMAND,
         toolName: POLICY_TOOL.BASH.toolName,
         input,
@@ -264,6 +267,7 @@ const parseToolApproval = (
   )
     return {
       ...common,
+      ...sessionCapability,
       kind: TOOL_ACTIVITY_KIND.READ,
       toolName: fileTool.toolName,
       path: event.path,
@@ -274,6 +278,7 @@ const parseToolApproval = (
   )
     return {
       ...common,
+      ...sessionCapability,
       kind: TOOL_ACTIVITY_KIND.EDIT,
       toolName: fileTool.toolName,
       path: event.path,

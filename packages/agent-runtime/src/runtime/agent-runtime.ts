@@ -11,9 +11,11 @@ import {
   ToolPolicy,
   ToolPolicyError,
   isToolPermission,
+  sessionApprovalKey,
   type ApprovalDecision,
   type ApprovalResolution,
   type PendingToolApproval,
+  type SessionApprovalGrant,
   type ToolPermission,
 } from '@oh-my-harness/agent-policy'
 import {
@@ -29,6 +31,8 @@ import { ModelServiceError, type ModelService } from '@oh-my-harness/llm'
 import {
   AGENT_OPERATION_KIND,
   AGENT_RUN_EVENT_TYPE,
+  APPROVAL_DECISION,
+  APPROVAL_RESOLUTION_REASON,
   CAPABILITY_KIND,
   COMPLETION_EVENT_TYPE,
   MESSAGE_ROLE,
@@ -98,6 +102,7 @@ import {
   type AgentSessionRepository,
 } from '../session/session-service.ts'
 import { SESSION_CUSTOM_TYPE } from '../session/session-custom-type.ts'
+import { projectSessionApprovals } from '../session/session-approval-projection.ts'
 
 interface ActiveOperation {
   trajectory?: TrajectoryStream
@@ -495,7 +500,9 @@ export class AgentRuntime {
             ? 404
             : error.code === 'APPROVAL_ALREADY_RESOLVED'
               ? 409
-              : 500
+              : error.code === 'APPROVAL_SESSION_UNAVAILABLE'
+                ? 400
+                : 500
         throw new AgentRuntimeError(error.code, error.message, status)
       }
       throw error
@@ -829,6 +836,7 @@ export class AgentRuntime {
         opened.entries,
         id,
       )
+      const sessionApprovals = projectSessionApprovals(entries)
       const context = buildSessionContext(entries)
       let currentTodos = incoming ? undefined : projectRecoverableTodos(entries)
       const taskEntry = [...entries]
@@ -881,13 +889,18 @@ export class AgentRuntime {
       })
       const workspaceTools = this.toolOptions
         ? await createWorkspaceTools({
+            sessionApprovals,
             cwd: opened.metadata.cwd,
             onApprovalRequested: async (approval) => {
               await this.appendApprovalRequested(opened.session, approval)
               events.push(toToolApprovalEvent(approval))
             },
             onApprovalResolved: (resolution) =>
-              this.appendApprovalResolved(opened.session, resolution),
+              this.appendApprovalResolved(
+                opened.session,
+                resolution,
+                sessionApprovals,
+              ),
             permission,
             policy: this.toolOptions.policy,
             protectedRoots: this.toolOptions.protectedRoots,
@@ -911,7 +924,11 @@ export class AgentRuntime {
               events.push(toToolApprovalEvent(approval))
             },
             onApprovalResolved: (resolution) =>
-              this.appendApprovalResolved(opened.session, resolution),
+              this.appendApprovalResolved(
+                opened.session,
+                resolution,
+                sessionApprovals,
+              ),
           }).catch(() => undefined)
         : undefined
       if (mcpTools) cleanups.push(mcpTools.cleanup)
@@ -1734,6 +1751,7 @@ export class AgentRuntime {
   private async appendApprovalResolved(
     session: Awaited<ReturnType<AgentSessionService['open']>>['session'],
     resolution: ApprovalResolution,
+    sessionApprovals: Map<string, SessionApprovalGrant>,
   ) {
     await session.appendCustomEntry(SESSION_CUSTOM_TYPE.APPROVAL_RESOLVED, {
       approvalId: resolution.approvalId,
@@ -1741,7 +1759,22 @@ export class AgentRuntime {
       reason: resolution.reason,
       runId: resolution.runId,
       toolCallId: resolution.toolCallId,
+      ...(resolution.decision === APPROVAL_DECISION.APPROVE_SESSION &&
+      resolution.reason === APPROVAL_RESOLUTION_REASON.USER &&
+      resolution.sessionGrant
+        ? { grant: resolution.sessionGrant }
+        : {}),
     })
+    if (
+      resolution.decision === APPROVAL_DECISION.APPROVE_SESSION &&
+      resolution.reason === APPROVAL_RESOLUTION_REASON.USER &&
+      resolution.sessionGrant
+    ) {
+      sessionApprovals.set(
+        sessionApprovalKey(resolution.sessionGrant),
+        resolution.sessionGrant,
+      )
+    }
   }
 
   private async repairInterruptedTools(

@@ -193,6 +193,7 @@ export type AgentRunEventVo =
     }
   | ({
       approvalId: string
+      canApproveSession?: true
       path: string
       title: string
       toolCallId: string
@@ -210,6 +211,7 @@ export type AgentRunEventVo =
     ))
   | {
       approvalId: string
+      canApproveSession?: true
       input: { command: string }
       kind: typeof TOOL_ACTIVITY_KIND.COMMAND
       title: string

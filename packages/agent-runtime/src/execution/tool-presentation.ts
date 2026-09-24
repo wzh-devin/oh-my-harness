@@ -34,6 +34,9 @@ export const getToolActivityKind = (name: string): ToolActivityKind =>
 export const toToolApprovalEvent = (approval: PendingToolApproval) => {
   const common = {
     approvalId: approval.approvalId,
+    ...(approval.effect !== TOOL_EFFECT.MCP_CALL && approval.sessionGrant
+      ? { canApproveSession: true as const }
+      : {}),
     toolCallId: approval.toolCallId,
     type: AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED,
   }

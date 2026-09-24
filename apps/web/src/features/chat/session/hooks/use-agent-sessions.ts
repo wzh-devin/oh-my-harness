@@ -1142,7 +1142,10 @@ export function useAgentSessions() {
       if (!approval) return
       try {
         await resolveToolApproval(sessionId, approval.approvalId, decision)
-        if (decision === APPROVAL_DECISION.APPROVE_ONCE) {
+        if (
+          decision === APPROVAL_DECISION.APPROVE_ONCE ||
+          decision === APPROVAL_DECISION.APPROVE_SESSION
+        ) {
           const resumedAt = Date.now()
           updateThread(sessionId, (thread) => ({
             ...thread,

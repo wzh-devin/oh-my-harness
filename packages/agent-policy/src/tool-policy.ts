@@ -17,9 +17,14 @@ import {
   type ApprovalResolution,
   type PendingToolApproval,
   type PolicyDecision,
+  type SessionApprovalGrant,
   type ToolAuthorizationRequest,
   type McpToolIdentity,
 } from './contracts.ts'
+import {
+  createSessionApprovalGrant,
+  sessionApprovalKey,
+} from './session-approval.ts'
 
 interface ApprovalHooks {
   onRequested(approval: PendingToolApproval): Promise<void>
@@ -91,7 +96,7 @@ export const evaluateToolPolicy = (
     : POLICY_DECISION.REQUIRE_APPROVAL
 }
 
-/** 保存活跃 Run 的单次审批，不持久化会话级授权。 */
+/** 保存活跃 Run 的待审批状态；会话授权由 Runtime 持久化。 */
 export class ToolPolicy {
   private readonly pending = new Map<string, PendingState>()
   private readonly resolved = new Map<
@@ -104,6 +109,7 @@ export class ToolPolicy {
     hooks: ApprovalHooks,
     signal?: AbortSignal,
     mcpTools?: ReadonlyMap<string, McpToolIdentity>,
+    sessionApprovals?: ReadonlyMap<string, SessionApprovalGrant>,
   ) {
     const decision = evaluateToolPolicy(request, mcpTools)
     if (decision === POLICY_DECISION.ALLOW) return
@@ -120,9 +126,14 @@ export class ToolPolicy {
       )
     }
 
+    const sessionGrant = createSessionApprovalGrant(request)
+    if (sessionGrant && sessionApprovals?.has(sessionApprovalKey(sessionGrant)))
+      return
+
     const approval: PendingToolApproval = {
       ...request,
       approvalId: randomUUID(),
+      sessionGrant,
     }
     let complete!: (error?: ToolPolicyError) => void
     const waiting = new Promise<void>((resolve, reject) => {
@@ -196,6 +207,15 @@ export class ToolPolicy {
         '工具审批已经处理。',
       )
     }
+    if (
+      decision === APPROVAL_DECISION.APPROVE_SESSION &&
+      !state.approval.sessionGrant
+    ) {
+      throw new ToolPolicyError(
+        TOOL_POLICY_ERROR_CODE.APPROVAL_SESSION_UNAVAILABLE,
+        '当前工具调用不支持会话授权。',
+      )
+    }
     await this.resolveState(state, decision, APPROVAL_RESOLUTION_REASON.USER)
   }
 
@@ -231,7 +251,10 @@ export class ToolPolicy {
       runId: state.approval.runId,
       sessionId: state.approval.sessionId,
     })
-    if (decision === APPROVAL_DECISION.APPROVE_ONCE) {
+    if (
+      decision === APPROVAL_DECISION.APPROVE_ONCE ||
+      decision === APPROVAL_DECISION.APPROVE_SESSION
+    ) {
       state.complete()
     } else {
       state.complete(

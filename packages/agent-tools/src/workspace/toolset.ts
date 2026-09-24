@@ -8,6 +8,7 @@ import { relative } from 'node:path'
 import type {
   ApprovalResolution,
   PendingToolApproval,
+  SessionApprovalGrant,
   ToolPermission,
 } from '@oh-my-harness/agent-policy'
 import { ToolPolicy, ToolPolicyError } from '@oh-my-harness/agent-policy'
@@ -26,6 +27,7 @@ import { WorkspaceExecutionEnv } from './execution-env.ts'
 interface WorkspaceToolsOptions {
   attachmentRoot?: string
   cwd: string
+  sessionApprovals?: ReadonlyMap<string, SessionApprovalGrant>
   onApprovalRequested(approval: PendingToolApproval): Promise<void>
   onApprovalResolved(resolution: ApprovalResolution): Promise<void>
   permission: ToolPermission
@@ -154,9 +156,16 @@ export const createWorkspaceTools = async (options: WorkspaceToolsOptions) => {
       if (toolName === POLICY_TOOL.BASH.toolName) {
         const { command } = parseBashInput(call.args)
         await options.policy.authorize(
-          { ...common, ...POLICY_TOOL.BASH, command },
+          {
+            ...common,
+            ...POLICY_TOOL.BASH,
+            command,
+            cwd: env.cwd,
+          },
           hooks,
           signal,
+          undefined,
+          options.sessionApprovals,
         )
         signal?.throwIfAborted()
         authorized.set(call.toolCall.id, { input, toolName })
@@ -182,6 +191,8 @@ export const createWorkspaceTools = async (options: WorkspaceToolsOptions) => {
         },
         hooks,
         signal,
+        undefined,
+        options.sessionApprovals,
       )
       signal?.throwIfAborted()
       authorized.set(call.toolCall.id, { input, target, toolName })

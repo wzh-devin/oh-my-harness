@@ -85,6 +85,7 @@ export type FileToolAuthorizationRequest = ToolAuthorizationBase &
 export type BashToolAuthorizationRequest = ToolAuthorizationBase &
   typeof POLICY_TOOL.BASH & {
     command: string
+    cwd: string
   }
 export type ToolAuthorizationRequest =
   | FileToolAuthorizationRequest
@@ -104,8 +105,23 @@ export type McpToolAuthorizationRequest = ToolAuthorizationBase &
     effect: typeof TOOL_EFFECT.MCP_CALL
     input: Record<string, unknown>
   }
+
+export type SessionApprovalGrant =
+  | ({ schemaVersion: 1; permission: ToolPermission } & FileToolDefinition & {
+        path: string
+        scope: FileScope
+      })
+  | ({
+      schemaVersion: 1
+      permission: ToolPermission
+    } & typeof POLICY_TOOL.BASH & {
+        command: string
+        cwd: string
+      })
+
 export type PendingToolApproval = ToolAuthorizationRequest & {
   approvalId: string
+  sessionGrant?: SessionApprovalGrant
 }
 export type ApprovalResolution = PendingToolApproval & {
   decision: ApprovalDecision

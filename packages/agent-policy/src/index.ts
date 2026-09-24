@@ -5,6 +5,11 @@ export {
 } from './tool-policy.ts'
 export type { ToolPolicyErrorCode } from './tool-policy.ts'
 export {
+  createSessionApprovalGrant,
+  parseSessionApprovalGrant,
+  sessionApprovalKey,
+} from './session-approval.ts'
+export {
   APPROVAL_DECISION,
   FILE_SCOPE,
   POLICY_DECISION,
@@ -22,6 +27,7 @@ export type {
   McpToolAuthorizationRequest,
   ApprovalDecision,
   ApprovalResolution,
+  SessionApprovalGrant,
   BashToolAuthorizationRequest,
   FileToolAuthorizationRequest,
   FileToolDefinition,

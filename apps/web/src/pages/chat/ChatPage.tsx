@@ -181,23 +181,22 @@ export function ChatPage({
               ) : null}
             </div>
           ) : pendingTool ? (
-            <div>
-              <div className="mb-2 flex items-center justify-between gap-2 text-xs text-muted">
-                <span>
-                  本轮：
-                  {PERMISSION_OPTIONS.find(
-                    (option) => option.id === activePermission,
-                  )?.label ?? '正在恢复权限…'}
-                </span>
-                <Button size="sm" variant="ghost" onPress={onStop}>
-                  停止本轮
-                </Button>
-              </div>
-              <ApprovalPrompt
-                tool={pendingTool}
-                onResolve={(decision) => void onApprovalResolve(decision)}
-              />
-            </div>
+            <ApprovalPrompt
+              key={pendingApproval?.approvalId}
+              canApproveSession={
+                !!pendingApproval &&
+                'canApproveSession' in pendingApproval &&
+                pendingApproval.canApproveSession === true
+              }
+              permissionLabel={
+                PERMISSION_OPTIONS.find(
+                  (option) => option.id === activePermission,
+                )?.label ?? '正在恢复权限…'
+              }
+              tool={pendingTool}
+              onResolve={(decision) => void onApprovalResolve(decision)}
+              onStop={onStop}
+            />
           ) : (
             <ChatComposer
               activePermission={activePermission}
