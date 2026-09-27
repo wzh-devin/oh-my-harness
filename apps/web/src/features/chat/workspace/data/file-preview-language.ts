@@ -37,13 +37,14 @@ const LANGUAGE_BY_EXTENSION: Readonly<Record<string, string>> = {
 
 const UNSAFE_FILE_REFERENCE_PATTERN = /(?:^|\/)\.\.(?:\/|$)|[\0\r\n\t\\]/
 const URI_SCHEME_PATTERN = /^[a-z][a-z\d+.-]*:/i
+const GLOB_FILE_REFERENCE_PATTERN = /[*?[\]{}]/u
 
 /** 按文件扩展名选择受控的 Shiki 语言，大文件和未知类型保持纯文本。 */
 export const getFilePreviewLanguage = (path: string, size: number) => {
   if (size > MAX_HIGHLIGHT_BYTES) return undefined
 
   const dotIndex = path.lastIndexOf('.')
-  if (dotIndex <= path.lastIndexOf('/')) return undefined
+  if (dotIndex <= path.lastIndexOf('/') + 1) return undefined
 
   const extension = path.slice(dotIndex + 1).toLowerCase()
   return LANGUAGE_BY_EXTENSION[extension]
@@ -58,6 +59,7 @@ export const getWorkspaceFileReference = (value: string) => {
     path.startsWith('~') ||
     URI_SCHEME_PATTERN.test(path) ||
     UNSAFE_FILE_REFERENCE_PATTERN.test(path) ||
+    GLOB_FILE_REFERENCE_PATTERN.test(path) ||
     !getFilePreviewLanguage(path, 0)
   ) {
     return undefined

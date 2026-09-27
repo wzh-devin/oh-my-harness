@@ -4,6 +4,7 @@ import {
   type AgentRuntime,
 } from '@oh-my-harness/agent-runtime'
 import type { Context } from 'hono'
+import { glob } from 'node:fs/promises'
 
 import type {
   CreateWorkspaceDto,
@@ -22,6 +23,28 @@ import {
 import { selectNativeWorkspaceDirectory } from '../../infrastructure/workspace/native-directory-picker.ts'
 
 const MAX_PREVIEW_BYTES = 1024 * 1024
+
+/** 为相对当前子目录的文件引用查找至多两个安全匹配，避免误开。 */
+const findWorkspaceFilesBySuffix = async (
+  environment: WorkspaceExecutionEnv,
+  workspacePath: string,
+  suffix: string,
+) => {
+  const normalizedSuffix = suffix.replace(/^(?:\.\/)+/u, '')
+  const matches: string[] = []
+  for await (const path of glob('**/*', {
+    cwd: workspacePath,
+    exclude: ['**/.git/**', '**/node_modules/**'],
+  })) {
+    if (path !== normalizedSuffix && !path.endsWith(`/${normalizedSuffix}`))
+      continue
+    const info = await environment.fileInfo(path)
+    if (!info.ok || info.value.kind !== 'file') continue
+    matches.push(path)
+    if (matches.length === 2) break
+  }
+  return matches
+}
 
 function parseOpenWorkspaceFile(
   value: unknown,
@@ -391,7 +414,28 @@ export function createWorkspaceController(
         const environment = await WorkspaceExecutionEnv.create(workspace.path, [
           dataDirectory,
         ])
-        const info = await environment.fileInfo(input.path)
+        let path = input.path
+        let info = await environment.fileInfo(path)
+        if (!info.ok && info.error.code === 'not_found') {
+          const matches = await findWorkspaceFilesBySuffix(
+            environment,
+            workspace.path,
+            path,
+          )
+          if (matches.length > 1) {
+            return context.json(
+              {
+                code: 'FILE_OPEN_AMBIGUOUS',
+                message: '工作区内存在多个匹配文件，请使用更完整的相对路径。',
+              },
+              409,
+            )
+          }
+          if (matches[0]) {
+            path = matches[0]
+            info = await environment.fileInfo(path)
+          }
+        }
         if (!info.ok) return fileOpenErrorResponse(context, info.error.code)
         if (info.value.kind !== 'file') {
           return context.json(
@@ -399,7 +443,7 @@ export function createWorkspaceController(
             400,
           )
         }
-        const canonical = await environment.canonicalPath(input.path)
+        const canonical = await environment.canonicalPath(path)
         if (!canonical.ok) {
           return fileOpenErrorResponse(context, canonical.error.code)
         }
