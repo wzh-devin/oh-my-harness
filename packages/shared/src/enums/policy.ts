@@ -6,6 +6,16 @@ export const TOOL_PERMISSION = {
 export type ToolPermission =
   (typeof TOOL_PERMISSION)[keyof typeof TOOL_PERMISSION]
 
+export const SANDBOX_MODE = {
+  DANGER_FULL_ACCESS: 'danger-full-access',
+  READ_ONLY: 'read-only',
+  WORKSPACE_WRITE: 'workspace-write',
+} as const
+export type SandboxMode = (typeof SANDBOX_MODE)[keyof typeof SANDBOX_MODE]
+export const SANDBOX_MODES: readonly SandboxMode[] = Object.values(SANDBOX_MODE)
+export const isSandboxMode = (value: unknown): value is SandboxMode =>
+  SANDBOX_MODES.some((mode) => mode === value)
+
 export const TOOL_EFFECT = {
   MCP_CALL: 'mcp-call',
   READ: 'read',

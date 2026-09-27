@@ -110,15 +110,17 @@ export class ToolPolicy {
     signal?: AbortSignal,
     mcpTools?: ReadonlyMap<string, McpToolIdentity>,
     sessionApprovals?: ReadonlyMap<string, SessionApprovalGrant>,
+    options?: { sandboxEscalation?: true },
   ) {
     const decision = evaluateToolPolicy(request, mcpTools)
-    if (decision === POLICY_DECISION.ALLOW) return
     if (decision === POLICY_DECISION.DENY) {
       throw new ToolPolicyError(
         TOOL_POLICY_ERROR_CODE.TOOL_PERMISSION_DENIED,
         '当前工具调用不在允许的能力范围内。',
       )
     }
+    if (decision === POLICY_DECISION.ALLOW && !options?.sandboxEscalation)
+      return
     if (signal?.aborted) {
       throw new ToolPolicyError(
         TOOL_POLICY_ERROR_CODE.TOOL_APPROVAL_REJECTED,
@@ -126,13 +128,16 @@ export class ToolPolicy {
       )
     }
 
-    const sessionGrant = createSessionApprovalGrant(request)
+    const sessionGrant = options?.sandboxEscalation
+      ? undefined
+      : createSessionApprovalGrant(request)
     if (sessionGrant && sessionApprovals?.has(sessionApprovalKey(sessionGrant)))
       return
 
     const approval: PendingToolApproval = {
       ...request,
       approvalId: randomUUID(),
+      ...(options?.sandboxEscalation ? { sandboxEscalation: true } : {}),
       sessionGrant,
     }
     let complete!: (error?: ToolPolicyError) => void

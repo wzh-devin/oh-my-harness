@@ -121,6 +121,7 @@ export type SessionApprovalGrant =
 
 export type PendingToolApproval = ToolAuthorizationRequest & {
   approvalId: string
+  sandboxEscalation?: true
   sessionGrant?: SessionApprovalGrant
 }
 export type ApprovalResolution = PendingToolApproval & {

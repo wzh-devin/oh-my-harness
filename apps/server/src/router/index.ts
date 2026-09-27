@@ -10,6 +10,8 @@ import { createCompletionRouter } from './llm/completion-router.ts'
 import { createOAuthRouter } from './llm/oauth-router.ts'
 import { createProviderRouter } from './llm/provider-router.ts'
 import { createWorkspaceRouter } from './workspace/workspace-router.ts'
+import { createSandboxSettingsRouter } from './settings/sandbox-settings-router.ts'
+import type { SandboxSettingsService } from '../infrastructure/settings/sandbox-settings-service.ts'
 import type { FileEditorService } from '../infrastructure/workspace/file-editor-service.ts'
 import type { WorkspaceStore } from '../infrastructure/workspace/workspace-store.ts'
 
@@ -21,6 +23,8 @@ export function createApiRouter(
   workspaces: WorkspaceStore,
   dataDirectory: string,
   fileEditors: FileEditorService,
+  sandboxSettings: SandboxSettingsService,
+  publicUrl: string,
 ) {
   const router = new Hono()
   router.route('/health', createHealthRouter())
@@ -28,7 +32,10 @@ export function createApiRouter(
   router.route('/ai/oauth', createOAuthRouter(oauth))
   router.route('/ai/completions', createCompletionRouter(models))
   router.route('/agent/sessions', createAgentSessionRouter(runtime, workspaces))
-  router.route('/agent/sessions', createAgentRunRouter(runtime))
+  router.route(
+    '/agent/sessions',
+    createAgentRunRouter(runtime, sandboxSettings),
+  )
   router.route(
     '/agent/capabilities',
     createAgentCapabilityRouter(runtime, workspaces),
@@ -36,6 +43,10 @@ export function createApiRouter(
   router.route(
     '/workspaces',
     createWorkspaceRouter(workspaces, dataDirectory, runtime, fileEditors),
+  )
+  router.route(
+    '/settings/sandbox',
+    createSandboxSettingsRouter(sandboxSettings, publicUrl),
   )
   return router
 }

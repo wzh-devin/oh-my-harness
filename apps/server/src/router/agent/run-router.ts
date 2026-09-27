@@ -3,11 +3,15 @@ import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 
 import { createAgentRunController } from '../../controller/agent/run-controller.ts'
+import type { SandboxSettingsService } from '../../infrastructure/settings/sandbox-settings-service.ts'
 
 /** 注册 Agent 的流式运行与显式终止路由。 */
-export function createAgentRunRouter(runtime: AgentRuntime) {
+export function createAgentRunRouter(
+  runtime: AgentRuntime,
+  sandboxSettings: SandboxSettingsService,
+) {
   const router = new Hono()
-  const controller = createAgentRunController(runtime)
+  const controller = createAgentRunController(runtime, sandboxSettings)
   router.post(
     '/:id/messages/stream',
     bodyLimit({

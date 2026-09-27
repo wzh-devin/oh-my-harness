@@ -1,10 +1,14 @@
 import {
   FILE_SCOPE,
   POLICY_TOOL,
+  TOOL_EFFECT,
   TOOL_PERMISSION,
   getFileTool,
 } from '@oh-my-harness/agent-policy/contracts'
-import { relative } from 'node:path'
+import { SANDBOX_MODE, type SandboxMode } from '@oh-my-harness/shared'
+import { mkdtemp, realpath, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { isAbsolute, join, relative } from 'node:path'
 import type {
   ApprovalResolution,
   PendingToolApproval,
@@ -34,6 +38,7 @@ interface WorkspaceToolsOptions {
   policy: ToolPolicy
   protectedRoots?: readonly string[]
   runId: string
+  sandboxMode: SandboxMode
   sessionId: string
 }
 
@@ -44,6 +49,17 @@ interface AuthorizedCall {
   input: string
   toolName: string
   target?: FileTarget
+}
+
+const isWithin = (root: string, path: string) => {
+  const child = relative(root, path)
+  return (
+    child === '' ||
+    (child !== '..' &&
+      !child.startsWith('../') &&
+      !child.startsWith('..\\') &&
+      !isAbsolute(child))
+  )
 }
 
 /** 为一次 Run 绑定 Policy；执行只消费同 ID、同参数的一次授权。 */
@@ -67,10 +83,23 @@ export const createWorkspaceTools = async (options: WorkspaceToolsOptions) => {
       )
   }
   const fileTools = Object.values(fileToolMap)
-  const bash = createBashTool(
-    env.cwd,
-    options.permission === TOOL_PERMISSION.FULL_ACCESS,
-  )
+  const restricted = options.sandboxMode !== SANDBOX_MODE.DANGER_FULL_ACCESS
+  const tempDirectory =
+    restricted && process.platform === 'darwin'
+      ? await realpath(await mkdtemp(join(tmpdir(), 'omh-sandbox-')))
+      : undefined
+  const bash = createBashTool(env.cwd, {
+    fullAccess: options.permission === TOOL_PERMISSION.FULL_ACCESS,
+    ...(tempDirectory
+      ? {
+          sandbox: {
+            mode: options.sandboxMode,
+            protectedRoots: env.canonicalProtectedRoots,
+            tempDirectory,
+          },
+        }
+      : {}),
+  })
   const tools: AgentTool[] = [...fileTools, bash].map((tool) => ({
     ...tool,
     async execute(toolCallId, params, signal, onUpdate) {
@@ -154,7 +183,11 @@ export const createWorkspaceTools = async (options: WorkspaceToolsOptions) => {
     try {
       signal?.throwIfAborted()
       if (toolName === POLICY_TOOL.BASH.toolName) {
-        const { command } = parseBashInput(call.args)
+        const { command, elevated } = parseBashInput(call.args)
+        const sandboxEscalation =
+          restricted &&
+          elevated === true &&
+          options.permission !== TOOL_PERMISSION.FULL_ACCESS
         await options.policy.authorize(
           {
             ...common,
@@ -166,6 +199,7 @@ export const createWorkspaceTools = async (options: WorkspaceToolsOptions) => {
           signal,
           undefined,
           options.sessionApprovals,
+          sandboxEscalation ? { sandboxEscalation: true } : undefined,
         )
         signal?.throwIfAborted()
         authorized.set(call.toolCall.id, { input, toolName })
@@ -179,6 +213,23 @@ export const createWorkspaceTools = async (options: WorkspaceToolsOptions) => {
       if (!args || typeof args.path !== 'string')
         return { block: true, reason: '文件参数无效。' }
       const target = await env.resolveToolTarget(args.path)
+      if (definition.effect === TOOL_EFFECT.WRITE && restricted) {
+        const protectedWorkspacePath = ['.git', '.agents'].some((directory) =>
+          isWithin(join(env.cwd, directory), target.path),
+        )
+        if (protectedWorkspacePath) {
+          return {
+            block: true,
+            reason: '当前沙箱模式不允许写入该路径。',
+          }
+        }
+      }
+      const sandboxEscalation =
+        definition.effect === TOOL_EFFECT.WRITE &&
+        restricted &&
+        (options.sandboxMode === SANDBOX_MODE.READ_ONLY ||
+          target.scope !== FILE_SCOPE.WORKSPACE) &&
+        options.permission !== TOOL_PERMISSION.FULL_ACCESS
       await options.policy.authorize(
         {
           ...common,
@@ -193,6 +244,7 @@ export const createWorkspaceTools = async (options: WorkspaceToolsOptions) => {
         signal,
         undefined,
         options.sessionApprovals,
+        sandboxEscalation ? { sandboxEscalation: true } : undefined,
       )
       signal?.throwIfAborted()
       authorized.set(call.toolCall.id, { input, target, toolName })
@@ -214,7 +266,12 @@ export const createWorkspaceTools = async (options: WorkspaceToolsOptions) => {
     beforeToolCall,
     cleanup: () => {
       authorized.clear()
-      return env.cleanup()
+      return Promise.all([
+        env.cleanup(),
+        ...(tempDirectory
+          ? [rm(tempDirectory, { force: true, recursive: true })]
+          : []),
+      ]).then(() => undefined)
     },
     tools,
   }

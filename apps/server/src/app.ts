@@ -22,6 +22,7 @@ import { Hono } from 'hono'
 import { createJsonlSessionRepository } from './infrastructure/session/jsonl-session.ts'
 import { SessionIndex } from './infrastructure/session/session-index.ts'
 import { FileEditorService } from './infrastructure/workspace/file-editor-service.ts'
+import { SandboxSettingsService } from './infrastructure/settings/sandbox-settings-service.ts'
 import { WorkspaceStore } from './infrastructure/workspace/workspace-store.ts'
 import { createApiRouter } from './router/index.ts'
 
@@ -30,6 +31,7 @@ export interface CreateAppOptions {
   plugins?: PluginService
   fileEditors?: FileEditorService
   models?: ModelService
+  sandboxSettings?: SandboxSettingsService
 }
 
 export type OhMyHarnessApp = Hono & { close(): Promise<void> }
@@ -56,6 +58,8 @@ export async function createApp(
   const workspaces = new WorkspaceStore(dataDirectory)
   const fileEditors =
     options.fileEditors ?? new FileEditorService(dataDirectory)
+  const sandboxSettings =
+    options.sandboxSettings ?? new SandboxSettingsService(dataDirectory)
   await workspaces.list()
   const publicUrl = (
     process.env.OH_MY_HARNESS_PUBLIC_URL ??
@@ -110,6 +114,8 @@ export async function createApp(
       workspaces,
       dataDirectory,
       fileEditors,
+      sandboxSettings,
+      publicUrl,
     ),
   )
   app.route('/api', createSkillImportRouter(skillImports, runtime, publicUrl))

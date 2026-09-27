@@ -35,10 +35,13 @@ import {
   APPROVAL_RESOLUTION_REASON,
   CAPABILITY_KIND,
   COMPLETION_EVENT_TYPE,
+  isSandboxMode,
   MESSAGE_ROLE,
   MCP_CONNECTION_STATUS,
+  SANDBOX_MODE,
   TRAJECTORY_STREAM_BLOCK,
   type AgentOperationKind,
+  type SandboxMode,
 } from '@oh-my-harness/shared'
 import {
   Agent,
@@ -459,16 +462,31 @@ export class AgentRuntime {
     id: string,
     input: AgentRunInput | string,
     permission: ToolPermission = TOOL_PERMISSION.READ_ONLY,
+    sandboxMode: SandboxMode = SANDBOX_MODE.DANGER_FULL_ACCESS,
+    sandboxSupported = process.platform === 'darwin',
   ) {
     return this.startRun(
       id,
       permission,
       typeof input === 'string' ? { content: input } : input,
+      sandboxMode,
+      sandboxSupported,
     )
   }
 
-  continue(id: string, permission: ToolPermission = TOOL_PERMISSION.READ_ONLY) {
-    return this.startRun(id, permission)
+  continue(
+    id: string,
+    permission: ToolPermission = TOOL_PERMISSION.READ_ONLY,
+    sandboxMode: SandboxMode = SANDBOX_MODE.DANGER_FULL_ACCESS,
+    sandboxSupported = process.platform === 'darwin',
+  ) {
+    return this.startRun(
+      id,
+      permission,
+      undefined,
+      sandboxMode,
+      sandboxSupported,
+    )
   }
 
   /** 恢复与 SSE 同源的当前审批视图，不复制授权状态。 */
@@ -589,6 +607,8 @@ export class AgentRuntime {
     id: string,
     permission: ToolPermission,
     input?: AgentRunInput,
+    sandboxMode: SandboxMode = SANDBOX_MODE.DANGER_FULL_ACCESS,
+    sandboxSupported = process.platform === 'darwin',
   ): Promise<AgentRun> {
     this.assertOpen()
     if (!isToolPermission(permission))
@@ -597,6 +617,8 @@ export class AgentRuntime {
         '运行权限无效。',
         400,
       )
+    if (!isSandboxMode(sandboxMode))
+      throw new AgentRuntimeError('INVALID_SANDBOX_MODE', '沙箱模式无效。', 400)
     const operation = this.reserve(id, AGENT_OPERATION_KIND.RUN)
     const cleanups: (() => Promise<unknown>)[] = []
     let storedAttachments: StoredAttachment[] = []
@@ -906,6 +928,10 @@ export class AgentRuntime {
             protectedRoots: this.toolOptions.protectedRoots,
             attachmentRoot: this.attachments?.sessionDirectory(id),
             runId,
+            sandboxMode:
+              process.platform === 'darwin'
+                ? sandboxMode
+                : SANDBOX_MODE.DANGER_FULL_ACCESS,
             sessionId: id,
           })
         : undefined
@@ -1036,7 +1062,12 @@ export class AgentRuntime {
       }
       appendContext(
         'runtime',
-        buildRuntimeContext(opened.metadata.cwd, permission),
+        buildRuntimeContext(
+          opened.metadata.cwd,
+          permission,
+          sandboxMode,
+          sandboxSupported,
+        ),
         true,
       )
       if (events.mcpUnavailable.length)
@@ -1741,6 +1772,9 @@ export class AgentRuntime {
     await session.appendCustomEntry(SESSION_CUSTOM_TYPE.APPROVAL_REQUESTED, {
       approvalId: approval.approvalId,
       effect: approval.effect,
+      ...(approval.sandboxEscalation
+        ? { sandboxEscalation: true as const }
+        : {}),
       ...('scope' in approval ? { scope: approval.scope } : {}),
       runId: approval.runId,
       toolCallId: approval.toolCallId,
@@ -1757,6 +1791,9 @@ export class AgentRuntime {
       approvalId: resolution.approvalId,
       decision: resolution.decision,
       reason: resolution.reason,
+      ...(resolution.sandboxEscalation
+        ? { sandboxEscalation: true as const }
+        : {}),
       runId: resolution.runId,
       toolCallId: resolution.toolCallId,
       ...(resolution.decision === APPROVAL_DECISION.APPROVE_SESSION &&

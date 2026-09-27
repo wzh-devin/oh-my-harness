@@ -55,7 +55,9 @@ export const toToolApprovalEvent = (approval: PendingToolApproval) => {
       ...common,
       kind: TOOL_ACTIVITY_KIND.COMMAND,
       input: { command: approval.command },
-      title: '允许 AI 助手运行这条命令吗？',
+      title: approval.sandboxEscalation
+        ? '允许 AI 助手临时突破沙箱运行这条命令吗？'
+        : '允许 AI 助手运行这条命令吗？',
       toolName: POLICY_TOOL.BASH.toolName,
     }
   if (approval.effect === TOOL_EFFECT.READ)
@@ -70,7 +72,9 @@ export const toToolApprovalEvent = (approval: PendingToolApproval) => {
     ...common,
     kind: TOOL_ACTIVITY_KIND.EDIT,
     path: approval.path,
-    title: `允许 AI 助手修改 ${approval.path} 吗？`,
+    title: approval.sandboxEscalation
+      ? `允许 AI 助手临时突破沙箱修改 ${approval.path} 吗？`
+      : `允许 AI 助手修改 ${approval.path} 吗？`,
     toolName: approval.toolName,
   }
 }

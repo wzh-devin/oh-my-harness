@@ -25,6 +25,7 @@ import type { ArchivedConversation } from '../types/settings-dialog.ts'
 import { SettingsSelect } from './SettingsSelect.tsx'
 import { ArchivedConversationsSection } from './ArchivedConversationsSection.tsx'
 import { FileEditorSettings } from './FileEditorSettings.tsx'
+import { SandboxSettings } from '../../sandbox/components/index.ts'
 
 interface SettingsDialogProps {
   archivedConversations: readonly ArchivedConversation[]
@@ -159,11 +160,18 @@ export function SettingsDialog({
               {activeSection === SETTINGS_SECTION.GENERAL ? (
                 <div className="mx-auto max-w-2xl">
                   <SettingsSelect
-                    label="权限"
+                    description={
+                      PERMISSION_OPTIONS.find(
+                        (option) => option.id === permission,
+                      )?.description
+                    }
+                    label="批准策略"
                     options={PERMISSION_OPTIONS}
                     value={permission}
                     onChange={(value) => setPermission(value as PermissionId)}
                   />
+
+                  <SandboxSettings />
 
                   <SettingsSelect
                     label="语言"

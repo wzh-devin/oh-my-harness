@@ -1,4 +1,5 @@
 import { TOOL_PERMISSION } from '@oh-my-harness/agent-policy/contracts'
+import { SANDBOX_MODE, type SandboxMode } from '@oh-my-harness/shared'
 import type { ToolPermission } from '@oh-my-harness/agent-policy'
 import type { TodoItem } from '@oh-my-harness/agent-tools'
 
@@ -66,11 +67,26 @@ export const buildCurrentTodosPrompt = (
 export const buildSystemPrompt = () => BASE_SYSTEM_PROMPT
 
 /** 生成真正送给模型的运行时状态快照，权限仍由服务端执行。 */
-export const buildRuntimeContext = (cwd: string, permission: ToolPermission) =>
+export const buildRuntimeContext = (
+  cwd: string,
+  permission: ToolPermission,
+  sandboxMode: SandboxMode = SANDBOX_MODE.DANGER_FULL_ACCESS,
+  sandboxSupported = process.platform === 'darwin',
+) =>
   `Current runtime context. This snapshot supersedes earlier runtime-context snapshots.\nWorkspace: ${cwd}\nActive permission: ${permission}. ` +
   (permission === TOOL_PERMISSION.FULL_ACCESS
     ? 'Operations allowed by this policy do not require per-call approval. This does not authorize actions outside the user request or bypass application protections.'
     : 'Protected operations may require one-time approval. ' +
       (permission === TOOL_PERMISSION.WORKSPACE_WRITE
         ? 'Workspace file changes are pre-authorized.'
-        : 'Workspace file changes also require one-time approval.'))
+        : 'Workspace file changes also require one-time approval.')) +
+  `\nActive sandbox: ${sandboxMode}. ` +
+  (!sandboxSupported
+    ? 'Sandbox enforcement is unavailable on this platform; do not claim that commands are isolated.'
+    : permission === TOOL_PERMISSION.FULL_ACCESS
+      ? 'Full-access permission pre-authorizes crossing the sandbox boundary, so file changes and commands run without the restricted boundary.'
+      : sandboxMode === SANDBOX_MODE.DANGER_FULL_ACCESS
+        ? 'Commands are not isolated by the macOS sandbox.'
+        : sandboxMode === SANDBOX_MODE.WORKSPACE_WRITE
+          ? 'Commands may write only inside the workspace and the run temporary directory; network access is denied. File changes outside this boundary and Bash calls with elevated=true require one-time approval.'
+          : 'Commands may not write inside the workspace; only the run temporary directory is writable, and network access is denied. File changes and Bash calls with elevated=true require one-time approval. Never retry a sandbox failure with elevation automatically.')

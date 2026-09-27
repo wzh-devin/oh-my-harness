@@ -5,8 +5,10 @@ import {
   type FileToolEffect,
 } from '@oh-my-harness/agent-policy/contracts'
 import { randomUUID } from 'node:crypto'
-import { chmod, stat } from 'node:fs/promises'
+import { createReadStream } from 'node:fs'
+import { chmod, open, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
+import { createInterface } from 'node:readline'
 
 import {
   ExecutionError,
@@ -48,6 +50,21 @@ interface FileTarget {
   scope: FileScope
 }
 
+export interface TextFilePage {
+  endLine: number
+  firstLineBytes?: number
+  lines: string[]
+  nextOffset: number | null
+  startLine: number
+}
+
+export interface TextFilePageOptions {
+  abortSignal?: AbortSignal
+  limit: number
+  maxBytes: number
+  offset: number
+}
+
 /** 默认限制在注册工作区；单次授权环境只允许指定文件，不提供 Shell。 */
 export class WorkspaceExecutionEnv extends NodeExecutionEnv {
   private readonly protectedRoots: string[]
@@ -55,6 +72,10 @@ export class WorkspaceExecutionEnv extends NodeExecutionEnv {
   private readonly attachmentRoot?: string
 
   private readonly target?: FileTarget & { effect: FileToolEffect }
+
+  get canonicalProtectedRoots(): readonly string[] {
+    return this.protectedRoots
+  }
 
   private constructor(
     workspaceRoot: string,
@@ -194,6 +215,112 @@ export class WorkspaceExecutionEnv extends NodeExecutionEnv {
   ) {
     const guarded = await this.guardExisting(path)
     return guarded.ok ? super.readTextLines(guarded.value, options) : guarded
+  }
+
+  /** 小范围读取文件头，用于保留无扩展名图片的现有识别行为。 */
+  async readBinaryPrefix(
+    path: string,
+    maxBytes: number,
+    abortSignal?: AbortSignal,
+  ): Promise<Result<Uint8Array, FileError>> {
+    const guarded = await this.guardExisting(path)
+    if (!guarded.ok) return fileError(guarded.error)
+    let handle: Awaited<ReturnType<typeof open>> | undefined
+    try {
+      abortSignal?.throwIfAborted()
+      handle = await open(guarded.value, 'r')
+      const buffer = Buffer.alloc(maxBytes)
+      const { bytesRead } = await handle.read(buffer, 0, maxBytes, 0)
+      abortSignal?.throwIfAborted()
+      return fileValue(buffer.subarray(0, bytesRead))
+    } catch (error) {
+      return fileError(
+        new FileError(
+          abortSignal?.aborted ? 'aborted' : 'unknown',
+          abortSignal?.aborted
+            ? 'File read aborted.'
+            : 'Unable to read file header.',
+          guarded.value,
+          error instanceof Error ? error : undefined,
+        ),
+      )
+    } finally {
+      await handle?.close()
+    }
+  }
+
+  /** 流式跳过前置行，只保留当前页和一行预读。 */
+  async readTextPage(
+    path: string,
+    options: TextFilePageOptions,
+  ): Promise<Result<TextFilePage, FileError>> {
+    const guarded = await this.guardExisting(path)
+    if (!guarded.ok) return fileError(guarded.error)
+    if (options.abortSignal?.aborted)
+      return fileError(new FileError('aborted', 'File read aborted.'))
+
+    const lines: string[] = []
+    let currentLine = 0
+    let firstLineBytes: number | undefined
+    let nextOffset: number | null = null
+    let outputBytes = 0
+    const stream = createReadStream(guarded.value, {
+      encoding: 'utf8',
+      signal: options.abortSignal,
+    })
+    const reader = createInterface({ crlfDelay: Infinity, input: stream })
+    try {
+      for await (const line of reader) {
+        if (options.abortSignal?.aborted)
+          return fileError(new FileError('aborted', 'File read aborted.'))
+        currentLine++
+        if (currentLine < options.offset) continue
+        if (lines.length === options.limit) {
+          nextOffset = currentLine
+          break
+        }
+        const lineBytes = Buffer.byteLength(line)
+        const pageBytes = outputBytes + (lines.length ? 1 : 0) + lineBytes
+        if (pageBytes > options.maxBytes) {
+          if (lines.length) nextOffset = currentLine
+          else firstLineBytes = lineBytes
+          break
+        }
+        lines.push(line)
+        outputBytes = pageBytes
+      }
+      if (
+        currentLine < options.offset &&
+        !(currentLine === 0 && options.offset === 1)
+      ) {
+        return invalid(`Offset ${options.offset} is beyond end of file.`)
+      }
+      return fileValue({
+        endLine: lines.length
+          ? options.offset + lines.length - 1
+          : firstLineBytes === undefined
+            ? 0
+            : options.offset,
+        ...(firstLineBytes === undefined ? {} : { firstLineBytes }),
+        lines,
+        nextOffset,
+        startLine: options.offset,
+      })
+    } catch (error) {
+      return fileError(
+        new FileError(
+          options.abortSignal?.aborted ? 'aborted' : 'unknown',
+          options.abortSignal?.aborted
+            ? 'File read aborted.'
+            : 'Unable to read file page.',
+          guarded.value,
+          error instanceof Error ? error : undefined,
+        ),
+      )
+    } finally {
+      reader.close()
+      stream.destroy()
+    }
   }
 
   override async readBinaryFile(path: string, abortSignal?: AbortSignal) {

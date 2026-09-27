@@ -1,10 +1,12 @@
 import { BUILTIN_TOOL_NAME } from '../tool-names.ts'
+import { SANDBOX_MODE, type SandboxMode } from '@oh-my-harness/shared'
 import { spawn } from 'node:child_process'
 
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 
 export interface BashInput {
   command: string
+  elevated?: true
 }
 
 export interface BashOutcome {
@@ -12,6 +14,17 @@ export interface BashOutcome {
   outputExceeded: boolean
   signal: NodeJS.Signals | null
   timedOut: boolean
+}
+
+export interface BashSandboxOptions {
+  mode: SandboxMode
+  protectedRoots: readonly string[]
+  tempDirectory: string
+}
+
+interface BashToolOptions {
+  fullAccess?: boolean
+  sandbox?: BashSandboxOptions
 }
 
 const MAX_COMMAND_BYTES = 32 * 1024
@@ -38,6 +51,12 @@ const parameters = {
       minLength: 1,
       type: 'string',
     },
+    elevated: {
+      const: true,
+      description:
+        'Request one-time approval to run this command outside the active sandbox. Use only when the user request requires access blocked by the sandbox; never use it to retry a failed sandboxed command automatically.',
+      type: 'boolean',
+    },
   },
   required: ['command'],
   type: 'object',
@@ -50,9 +69,12 @@ export function parseBashInput(input: unknown): BashInput {
   }
   const values = input as Record<string, unknown>
   if (
-    Object.keys(values).some((key) => key !== 'command') ||
+    Object.keys(values).some(
+      (key) => key !== 'command' && key !== 'elevated',
+    ) ||
     typeof values.command !== 'string' ||
-    values.command.includes('\0')
+    values.command.includes('\0') ||
+    (values.elevated !== undefined && values.elevated !== true)
   ) {
     throw new Error('Bash input is invalid.')
   }
@@ -60,7 +82,10 @@ export function parseBashInput(input: unknown): BashInput {
   if (!command || Buffer.byteLength(command) > MAX_COMMAND_BYTES) {
     throw new Error('Bash command is invalid or too large.')
   }
-  return { command }
+  return {
+    command,
+    ...(values.elevated === true ? { elevated: true as const } : {}),
+  }
 }
 
 const commandEnvironment = () =>
@@ -70,6 +95,41 @@ const commandEnvironment = () =>
       return value === undefined ? [] : [[key, value]]
     }),
   )
+
+const sbplPath = (path: string) => JSON.stringify(path)
+
+/** 为受限 Bash 生成 macOS Seatbelt Profile；路径必须由调用方先规范化。 */
+export function createMacosSandboxProfile(
+  cwd: string,
+  options: BashSandboxOptions,
+) {
+  const writableRoots = [
+    options.tempDirectory,
+    ...(options.mode === SANDBOX_MODE.WORKSPACE_WRITE ? [cwd] : []),
+  ]
+  return [
+    '(version 1)',
+    '(deny default)',
+    '(import "system.sb")',
+    '(allow process-exec process-fork process-info*)',
+    '(allow signal (target same-sandbox))',
+    '(allow sysctl-read)',
+    '(allow file-read*)',
+    ...options.protectedRoots.map(
+      (path) => `(deny file-read* (subpath ${sbplPath(path)}))`,
+    ),
+    `(allow file-write* (literal "/dev/null")${writableRoots
+      .map((path) => ` (subpath ${sbplPath(path)})`)
+      .join('')})`,
+    ...(options.mode === SANDBOX_MODE.WORKSPACE_WRITE
+      ? ['.git', '.agents'].map(
+          (directory) =>
+            `(deny file-write* (subpath ${sbplPath(`${cwd}/${directory}`)}))`,
+        )
+      : []),
+    '(deny network*)',
+  ].join('\n')
+}
 
 const resultText = (
   stdout: Buffer[],
@@ -95,18 +155,39 @@ const resultText = (
 }
 
 /** 在固定工作区中执行一条完整 Bash 命令；审批由本轮 Policy 决定。 */
-export const createBashTool = (cwd: string, fullAccess = false): AgentTool => ({
+export const createBashTool = (
+  cwd: string,
+  options: BashToolOptions = {},
+): AgentTool => ({
   description:
     'Run a complete Bash command in the workspace for builds, tests, Git, directory listing, file discovery, content search, or scripts that perform computation or format conversion. To inspect known file contents, use read, including when inspecting several files or a line range; do not batch cat/head/tail/sed reads or printing loops through bash. A targeted command fallback is allowed when read reports a content limitation; permission denials must never be bypassed. Pipes, redirections, conditionals, and multiple commands are supported for command tasks. ' +
-    (fullAccess
-      ? 'Calls are authorized by the full-access run policy.'
-      : 'Every call requires user approval.'),
+    (options.fullAccess
+      ? 'Calls are authorized by the full-access run policy and run outside the active sandbox.'
+      : options.sandbox
+        ? 'Every call requires user approval and runs inside the active sandbox by default. Set elevated to true only when the user request requires access outside that boundary; elevation requires separate one-time approval and must not be used to retry a sandbox failure automatically.'
+        : 'Every call requires user approval.'),
   label: 'bash',
   name: BUILTIN_TOOL_NAME.BASH,
   parameters,
   async execute(_toolCallId, input, signal) {
     signal?.throwIfAborted()
-    const { command } = parseBashInput(input)
+    const { command, elevated } = parseBashInput(input)
+    const restricted =
+      process.platform === 'darwin' &&
+      options.sandbox &&
+      options.sandbox.mode !== SANDBOX_MODE.DANGER_FULL_ACCESS &&
+      !options.fullAccess &&
+      !elevated
+    const executable = restricted ? '/usr/bin/sandbox-exec' : 'bash'
+    const arguments_ = restricted
+      ? [
+          '-p',
+          createMacosSandboxProfile(cwd, options.sandbox!),
+          '/bin/bash',
+          '-c',
+          command,
+        ]
+      : ['-c', command]
     return new Promise((resolve, reject) => {
       const stdout: Buffer[] = []
       const stderr: Buffer[] = []
@@ -115,10 +196,19 @@ export const createBashTool = (cwd: string, fullAccess = false): AgentTool => ({
       let outputSize = 0
       let settled = false
       let timedOut = false
-      const child = spawn('bash', ['-c', command], {
+      const child = spawn(executable, arguments_, {
         cwd,
         detached: process.platform !== 'win32',
-        env: commandEnvironment(),
+        env: {
+          ...commandEnvironment(),
+          ...(restricted
+            ? {
+                TEMP: options.sandbox!.tempDirectory,
+                TMP: options.sandbox!.tempDirectory,
+                TMPDIR: options.sandbox!.tempDirectory,
+              }
+            : {}),
+        },
         shell: false,
         stdio: ['ignore', 'pipe', 'pipe'],
       })
@@ -169,7 +259,14 @@ export const createBashTool = (cwd: string, fullAccess = false): AgentTool => ({
       child.stdout.on('data', (chunk: Buffer) => collect(stdout, chunk))
       child.stderr.on('data', (chunk: Buffer) => collect(stderr, chunk))
       child.once('error', (error) =>
-        fail(new Error('Bash is unavailable.', { cause: error })),
+        fail(
+          new Error(
+            restricted
+              ? 'macOS sandbox is unavailable.'
+              : 'Bash is unavailable.',
+            { cause: error },
+          ),
+        ),
       )
       child.once('close', (exitCode, childSignal) => {
         if (aborted) return fail(new Error('Bash command aborted.'))

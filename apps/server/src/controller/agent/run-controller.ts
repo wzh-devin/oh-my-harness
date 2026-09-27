@@ -20,6 +20,7 @@ import type {
   SteerAgentMessageDto,
 } from '../../dto/agent/run-dto.ts'
 import { agentErrorResponse } from './error-response.ts'
+import type { SandboxSettingsService } from '../../infrastructure/settings/sandbox-settings-service.ts'
 
 const MAX_ATTACHMENTS = 5
 const MAX_TOTAL_BYTES = 20 * 1024 * 1024
@@ -270,7 +271,10 @@ function streamRun(context: Context, run: AgentRun) {
 }
 
 /** 创建 Agent prompt、continue 与 abort Controller。 */
-export function createAgentRunController(runtime: AgentRuntime) {
+export function createAgentRunController(
+  runtime: AgentRuntime,
+  sandboxSettings: SandboxSettingsService,
+) {
   return {
     abort: (context: Context) => {
       try {
@@ -332,12 +336,15 @@ export function createAgentRunController(runtime: AgentRuntime) {
         )
       }
       try {
+        const sandbox = await sandboxSettings.get()
         return streamRun(
           context,
           await runtime.continue(
             context.req.param('id')!,
             (input as { permission: SendAgentMessageDto['permission'] })
               .permission,
+            sandbox.mode,
+            sandbox.supported,
           ),
         )
       } catch (error) {
@@ -361,12 +368,15 @@ export function createAgentRunController(runtime: AgentRuntime) {
         )
       }
       try {
+        const sandbox = await sandboxSettings.get()
         return streamRun(
           context,
           await runtime.prompt(
             context.req.param('id')!,
             input,
             input.permission,
+            sandbox.mode,
+            sandbox.supported,
           ),
         )
       } catch (error) {
