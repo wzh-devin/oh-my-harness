@@ -1,5 +1,6 @@
 export {
   FileEditorOpenDialog,
+  FileReferenceIcon,
   WorkspaceFilePreview,
 } from './components/index.ts'
 export {

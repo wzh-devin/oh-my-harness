@@ -98,7 +98,8 @@ export function ChatSidebar({
         className="bg-surface-secondary"
         style={
           {
-            '--sidebar-duration': isResizing ? '0s' : '0.2s',
+            '--sidebar-duration': isResizing ? '0s' : 'var(--panel-duration)',
+            '--sidebar-ease': 'var(--panel-ease)',
             '--sidebar-width': `${sidebarWidth}px`,
             '--sidebar-width-collapsed': '56px',
           } as CSSProperties

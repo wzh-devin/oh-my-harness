@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { CHAT_ROUTE_KIND } from '@oh-my-harness/shared'
 import {
   type ChatActivePage,
@@ -15,7 +23,14 @@ import { ExplorePage } from '../pages/explore/index.ts'
 import { LibraryPage } from '../pages/library/index.ts'
 import { NewChatPage } from '../pages/new-chat/index.ts'
 import { ChatLayout } from './ChatLayout.tsx'
+import { PinnedSummary } from '../features/chat/summary/components/index.ts'
+import { useWorkspaceGit } from '../features/chat/summary/use-workspace-git.ts'
+import { getSummarySections } from '../features/chat/summary/summary-sections.ts'
 import { resolveChatRoute } from './routing/index.ts'
+
+const GitReviewPanel = lazy(
+  () => import('../features/chat/summary/components/GitReviewPanel.tsx'),
+)
 
 /** 从浏览器历史状态中安全读取可选草稿，忽略其他页面写入的状态。 */
 const readHistoryDraft = () => {
@@ -29,6 +44,9 @@ const readHistoryDraft = () => {
 
 /** 维护站内 URL 状态，并组合对应的聊天页面。 */
 export function App() {
+  const [summaryVisible, setSummaryVisible] = useState<boolean>()
+  const [reviewThreadId, setReviewThreadId] = useState<string | null>(null)
+  const summaryTriggerRef = useRef<HTMLButtonElement>(null)
   const [draft, setDraft] = useState(readHistoryDraft)
   const [pathname, setPathname] = useState(window.location.pathname)
   const route = useMemo(() => resolveChatRoute(pathname), [pathname])
@@ -75,6 +93,26 @@ export function App() {
     route.kind === CHAT_ROUTE_KIND.THREAD
       ? threads.find((thread) => thread.id === route.threadId)
       : undefined
+
+  const git = useWorkspaceGit(
+    selectedThread?.workspaceId,
+    `${selectedThread?.id ?? ''}:${selectedThread ? (statuses[selectedThread.id] ?? '') : ''}`,
+  )
+  const summarySections = selectedThread
+    ? getSummarySections(selectedThread, git.snapshot)
+    : []
+  const reviewOpen = !!selectedThread && reviewThreadId === selectedThread.id
+  const workspaceLabel = workspaces.find(
+    (workspace) => workspace.id === selectedThread?.workspaceId,
+  )?.label
+
+  /** 关闭审查后恢复简介入口焦点，不修改简介显隐偏好或聊天草稿。 */
+  const closeReview = () => {
+    setReviewThreadId(null)
+    requestAnimationFrame(() =>
+      summaryTriggerRef.current?.focus({ preventScroll: true }),
+    )
+  }
 
   const activePage = useMemo<ChatActivePage>(() => {
     if (route.kind === CHAT_ROUTE_KIND.THREAD) {
@@ -129,6 +167,7 @@ export function App() {
       const method = replace ? 'replaceState' : 'pushState'
       window.history[method]({ draft: nextDraft }, '', path)
       setDraft(nextDraft)
+      setReviewThreadId(null)
       setPathname(window.location.pathname)
     },
     [visibleWorkspaces],
@@ -142,6 +181,7 @@ export function App() {
   useEffect(() => {
     const handlePopState = () => {
       setDraft(readHistoryDraft())
+      setReviewThreadId(null)
       setPathname(window.location.pathname)
 
       const nextRoute = resolveChatRoute(window.location.pathname)
@@ -265,6 +305,48 @@ export function App() {
             pendingApproval={pendingApprovals[activePage.thread.id]}
             status={statuses[activePage.thread.id] ?? 'ready'}
             thread={activePage.thread}
+            summaryAvailable={
+              !!(
+                summarySections.length ||
+                git.isLoading ||
+                git.error ||
+                loadingIds.has(activePage.thread.id) ||
+                (statuses[activePage.thread.id] === undefined &&
+                  errors[activePage.thread.id])
+              )
+            }
+            summaryVisible={reviewOpen ? false : summaryVisible}
+            summaryTriggerRef={summaryTriggerRef}
+            onSummaryVisibleChange={(visible) => {
+              if (visible) setReviewThreadId(null)
+              setSummaryVisible(visible)
+              if (visible) void git.refresh()
+            }}
+            summaryContent={
+              <PinnedSummary
+                key={activePage.thread.id}
+                sections={summarySections}
+                workspaceId={activePage.thread.workspaceId}
+                workspaceLabel={
+                  workspaces.find(
+                    (workspace) =>
+                      workspace.id === activePage.thread.workspaceId,
+                  )?.label
+                }
+                git={git}
+                isLoading={loadingIds.has(activePage.thread.id)}
+                loadError={
+                  statuses[activePage.thread.id] === undefined
+                    ? errors[activePage.thread.id]
+                    : undefined
+                }
+                onRetry={() => void loadThread(activePage.thread.id)}
+                onOpenChanges={() => {
+                  setReviewThreadId(activePage.thread.id)
+                  void git.refresh()
+                }}
+              />
+            }
             trajectoryRevision={trajectoryVersions[activePage.thread.id] ?? 0}
             onRestore={() => setSessionArchived(activePage.thread.id, false)}
             onModelChange={(selection) =>
@@ -295,6 +377,27 @@ export function App() {
 
   return (
     <ChatLayout
+      reviewOpen={reviewOpen}
+      onReviewClose={closeReview}
+      reviewContent={
+        reviewOpen && selectedThread?.workspaceId ? (
+          <Suspense
+            fallback={
+              <div className="p-4 text-sm text-muted" role="status">
+                正在加载变更视图…
+              </div>
+            }
+          >
+            <GitReviewPanel
+              key={selectedThread.id}
+              workspaceId={selectedThread.workspaceId}
+              workspaceLabel={workspaceLabel}
+              git={git}
+              onClose={closeReview}
+            />
+          </Suspense>
+        ) : null
+      }
       activePage={activePage}
       archivedThreads={archivedThreads}
       isWorkspaceLoading={isWorkspaceLoading}

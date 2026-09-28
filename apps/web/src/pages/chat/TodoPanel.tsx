@@ -7,7 +7,10 @@ import {
   CollapsibleTrigger,
 } from '../../components/ui/collapsible.tsx'
 import type { ChatTodoItem } from '../../features/chat/index.ts'
-import { getTodoProgress, toPlanSteps } from './todo-progress.ts'
+import {
+  getTodoProgress,
+  toPlanSteps,
+} from '../../features/chat/summary/todo-progress.ts'
 
 interface TodoPanelProps {
   status: ChatStatus

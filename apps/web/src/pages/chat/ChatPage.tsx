@@ -1,8 +1,11 @@
-import { useState } from 'react'
+import { useId, useState, type ReactNode, type RefObject } from 'react'
 import { MESSAGE_ROLE } from '@oh-my-harness/shared'
 import { ChatConversation } from '@agile-avocation/ui-pro/chat-conversation'
 import type { ChatStatus } from '@agile-avocation/ui-pro/prompt-input'
-import { Button, Tabs } from '@heroui/react'
+import { Button, Tabs, Tooltip } from '@heroui/react'
+import { ListIcon } from 'lucide-react'
+import { usePinnedSummary } from '../../features/chat/summary/use-pinned-summary.ts'
+import '../../features/chat/summary/pinned-summary.css'
 import {
   type ApprovalDecision,
   ApprovalPrompt,
@@ -25,6 +28,11 @@ interface ChatPageProps {
   isLoading: boolean
   status: ChatStatus
   thread: ChatThread
+  summaryAvailable: boolean
+  summaryContent: ReactNode
+  summaryVisible?: boolean
+  summaryTriggerRef?: RefObject<HTMLButtonElement | null>
+  onSummaryVisibleChange: (visible: boolean) => void
   trajectoryRevision: number
   onStop: () => void
   pendingApproval?: PendingToolApprovalVo
@@ -51,10 +59,22 @@ export function ChatPage({
   pendingApproval,
   status,
   thread,
+  summaryAvailable,
+  summaryContent,
+  summaryVisible,
+  summaryTriggerRef,
+  onSummaryVisibleChange,
   trajectoryRevision,
 }: ChatPageProps) {
   const [draft, setDraft] = useState('')
   const [isRestoring, setIsRestoring] = useState(false)
+  const summaryId = useId()
+  const { containerRef, triggerRef, isVisible, reserveSpace, handleKeyDown } =
+    usePinnedSummary(
+      summaryAvailable ? summaryVisible : false,
+      onSummaryVisibleChange,
+    )
+  const summaryLabel = isVisible ? '隐藏置顶简介' : '显示置顶简介'
   const initialModelKey = thread.providerId
     ? `${thread.providerId}:${thread.modelId}`
     : undefined
@@ -81,13 +101,17 @@ export function ChatPage({
     : undefined
 
   return (
-    <div className="flex h-[calc(100svh-var(--chat-navbar-height,64px))] flex-col overflow-hidden min-[769px]:h-svh">
+    <div
+      className="chat-page flex h-[calc(100svh-var(--chat-navbar-height,64px))] flex-col overflow-hidden min-[769px]:h-svh"
+      data-summary-reserved={reserveSpace}
+      ref={containerRef}
+    >
       <Tabs
         className="relative flex min-h-0 flex-1 flex-col gap-0"
         defaultSelectedKey="conversation"
         variant="secondary"
       >
-        <Tabs.ListContainer className="shrink-0 border-b border-divider px-4">
+        <Tabs.ListContainer className="summary-toolbar shrink-0 border-b border-divider px-4">
           <Tabs.List aria-label="会话视图" className="!min-w-0">
             <Tabs.Tab className="h-11 !w-auto px-3" id="conversation">
               对话
@@ -99,8 +123,31 @@ export function ChatPage({
             </Tabs.Tab>
           </Tabs.List>
         </Tabs.ListContainer>
+        {summaryAvailable ? (
+          <Tooltip delay={300}>
+            <Button
+              aria-controls={summaryId}
+              aria-expanded={isVisible}
+              aria-label={summaryLabel}
+              className="summary-toggle"
+              isIconOnly
+              onPress={() => onSummaryVisibleChange(!isVisible)}
+              ref={(element) => {
+                triggerRef.current = element
+                if (summaryTriggerRef) summaryTriggerRef.current = element
+              }}
+              size="sm"
+              variant="ghost"
+            >
+              <ListIcon aria-hidden="true" className="size-4" />
+            </Button>
+            <Tooltip.Content placement="bottom end">
+              {summaryLabel}
+            </Tooltip.Content>
+          </Tooltip>
+        ) : null}
         <Tabs.Panel
-          className="min-h-0 flex-1 overflow-hidden p-0 pt-2"
+          className="summary-content min-h-0 flex-1 overflow-hidden p-0 pt-2"
           id="conversation"
         >
           <ChatConversation className="h-full min-h-0">
@@ -139,7 +186,7 @@ export function ChatPage({
         </Tabs.Panel>
 
         <Tabs.Panel
-          className="min-h-0 flex-1 overflow-hidden p-0"
+          className="summary-content min-h-0 flex-1 overflow-hidden p-0"
           id="trajectory"
         >
           <AgentTraceView
@@ -150,7 +197,19 @@ export function ChatPage({
         </Tabs.Panel>
       </Tabs>
 
-      <div className="shrink-0 bg-background px-4 pt-3 pb-4">
+      <aside
+        aria-hidden={!isVisible}
+        aria-label="置顶简介"
+        className="pinned-summary"
+        id={summaryId}
+        inert={!isVisible}
+        onKeyDown={handleKeyDown}
+        tabIndex={isVisible ? 0 : -1}
+      >
+        {summaryContent}
+      </aside>
+
+      <div className="summary-content shrink-0 bg-background px-4 pt-3 pb-4">
         <div className="mx-auto w-full max-w-[714px]">
           <TodoPanel status={status} todos={thread.todos} />
           {thread.archived ? (

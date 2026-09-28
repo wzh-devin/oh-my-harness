@@ -7,6 +7,7 @@ import {
 } from '@oh-my-harness/shared'
 import { TOOL_PERMISSION } from '@oh-my-harness/agent-policy/contracts'
 import { AppLayout } from '@agile-avocation/ui-pro/app-layout'
+import { GitReviewLayout } from '../features/chat/summary/components/GitReviewLayout.tsx'
 import '../styles/ChatLayout.css'
 import {
   type ChatActivePage,
@@ -42,6 +43,9 @@ interface ChatLayoutProps {
   threads: readonly ChatThread[]
   workspaces: readonly ChatWorkspace[]
   workspaceError: string
+  reviewOpen: boolean
+  reviewContent: ReactNode
+  onReviewClose: () => void
 }
 
 interface FileEditorDialogState {
@@ -78,6 +82,9 @@ export function ChatLayout({
   threads,
   workspaces,
   workspaceError,
+  reviewOpen,
+  reviewContent,
+  onReviewClose,
 }: ChatLayoutProps) {
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
@@ -247,7 +254,11 @@ export function ChatLayout({
         }}
       >
         <AppLayout
-          className={isThreadPage ? 'chat-layout--thread' : undefined}
+          className={
+            isThreadPage
+              ? `chat-layout--thread${reviewOpen ? ' chat-layout--review-open' : ''}`
+              : undefined
+          }
           key={isThreadPage ? 'thread-layout' : 'standard-layout'}
           navigate={onNavigate}
           sidebarCollapsible="icon"
@@ -286,7 +297,17 @@ export function ChatLayout({
             />
           }
         >
-          {children}
+          {isThreadPage ? (
+            <GitReviewLayout
+              content={reviewContent}
+              open={reviewOpen}
+              onClose={onReviewClose}
+            >
+              {children}
+            </GitReviewLayout>
+          ) : (
+            children
+          )}
           <ChatSearchDialog
             isOpen={isSearchOpen}
             threads={threads}

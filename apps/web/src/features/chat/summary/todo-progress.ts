@@ -1,6 +1,6 @@
-import type { ChatTodoItem } from '../../features/chat/index.ts'
+import type { ChatTodoItem } from '../types/chat-types.ts'
 import { PLAN_STEP_STATE, TODO_STATUS } from '@oh-my-harness/shared'
-import type { PlanStep } from '../../types/agent-plan.ts'
+import type { PlanStep } from '../../../types/agent-plan.ts'
 
 export interface TodoProgress {
   completed: number

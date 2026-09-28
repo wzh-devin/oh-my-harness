@@ -15,6 +15,10 @@ import {
 } from '@gravity-ui/icons'
 import { Button, Dropdown, Tooltip } from '@heroui/react'
 import { DestructiveActionDialog } from '../../../../../components/index.ts'
+import {
+  Collapsible,
+  CollapsibleContent,
+} from '../../../../../components/ui/collapsible.tsx'
 import { CHAT_NAV_ITEMS } from '../../../constants/chat-navigation.ts'
 import type { ChatThread } from '../../../types/chat-types.ts'
 import type { ChatSidebarProps } from '../types/chat-sidebar.ts'
@@ -329,11 +333,16 @@ export function SidebarContents({
                   const WorkspaceFolderIcon = isExpanded ? FolderOpen : Folder
 
                   return (
-                    <section key={workspace.id}>
+                    <Collapsible
+                      render={<section />}
+                      key={workspace.id}
+                      open={isExpanded}
+                    >
                       <div className="group/workspace flex items-center">
                         <Button
                           fullWidth
                           aria-expanded={isExpanded}
+                          aria-controls={`${idPrefix}workspace-${workspace.id}`}
                           className="h-9 min-h-9 min-w-0 justify-start gap-4 rounded-2xl pr-10 pl-3 font-normal"
                           size="sm"
                           variant="ghost"
@@ -407,8 +416,11 @@ export function SidebarContents({
                         </Dropdown>
                       </div>
 
-                      {isExpanded ? (
-                        workspaceThreads.length > 0 ? (
+                      <CollapsibleContent
+                        id={`${idPrefix}workspace-${workspace.id}`}
+                        inert={!isExpanded}
+                      >
+                        {workspaceThreads.length > 0 ? (
                           <Sidebar.Menu
                             aria-label={`${workspace.label}中的对话`}
                             className="mt-0.5 pl-5"
@@ -433,9 +445,9 @@ export function SidebarContents({
                           <p className="py-2 pr-2 pl-7 text-xs text-muted">
                             暂无对话
                           </p>
-                        )
-                      ) : null}
-                    </section>
+                        )}
+                      </CollapsibleContent>
+                    </Collapsible>
                   )
                 })}
                 {workspaces.length === 0 ? (

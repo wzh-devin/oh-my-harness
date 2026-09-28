@@ -3,34 +3,72 @@
     border-inline-end: 1px solid var(--border);
     box-shadow: none;
   }
-
-  .chat-layout--thread .app-layout__aside {
-    --app-layout-aside-width: clamp(360px, 32vw, 420px);
-  }
-
-  @media (prefers-reduced-motion: no-preference) {
-    .chat-layout--thread .app-layout__aside-panel {
-      opacity: 0;
-      transform: translateX(12px);
-      transition:
-        opacity 180ms ease-out,
-        transform 180ms ease-out;
-    }
-
-    .chat-layout--thread.chat-layout--file-preview-open
-      .app-layout__aside-panel {
-      opacity: 1;
-      transform: translateX(0);
-    }
-  }
-
   .chat-layout--thread .app-layout__header {
     display: none;
   }
 }
 
+.chat-review-layout {
+  --chat-review-height: calc(100svh - var(--chat-navbar-height, 64px));
+  position: relative;
+  height: calc(100svh - var(--chat-navbar-height, 64px));
+  min-width: 0;
+  overflow: hidden;
+}
+.chat-review-main,
+.chat-review-aside {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.chat-review-aside {
+  background: var(--background);
+}
+.chat-review-layout > [data-panel] {
+  transition: flex-grow var(--panel-duration) var(--panel-ease);
+}
+.chat-review-layout:has(> [data-separator='active']) > [data-panel] {
+  transition: none;
+}
+.chat-review-layout[data-open='false'] > .chat-review-handle {
+  visibility: hidden;
+  pointer-events: none;
+}
+@media (min-width: 769px) {
+  .chat-review-layout {
+    --chat-review-height: 100svh;
+  }
+}
+
+/* 窄屏复用同一个面板 DOM，无模态遮罩，也不重挂载草稿。 */
 @media (max-width: 1024px) {
-  .app-layout__mobile-aside-sheet {
-    max-width: min(420px, 96vw);
+  .chat-review-layout > #git-review {
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none;
+    opacity: 0;
+    transform: translateX(16px);
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+      transform var(--panel-duration) var(--panel-ease),
+      opacity var(--panel-duration) var(--panel-ease),
+      visibility var(--panel-duration);
+  }
+  .chat-review-layout[data-open='true'] > #git-review {
+    opacity: 1;
+    transform: translateX(0);
+    visibility: visible;
+    pointer-events: auto;
+  }
+  .chat-review-layout[data-open='true'] > #conversation {
+    visibility: hidden;
+  }
+  .chat-review-handle {
+    visibility: hidden;
+    pointer-events: none;
   }
 }

@@ -6,6 +6,8 @@
 @source "../**/*.{ts,tsx}";
 
 :root {
+  --panel-duration: 200ms;
+  --panel-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   font-family:
     Inter,
     ui-sans-serif,
@@ -20,6 +22,31 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+[data-collapsible-panel] {
+  height: var(--collapsible-panel-height);
+  overflow: hidden;
+  opacity: 1;
+  animation: none;
+  transition:
+    height var(--panel-duration) var(--panel-ease),
+    opacity var(--panel-duration) var(--panel-ease);
+}
+[data-collapsible-panel]:is([data-starting-style], [data-ending-style]) {
+  height: 0;
+  opacity: 0;
+}
+[data-collapsible-panel][data-closed] {
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --panel-duration: 0ms;
+  }
+  [data-collapsible-panel] {
+    transition: none;
+  }
 }
 
 html,

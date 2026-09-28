@@ -10,6 +10,7 @@ import { createCompletionRouter } from './llm/completion-router.ts'
 import { createOAuthRouter } from './llm/oauth-router.ts'
 import { createProviderRouter } from './llm/provider-router.ts'
 import { createWorkspaceRouter } from './workspace/workspace-router.ts'
+import { createWorkspaceGitRouter } from './workspace/workspace-git-router.ts'
 import { createSandboxSettingsRouter } from './settings/sandbox-settings-router.ts'
 import type { SandboxSettingsService } from '../infrastructure/settings/sandbox-settings-service.ts'
 import type { FileEditorService } from '../infrastructure/workspace/file-editor-service.ts'
@@ -44,6 +45,7 @@ export function createApiRouter(
     '/workspaces',
     createWorkspaceRouter(workspaces, dataDirectory, runtime, fileEditors),
   )
+  router.route('/workspaces', createWorkspaceGitRouter(workspaces, publicUrl))
   router.route(
     '/settings/sandbox',
     createSandboxSettingsRouter(sandboxSettings, publicUrl),
