@@ -7,7 +7,7 @@ import {
 } from '@oh-my-harness/shared'
 import { TOOL_PERMISSION } from '@oh-my-harness/agent-policy/contracts'
 import { AppLayout } from '@agile-avocation/ui-pro/app-layout'
-import { GitReviewLayout } from '../features/chat/summary/components/GitReviewLayout.tsx'
+import { ChatRightPanelLayout } from './ChatRightPanelLayout.tsx'
 import '../styles/ChatLayout.css'
 import {
   type ChatActivePage,
@@ -43,9 +43,11 @@ interface ChatLayoutProps {
   threads: readonly ChatThread[]
   workspaces: readonly ChatWorkspace[]
   workspaceError: string
-  reviewOpen: boolean
-  reviewContent: ReactNode
-  onReviewClose: () => void
+  rightPanelOpen: boolean
+  rightPanelContent: ReactNode
+  rightPanelLabel: string
+  onRightPanelClose: () => void
+  onRightPanelClosed: () => void
 }
 
 interface FileEditorDialogState {
@@ -82,9 +84,11 @@ export function ChatLayout({
   threads,
   workspaces,
   workspaceError,
-  reviewOpen,
-  reviewContent,
-  onReviewClose,
+  rightPanelOpen,
+  rightPanelContent,
+  rightPanelLabel,
+  onRightPanelClose,
+  onRightPanelClosed,
 }: ChatLayoutProps) {
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
@@ -256,7 +260,7 @@ export function ChatLayout({
         <AppLayout
           className={
             isThreadPage
-              ? `chat-layout--thread${reviewOpen ? ' chat-layout--review-open' : ''}`
+              ? `chat-layout--thread${rightPanelOpen ? ' chat-layout--panel-open' : ''}`
               : undefined
           }
           key={isThreadPage ? 'thread-layout' : 'standard-layout'}
@@ -298,13 +302,15 @@ export function ChatLayout({
           }
         >
           {isThreadPage ? (
-            <GitReviewLayout
-              content={reviewContent}
-              open={reviewOpen}
-              onClose={onReviewClose}
+            <ChatRightPanelLayout
+              content={rightPanelContent}
+              label={rightPanelLabel}
+              open={rightPanelOpen}
+              onClose={onRightPanelClose}
+              onClosed={onRightPanelClosed}
             >
               {children}
-            </GitReviewLayout>
+            </ChatRightPanelLayout>
           ) : (
             children
           )}

@@ -7,6 +7,16 @@ export {
 } from './skills/read-resource.ts'
 export { createBashTool, parseBashInput } from './tools/bash.ts'
 export { createReadToolResultTool } from './tools/read-tool-result.ts'
+export { createGetToolExecutionTool } from './tools/get-tool-execution.ts'
+export {
+  MAX_TOOL_EXECUTION_OUTPUT_BYTES,
+  ToolExecutionManager,
+  parseToolExecutionSnapshot,
+  type ToolExecutionOutput,
+  type ToolExecutionReceipt,
+  type ToolExecutionRunOptions,
+  type ToolExecutionSnapshot,
+} from './execution/tool-execution-manager.ts'
 export type {
   BashInput,
   BashOutcome,

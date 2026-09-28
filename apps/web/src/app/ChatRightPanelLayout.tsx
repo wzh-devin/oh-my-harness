@@ -3,17 +3,21 @@ import { Resizable } from '@agile-avocation/ui-pro/resizable'
 import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 
-/** 使用稳定的分栏 DOM，避免审查显隐或跨屏幕断点重挂载对话和输入框。 */
-export function GitReviewLayout({
+/** 复用稳定分栏 DOM 承载变更审查或工具控制台，显隐不重挂载对话输入。 */
+export function ChatRightPanelLayout({
   children,
   content,
+  label,
   open,
   onClose,
+  onClosed,
 }: {
   children: ReactNode
   content: ReactNode
+  label: string
   open: boolean
   onClose: () => void
+  onClosed: () => void
 }) {
   const panelRef = useRef<PanelImperativeHandle>(null)
   const expandedSize = useRef(62)
@@ -25,25 +29,25 @@ export function GitReviewLayout({
   }, [open])
   return (
     <Resizable
-      className="chat-review-layout"
+      className="chat-side-panel-layout"
       data-open={open}
-      style={{ height: 'var(--chat-review-height)' }}
+      style={{ height: 'var(--chat-side-panel-height)' }}
     >
       <Resizable.Panel
         id="conversation"
-        className="chat-review-main"
+        className="chat-side-panel-main"
         minSize={30}
       >
         {children}
       </Resizable.Panel>
       <Resizable.Handle
-        aria-label="调整变更侧栏宽度"
-        className="chat-review-handle"
+        aria-label={`调整${label}宽度`}
+        className="chat-side-panel-handle"
         disabled={!open}
       />
       <Resizable.Panel
-        id="git-review"
-        className="chat-review-aside"
+        id="chat-side-panel"
+        className="chat-side-panel-aside"
         handleRef={panelRef}
         defaultSize={62}
         minSize={35}
@@ -58,10 +62,15 @@ export function GitReviewLayout({
         }}
       >
         <div className="h-full min-h-0" aria-hidden={!open} inert={!open}>
-          <AnimatePresence initial={false}>
+          <AnimatePresence
+            initial={false}
+            onExitComplete={() => {
+              if (!open) onClosed()
+            }}
+          >
             {open ? (
               <motion.div
-                key="review"
+                key={label}
                 className="h-full min-h-0"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}

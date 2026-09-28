@@ -74,8 +74,11 @@ export function MessageTool({ tool }: MessageToolProps) {
   }
 
   return (
-    <ToolFallbackRoot defaultOpen={status.type === 'running'}>
+    <ToolFallbackRoot
+      defaultOpen={status.type === 'running' && !tool.background}
+    >
       <ToolFallbackTrigger
+        background={tool.background}
         icon={TOOL_ICONS[tool.kind ?? 'tool']}
         label={tool.label}
         status={status}

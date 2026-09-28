@@ -108,6 +108,7 @@ export type AgentRunEventDto =
     }
   | {
       isError: boolean
+      executionId?: string
       filePath?: string
       outcome?: BashOutcomeDto
       output: unknown
@@ -115,6 +116,7 @@ export type AgentRunEventDto =
       toolName: string
       label?: string
       kind: ToolActivityKind
+      running?: boolean
       type: typeof AGENT_RUN_EVENT_TYPE.TOOL_END
     }
   | ({

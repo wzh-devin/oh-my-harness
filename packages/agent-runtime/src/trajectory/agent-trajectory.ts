@@ -9,10 +9,12 @@ import {
   AGENT_TRAJECTORY_RECORD_KIND,
   AGENT_TRAJECTORY_STATUS,
   MESSAGE_ROLE,
+  TOOL_EXECUTION_STATE,
   type AgentTrajectoryLane,
   type AgentTrajectoryRecordKind,
   type AgentTrajectoryStatus,
 } from '@oh-my-harness/shared'
+import { parseToolExecutionSnapshot } from '@oh-my-harness/agent-tools'
 
 import { AgentRuntimeError } from '../error/agent-runtime-error.ts'
 import { structuredMessageDetails } from '../execution/attachment-message.ts'
@@ -331,6 +333,10 @@ export const projectAgentTrajectory = (options: {
     }
   >()
   const toolResults = new Map<string, Extract<Entry, { type: 'message' }>>()
+  const executionStates = new Map<
+    string,
+    NonNullable<ReturnType<typeof parseToolExecutionSnapshot>>
+  >()
   let scanTurn = 0
   let scanRequest = 0
   let scanRequestId = ''
@@ -357,6 +363,13 @@ export const projectAgentTrajectory = (options: {
     }
     if (customData(entry, SESSION_CUSTOM_TYPE.RUN_STARTED)) {
       scanTurn = 0
+    }
+    if (
+      entry.type === 'custom' &&
+      entry.customType === SESSION_CUSTOM_TYPE.TOOL_EXECUTION_STATE
+    ) {
+      const execution = parseToolExecutionSnapshot(entry.data)
+      if (execution) executionStates.set(execution.toolCallId, execution)
     }
     const turnStart = customData(entry, SESSION_CUSTOM_TYPE.TURN_STARTED)
     if (typeof turnStart?.turn === 'number') scanTurn = turnStart.turn
@@ -707,6 +720,7 @@ export const projectAgentTrajectory = (options: {
           !toolRecordByCall.has(toolStarted.toolCallId),
       )
       const result = toolResults.get(toolStarted.toolCallId)
+      const execution = executionStates.get(toolStarted.toolCallId)
       toolRecordByCall.set(toolStarted.toolCallId, records.length)
       addRecord({
         durationMs: Math.max(0, now - toolStarted.startedAt),
@@ -731,9 +745,12 @@ export const projectAgentTrajectory = (options: {
         sourceRecordId: call.sourceRecordId,
         source: `Agent Runtime · Tool ${toolStarted.toolName}`,
         startedAt: toolStarted.startedAt,
-        status: options.active
-          ? AGENT_TRAJECTORY_STATUS.RUNNING
-          : AGENT_TRAJECTORY_STATUS.INTERRUPTED,
+        status:
+          execution?.state === TOOL_EXECUTION_STATE.RUNNING ||
+          execution?.state === TOOL_EXECUTION_STATE.STOPPING ||
+          options.active
+            ? AGENT_TRAJECTORY_STATUS.RUNNING
+            : AGENT_TRAJECTORY_STATUS.INTERRUPTED,
         summary: compactText(JSON.stringify(call.toolCall.arguments)),
         turn: call.turn,
       })
@@ -803,6 +820,15 @@ export const projectAgentTrajectory = (options: {
       run.status = AGENT_TRAJECTORY_STATUS.INTERRUPTED
   }
   for (const record of records) {
+    const execution =
+      record.kind === AGENT_TRAJECTORY_RECORD_KIND.TOOL
+        ? executionStates.get(record.id.slice('tool:'.length))
+        : undefined
+    if (
+      execution?.state === TOOL_EXECUTION_STATE.RUNNING ||
+      execution?.state === TOOL_EXECUTION_STATE.STOPPING
+    )
+      continue
     const run = runs[record.runNumber - 1]
     requireFact(run)
     if (

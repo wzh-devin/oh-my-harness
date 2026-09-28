@@ -48,12 +48,14 @@ export interface ChatMessageReasoning {
 }
 
 export interface ChatMessageTool {
+  background?: boolean
   approval?: {
     description?: string
     title: string
   }
   argsText?: string
   errorText?: string
+  executionId?: string
   input?: unknown
   kind?: ChatToolKind
   label?: string

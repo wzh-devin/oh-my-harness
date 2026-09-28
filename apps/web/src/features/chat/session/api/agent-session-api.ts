@@ -9,6 +9,10 @@ import {
   CONTEXT_COMPACTION_STATUS,
   TODO_STATUS,
   TOOL_ACTIVITY_KIND,
+  TOOL_EXECUTION_ACTION,
+  TOOL_EXECUTION_EVENT_TYPE,
+  TOOL_EXECUTION_STATE,
+  type ToolExecutionAction,
 } from '@oh-my-harness/shared'
 import { parseTraceUpdate } from '../../../trace/api/index.ts'
 import type {
@@ -21,6 +25,8 @@ import type {
   BashOutcomeVo,
   ContextUsageVo,
   PendingToolApprovalVo,
+  ToolExecutionOutputVo,
+  ToolExecutionVo,
 } from '../types/index.ts'
 import type { ApprovalDecision } from '../../message/index.ts'
 import type {
@@ -173,6 +179,9 @@ const contextUsage = (value: unknown): ContextUsageVo | undefined => {
 
 const sessionPath = (sessionId: string) =>
   `/api/agent/sessions/${encodeURIComponent(sessionId)}`
+
+const executionPath = (sessionId: string, executionId?: string) =>
+  `${sessionPath(sessionId)}/tool-executions${executionId ? `/${encodeURIComponent(executionId)}` : ''}`
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init)
@@ -437,6 +446,9 @@ function toRunEvent(value: unknown): AgentRunEventVo {
       ) {
         return {
           isError: event.isError,
+          ...(typeof event.executionId === 'string'
+            ? { executionId: event.executionId }
+            : {}),
           ...(typeof event.filePath === 'string'
             ? { filePath: event.filePath }
             : {}),
@@ -448,6 +460,7 @@ function toRunEvent(value: unknown): AgentRunEventVo {
           toolCallId: event.toolCallId,
           toolName: event.toolName,
           kind: event.kind,
+          ...(event.running === true ? { running: true as const } : {}),
           type: AGENT_RUN_EVENT_TYPE.TOOL_END,
         }
       }
@@ -536,6 +549,199 @@ export function parseAgentSseFrames(source: string): ParsedSseFrames {
 
 export const listAgentSessions = () =>
   request<AgentSessionVo[]>('/api/agent/sessions')
+
+const toolExecutionStates = new Set([
+  TOOL_EXECUTION_STATE.FAILED,
+  TOOL_EXECUTION_STATE.INTERRUPTED,
+  TOOL_EXECUTION_STATE.RUNNING,
+  TOOL_EXECUTION_STATE.STOPPED,
+  TOOL_EXECUTION_STATE.STOPPING,
+  TOOL_EXECUTION_STATE.SUCCEEDED,
+])
+
+/** 校验独立执行 SSE/HTTP 快照，避免把任意服务端对象注入控制台。 */
+export const parseToolExecution = (
+  value: unknown,
+): ToolExecutionVo | undefined => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return
+  const execution = value as Record<string, unknown>
+  if (execution.service !== undefined) {
+    if (
+      !execution.service ||
+      typeof execution.service !== 'object' ||
+      Array.isArray(execution.service)
+    )
+      return
+    const service = execution.service as Record<string, unknown>
+    if (
+      typeof service.command !== 'string' ||
+      !service.command.trim() ||
+      service.command.includes('\0') ||
+      typeof service.cwd !== 'string' ||
+      !service.cwd ||
+      service.cwd.includes('\0')
+    )
+      return
+    if (
+      service.removedAt !== undefined &&
+      (!Number.isSafeInteger(service.removedAt) ||
+        (service.removedAt as number) < 0 ||
+        execution.state === TOOL_EXECUTION_STATE.RUNNING ||
+        execution.state === TOOL_EXECUTION_STATE.STOPPING ||
+        execution.canRestart !== false ||
+        execution.canStop !== false)
+    )
+      return
+  }
+  if (
+    typeof execution.background !== 'boolean' ||
+    typeof execution.canRestart !== 'boolean' ||
+    typeof execution.canStop !== 'boolean' ||
+    typeof execution.executionId !== 'string' ||
+    typeof execution.label !== 'string' ||
+    typeof execution.runId !== 'string' ||
+    typeof execution.sessionId !== 'string' ||
+    !Number.isSafeInteger(execution.startedAt) ||
+    !toolExecutionStates.has(execution.state as never) ||
+    typeof execution.toolCallId !== 'string' ||
+    typeof execution.toolName !== 'string' ||
+    (execution.completedAt !== undefined &&
+      !Number.isSafeInteger(execution.completedAt)) ||
+    (execution.error !== undefined && typeof execution.error !== 'string') ||
+    (execution.output !== undefined && typeof execution.output !== 'string') ||
+    (execution.previousExecutionId !== undefined &&
+      typeof execution.previousExecutionId !== 'string')
+  )
+    return
+  return execution as unknown as ToolExecutionVo
+}
+
+export const listToolExecutions = async (sessionId: string) => {
+  const value = await request<unknown>(executionPath(sessionId))
+  if (!Array.isArray(value))
+    throw new AgentSessionApiError(
+      '工具执行列表无效。',
+      'INVALID_TOOL_EXECUTION_RESPONSE',
+    )
+  const executions = value.map(parseToolExecution)
+  if (executions.some((execution) => execution === undefined))
+    throw new AgentSessionApiError(
+      '工具执行列表无效。',
+      'INVALID_TOOL_EXECUTION_RESPONSE',
+    )
+  return executions as ToolExecutionVo[]
+}
+
+export const readToolExecutionOutput = async (
+  sessionId: string,
+  executionId: string,
+  offset = 0,
+  limit = 64 * 1024,
+) => {
+  const query = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  })
+  const value = await request<unknown>(
+    `${executionPath(sessionId, executionId)}/output?${query}`,
+  )
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new AgentSessionApiError(
+      '工具输出响应无效。',
+      'INVALID_TOOL_OUTPUT_RESPONSE',
+    )
+  const output = value as Record<string, unknown>
+  if (
+    typeof output.text !== 'string' ||
+    !Number.isSafeInteger(output.offset) ||
+    !Number.isSafeInteger(output.totalBytes) ||
+    typeof output.truncated !== 'boolean' ||
+    (output.nextOffset !== null && !Number.isSafeInteger(output.nextOffset))
+  )
+    throw new AgentSessionApiError(
+      '工具输出响应无效。',
+      'INVALID_TOOL_OUTPUT_RESPONSE',
+    )
+  return output as unknown as ToolExecutionOutputVo
+}
+
+const mutateToolExecution = async (
+  sessionId: string,
+  executionId: string,
+  action: ToolExecutionAction,
+) => {
+  const removing = action === TOOL_EXECUTION_ACTION.REMOVE_SERVICE
+  const value = await request<unknown>(
+    `${executionPath(sessionId, executionId)}/${removing ? 'service' : action}`,
+    { method: removing ? 'DELETE' : 'POST' },
+  )
+  const execution = parseToolExecution(value)
+  if (!execution)
+    throw new AgentSessionApiError(
+      '工具执行响应无效。',
+      'INVALID_TOOL_EXECUTION_RESPONSE',
+    )
+  return execution
+}
+
+export const stopToolExecution = (sessionId: string, executionId: string) =>
+  mutateToolExecution(sessionId, executionId, TOOL_EXECUTION_ACTION.STOP)
+
+export const restartToolExecution = (sessionId: string, executionId: string) =>
+  mutateToolExecution(sessionId, executionId, TOOL_EXECUTION_ACTION.RESTART)
+
+/** 停止并移除服务入口，保留工具执行记录和日志。 */
+export const removeToolExecutionService = (
+  sessionId: string,
+  executionId: string,
+) =>
+  mutateToolExecution(
+    sessionId,
+    executionId,
+    TOOL_EXECUTION_ACTION.REMOVE_SERVICE,
+  )
+
+/** 使用原生 EventSource 接收独立执行变化；每次重连由服务端先发权威快照。 */
+export const subscribeToolExecutions = (
+  sessionId: string,
+  handlers: {
+    onError(): void
+    onExecution(execution: ToolExecutionVo): void
+    onSnapshot(executions: ToolExecutionVo[]): void
+  },
+) => {
+  const source = new EventSource(`${executionPath(sessionId)}/stream`)
+  source.addEventListener(
+    TOOL_EXECUTION_EVENT_TYPE.SNAPSHOT,
+    (event: MessageEvent<string>) => {
+      try {
+        const value = JSON.parse(event.data) as { executions?: unknown }
+        if (!Array.isArray(value.executions)) throw new Error()
+        const executions = value.executions.map(parseToolExecution)
+        if (executions.some((execution) => execution === undefined))
+          throw new Error()
+        handlers.onSnapshot(executions as ToolExecutionVo[])
+      } catch {
+        handlers.onError()
+      }
+    },
+  )
+  source.addEventListener(
+    TOOL_EXECUTION_EVENT_TYPE.EXECUTION,
+    (event: MessageEvent<string>) => {
+      try {
+        const value = JSON.parse(event.data) as { execution?: unknown }
+        const execution = parseToolExecution(value.execution)
+        if (!execution) throw new Error()
+        handlers.onExecution(execution)
+      } catch {
+        handlers.onError()
+      }
+    },
+  )
+  source.onerror = handlers.onError
+  return () => source.close()
+}
 
 /** 永久删除一个会话及其持久化历史。 */
 export const deleteAgentSession = (sessionId: string) =>

@@ -10,4 +10,6 @@ export type {
   AgentSessionVo,
   AgentTodoItemVo,
   PendingToolApprovalVo,
+  ToolExecutionOutputVo,
+  ToolExecutionVo,
 } from './session-vo.ts'

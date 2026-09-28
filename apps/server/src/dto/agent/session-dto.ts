@@ -101,6 +101,7 @@ export interface AgentSessionRuntimeActivityDto {
 
 export interface AgentSessionToolDto {
   errorText?: string
+  executionId?: string
   input: Record<string, unknown>
   kind: ToolActivityKind
   outcome?: {

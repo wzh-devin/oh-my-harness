@@ -29,6 +29,7 @@
     "@heroui/styles": "3.2.4",
     "@lezer/highlight": "^1.2.3",
     "@lobehub/icons-static-svg": "1.94.0",
+    "@melloware/react-logviewer": "6.6.0",
     "@oh-my-harness/agent-policy": "workspace:*",
     "@oh-my-harness/shared": "workspace:*",
     "@pierre/diffs": "1.5.1",

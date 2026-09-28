@@ -17,6 +17,10 @@ import {
   findWorkspaceByThreadId,
   useAgentSessions,
   useWorkspaces,
+  ToolExecutionConsole,
+  ServiceSummary,
+  useToolExecutions,
+  projectToolExecutions,
 } from '../features/chat/index.ts'
 import { ChatPage } from '../pages/chat/index.ts'
 import { ExplorePage } from '../pages/explore/index.ts'
@@ -46,7 +50,12 @@ const readHistoryDraft = () => {
 export function App() {
   const [summaryVisible, setSummaryVisible] = useState<boolean>()
   const [reviewThreadId, setReviewThreadId] = useState<string | null>(null)
+  const [consoleSelection, setConsoleSelection] = useState<{
+    sessionId: string
+    executionId: string
+  } | null>(null)
   const summaryTriggerRef = useRef<HTMLButtonElement>(null)
+  const consoleTriggerRef = useRef<HTMLButtonElement>(null)
   const [draft, setDraft] = useState(readHistoryDraft)
   const [pathname, setPathname] = useState(window.location.pathname)
   const route = useMemo(() => resolveChatRoute(pathname), [pathname])
@@ -62,6 +71,7 @@ export function App() {
     loadingIds,
     loadThread,
     pendingApprovals,
+    refreshPendingApproval,
     refreshSessions,
     renameSession,
     resolveApproval,
@@ -98,10 +108,48 @@ export function App() {
     selectedThread?.workspaceId,
     `${selectedThread?.id ?? ''}:${selectedThread ? (statuses[selectedThread.id] ?? '') : ''}`,
   )
+  const executions = useToolExecutions(
+    selectedThread?.id,
+    refreshPendingApproval,
+    () => {
+      setConsoleSelection(null)
+      if (consoleTriggerRef.current) return
+      requestAnimationFrame(() =>
+        summaryTriggerRef.current?.focus({ preventScroll: true }),
+      )
+    },
+  )
+  let consoleExecution = executions.executionList.find(
+    (execution) =>
+      execution.service &&
+      execution.executionId === consoleSelection?.executionId &&
+      execution.sessionId === selectedThread?.id,
+  )
+  // 跟随已打开服务的重启链，仍然只显示原来选中的那项服务。
+  for (
+    let hop = 0;
+    consoleExecution && hop < executions.executionList.length;
+    hop++
+  ) {
+    const next = executions.executionList.find(
+      (execution) =>
+        execution.service &&
+        execution.previousExecutionId === consoleExecution?.executionId,
+    )
+    if (!next) break
+    consoleExecution = next
+  }
   const summarySections = selectedThread
     ? getSummarySections(selectedThread, git.snapshot)
     : []
   const reviewOpen = !!selectedThread && reviewThreadId === selectedThread.id
+  const consoleOpen =
+    !!selectedThread &&
+    !!consoleExecution &&
+    consoleExecution.service?.removedAt === undefined &&
+    consoleSelection?.sessionId === selectedThread.id &&
+    !reviewOpen
+  const rightPanelOpen = reviewOpen || consoleOpen
   const workspaceLabel = workspaces.find(
     (workspace) => workspace.id === selectedThread?.workspaceId,
   )?.label
@@ -112,6 +160,15 @@ export function App() {
     requestAnimationFrame(() =>
       summaryTriggerRef.current?.focus({ preventScroll: true }),
     )
+  }
+
+  /** 关闭当前右侧面板，并把焦点还给实际打开它的入口。 */
+  const closeRightPanel = () => {
+    if (reviewOpen) {
+      closeReview()
+      return
+    }
+    setConsoleSelection(null)
   }
 
   const activePage = useMemo<ChatActivePage>(() => {
@@ -168,6 +225,7 @@ export function App() {
       window.history[method]({ draft: nextDraft }, '', path)
       setDraft(nextDraft)
       setReviewThreadId(null)
+      setConsoleSelection(null)
       setPathname(window.location.pathname)
     },
     [visibleWorkspaces],
@@ -182,6 +240,7 @@ export function App() {
     const handlePopState = () => {
       setDraft(readHistoryDraft())
       setReviewThreadId(null)
+      setConsoleSelection(null)
       setPathname(window.location.pathname)
 
       const nextRoute = resolveChatRoute(window.location.pathname)
@@ -304,10 +363,14 @@ export function App() {
             isLoading={loadingIds.has(activePage.thread.id)}
             pendingApproval={pendingApprovals[activePage.thread.id]}
             status={statuses[activePage.thread.id] ?? 'ready'}
-            thread={activePage.thread}
+            thread={projectToolExecutions(
+              activePage.thread,
+              executions.executionList,
+            )}
             summaryAvailable={
               !!(
                 summarySections.length ||
+                executions.serviceList.length ||
                 git.isLoading ||
                 git.error ||
                 loadingIds.has(activePage.thread.id) ||
@@ -315,37 +378,54 @@ export function App() {
                   errors[activePage.thread.id])
               )
             }
-            summaryVisible={reviewOpen ? false : summaryVisible}
+            summaryVisible={rightPanelOpen ? false : summaryVisible}
             summaryTriggerRef={summaryTriggerRef}
             onSummaryVisibleChange={(visible) => {
-              if (visible) setReviewThreadId(null)
+              if (visible) {
+                setReviewThreadId(null)
+                setConsoleSelection(null)
+              }
               setSummaryVisible(visible)
               if (visible) void git.refresh()
             }}
             summaryContent={
-              <PinnedSummary
-                key={activePage.thread.id}
-                sections={summarySections}
-                workspaceId={activePage.thread.workspaceId}
-                workspaceLabel={
-                  workspaces.find(
-                    (workspace) =>
-                      workspace.id === activePage.thread.workspaceId,
-                  )?.label
-                }
-                git={git}
-                isLoading={loadingIds.has(activePage.thread.id)}
-                loadError={
-                  statuses[activePage.thread.id] === undefined
-                    ? errors[activePage.thread.id]
-                    : undefined
-                }
-                onRetry={() => void loadThread(activePage.thread.id)}
-                onOpenChanges={() => {
-                  setReviewThreadId(activePage.thread.id)
-                  void git.refresh()
-                }}
-              />
+              <>
+                <PinnedSummary
+                  key={activePage.thread.id}
+                  sections={summarySections}
+                  workspaceId={activePage.thread.workspaceId}
+                  workspaceLabel={
+                    workspaces.find(
+                      (workspace) =>
+                        workspace.id === activePage.thread.workspaceId,
+                    )?.label
+                  }
+                  git={git}
+                  isLoading={loadingIds.has(activePage.thread.id)}
+                  loadError={
+                    statuses[activePage.thread.id] === undefined
+                      ? errors[activePage.thread.id]
+                      : undefined
+                  }
+                  onRetry={() => void loadThread(activePage.thread.id)}
+                  onOpenChanges={() => {
+                    setConsoleSelection(null)
+                    setReviewThreadId(activePage.thread.id)
+                    void git.refresh()
+                  }}
+                />
+                <ServiceSummary
+                  controller={executions}
+                  onOpen={(execution, trigger) => {
+                    consoleTriggerRef.current = trigger
+                    setReviewThreadId(null)
+                    setConsoleSelection({
+                      sessionId: activePage.thread.id,
+                      executionId: execution.executionId,
+                    })
+                  }}
+                />
+              </>
             }
             trajectoryRevision={trajectoryVersions[activePage.thread.id] ?? 0}
             onRestore={() => setSessionArchived(activePage.thread.id, false)}
@@ -377,10 +457,30 @@ export function App() {
 
   return (
     <ChatLayout
-      reviewOpen={reviewOpen}
-      onReviewClose={closeReview}
-      reviewContent={
-        reviewOpen && selectedThread?.workspaceId ? (
+      rightPanelOpen={rightPanelOpen}
+      rightPanelLabel={consoleOpen ? '服务控制台' : '变更侧栏'}
+      onRightPanelClose={closeRightPanel}
+      onRightPanelClosed={() => {
+        const target = consoleTriggerRef.current
+        if (!target) return
+        // 退出动画完成后再恢复焦点，避免面板卸载把焦点重置到 body。
+        requestAnimationFrame(() => {
+          const visible = target.isConnected && !target.closest('[inert]')
+          ;(visible ? target : summaryTriggerRef.current)?.focus({
+            preventScroll: true,
+          })
+          consoleTriggerRef.current = null
+        })
+      }}
+      rightPanelContent={
+        consoleOpen && consoleExecution ? (
+          <ToolExecutionConsole
+            key={consoleExecution.executionId}
+            execution={consoleExecution}
+            controller={executions}
+            onClose={closeRightPanel}
+          />
+        ) : reviewOpen && selectedThread?.workspaceId ? (
           <Suspense
             fallback={
               <div className="p-4 text-sm text-muted" role="status">

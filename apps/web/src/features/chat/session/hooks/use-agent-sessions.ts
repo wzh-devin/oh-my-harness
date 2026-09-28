@@ -949,33 +949,35 @@ export function useAgentSessions() {
                 )
                 updateThread(sessionId, (thread) => ({
                   ...thread,
-                  messages: thread.messages.map((item) =>
-                    item.id === assistantId
-                      ? updateStreamingTool(
-                          item,
-                          {
-                            ...(event.isError
-                              ? { errorText: toolOutputText(event.output) }
-                              : { output: event.output }),
-                            input: event.filePath
-                              ? { path: event.filePath }
-                              : ((item.activity?.tools ?? item.tools)?.find(
-                                  (tool) =>
-                                    tool.toolCallId === event.toolCallId,
-                                )?.input ?? {}),
-                            kind: event.kind,
-                            outcome: event.outcome,
-                            state: event.isError
-                              ? SESSION_TOOL_STATE.OUTPUT_ERROR
-                              : SESSION_TOOL_STATE.OUTPUT_AVAILABLE,
-                            toolCallId: event.toolCallId,
-                            toolName: event.toolName,
-                            label: 'label' in event ? event.label : undefined,
-                          },
-                          startedAt,
-                        )
-                      : item,
-                  ),
+                  messages: thread.messages.map((item) => {
+                    if (item.id !== assistantId) return item
+                    return updateStreamingTool(
+                      item,
+                      {
+                        ...(event.isError
+                          ? { errorText: toolOutputText(event.output) }
+                          : { output: event.output }),
+                        input: event.filePath
+                          ? { path: event.filePath }
+                          : ((item.activity?.tools ?? item.tools)?.find(
+                              (tool) => tool.toolCallId === event.toolCallId,
+                            )?.input ?? {}),
+                        kind: event.kind,
+                        background: event.running === true,
+                        executionId: event.executionId,
+                        outcome: event.outcome,
+                        state: event.running
+                          ? SESSION_TOOL_STATE.INPUT_AVAILABLE
+                          : event.isError
+                            ? SESSION_TOOL_STATE.OUTPUT_ERROR
+                            : SESSION_TOOL_STATE.OUTPUT_AVAILABLE,
+                        toolCallId: event.toolCallId,
+                        toolName: event.toolName,
+                        label: 'label' in event ? event.label : undefined,
+                      },
+                      startedAt,
+                    )
+                  }),
                 }))
                 break
               case AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED:
@@ -1182,6 +1184,15 @@ export function useAgentSessions() {
     [pendingApprovals, updateThread],
   )
 
+  const refreshPendingApproval = useCallback(async (sessionId: string) => {
+    const approval = await getPendingToolApproval(sessionId)
+    setPendingApprovals((current) => ({
+      ...current,
+      [sessionId]: approval,
+    }))
+    return approval
+  }, [])
+
   return {
     abort,
     clearArchivedSessions,
@@ -1194,6 +1205,7 @@ export function useAgentSessions() {
     loadingIds,
     loadThread,
     pendingApprovals,
+    refreshPendingApproval,
     refreshSessions,
     renameSession,
     resolveApproval,

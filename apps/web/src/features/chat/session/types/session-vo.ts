@@ -10,6 +10,7 @@ import {
   type SessionToolState,
   type TodoStatus,
   type ToolActivityKind,
+  type ToolExecutionState,
 } from '@oh-my-harness/shared'
 
 export interface AgentSessionVo {
@@ -87,6 +88,7 @@ export interface AgentSessionRuntimeActivityVo {
 
 export interface AgentSessionToolVo {
   errorText?: string
+  executionId?: string
   input: Record<string, unknown>
   kind: ToolActivityKind
   outcome?: BashOutcomeVo
@@ -95,6 +97,33 @@ export interface AgentSessionToolVo {
   toolCallId: string
   toolName: string
   label?: string
+}
+
+export interface ToolExecutionVo {
+  background: boolean
+  canRestart: boolean
+  canStop: boolean
+  completedAt?: number
+  error?: string
+  executionId: string
+  label: string
+  output?: string
+  previousExecutionId?: string
+  runId: string
+  service?: { command: string; cwd: string; removedAt?: number }
+  sessionId: string
+  startedAt: number
+  state: Exclude<ToolExecutionState, 'complete'>
+  toolCallId: string
+  toolName: string
+}
+
+export interface ToolExecutionOutputVo {
+  nextOffset: number | null
+  offset: number
+  text: string
+  totalBytes: number
+  truncated: boolean
 }
 
 export interface BashOutcomeVo {
@@ -182,6 +211,7 @@ export type AgentRunEventVo =
     }
   | {
       isError: boolean
+      executionId?: string
       filePath?: string
       outcome?: BashOutcomeVo
       output: unknown
@@ -189,6 +219,7 @@ export type AgentRunEventVo =
       toolName: string
       label?: string
       kind: AgentSessionToolVo['kind']
+      running?: boolean
       type: typeof AGENT_RUN_EVENT_TYPE.TOOL_END
     }
   | ({

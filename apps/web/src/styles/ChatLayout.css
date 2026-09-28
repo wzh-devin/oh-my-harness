@@ -8,41 +8,41 @@
   }
 }
 
-.chat-review-layout {
-  --chat-review-height: calc(100svh - var(--chat-navbar-height, 64px));
+.chat-side-panel-layout {
+  --chat-side-panel-height: calc(100svh - var(--chat-navbar-height, 64px));
   position: relative;
-  height: calc(100svh - var(--chat-navbar-height, 64px));
+  height: var(--chat-side-panel-height);
   min-width: 0;
   overflow: hidden;
 }
-.chat-review-main,
-.chat-review-aside {
+.chat-side-panel-main,
+.chat-side-panel-aside {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
 }
-.chat-review-aside {
+.chat-side-panel-aside {
   background: var(--background);
 }
-.chat-review-layout > [data-panel] {
+.chat-side-panel-layout > [data-panel] {
   transition: flex-grow var(--panel-duration) var(--panel-ease);
 }
-.chat-review-layout:has(> [data-separator='active']) > [data-panel] {
+.chat-side-panel-layout:has(> [data-separator='active']) > [data-panel] {
   transition: none;
 }
-.chat-review-layout[data-open='false'] > .chat-review-handle {
+.chat-side-panel-layout[data-open='false'] > .chat-side-panel-handle {
   visibility: hidden;
   pointer-events: none;
 }
 @media (min-width: 769px) {
-  .chat-review-layout {
-    --chat-review-height: 100svh;
+  .chat-side-panel-layout {
+    --chat-side-panel-height: 100svh;
   }
 }
 
 /* 窄屏复用同一个面板 DOM，无模态遮罩，也不重挂载草稿。 */
 @media (max-width: 1024px) {
-  .chat-review-layout > #git-review {
+  .chat-side-panel-layout > #chat-side-panel {
     position: absolute;
     inset: 0;
     z-index: 30;
@@ -58,16 +58,16 @@
       opacity var(--panel-duration) var(--panel-ease),
       visibility var(--panel-duration);
   }
-  .chat-review-layout[data-open='true'] > #git-review {
+  .chat-side-panel-layout[data-open='true'] > #chat-side-panel {
     opacity: 1;
     transform: translateX(0);
     visibility: visible;
     pointer-events: auto;
   }
-  .chat-review-layout[data-open='true'] > #conversation {
+  .chat-side-panel-layout[data-open='true'] > #conversation {
     visibility: hidden;
   }
-  .chat-review-handle {
+  .chat-side-panel-handle {
     visibility: hidden;
     pointer-events: none;
   }

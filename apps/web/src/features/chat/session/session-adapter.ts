@@ -9,6 +9,7 @@ import {
   CHAT_ASSISTANT_STATUS,
   MESSAGE_PART_TYPE,
   MESSAGE_ROLE,
+  SESSION_TOOL_STATE,
 } from '@oh-my-harness/shared'
 import { TOOL_PERMISSION } from '@oh-my-harness/agent-policy/contracts'
 import type { AgentSessionMessageVo, AgentSessionVo } from './types/index.ts'
@@ -32,15 +33,31 @@ const formatSessionTime = (value: number) =>
     month: 'numeric',
   }).format(toTimestamp(value))
 
+const CHAT_TOOL_STATE_MAP = {
+  [SESSION_TOOL_STATE.RUNNING]: SESSION_TOOL_STATE.INPUT_AVAILABLE,
+  [SESSION_TOOL_STATE.STOPPING]: SESSION_TOOL_STATE.INPUT_AVAILABLE,
+  [SESSION_TOOL_STATE.INPUT_AVAILABLE]: SESSION_TOOL_STATE.INPUT_AVAILABLE,
+  [SESSION_TOOL_STATE.SUCCEEDED]: SESSION_TOOL_STATE.OUTPUT_AVAILABLE,
+  [SESSION_TOOL_STATE.OUTPUT_AVAILABLE]: SESSION_TOOL_STATE.OUTPUT_AVAILABLE,
+  [SESSION_TOOL_STATE.FAILED]: SESSION_TOOL_STATE.OUTPUT_ERROR,
+  [SESSION_TOOL_STATE.STOPPED]: SESSION_TOOL_STATE.OUTPUT_ERROR,
+  [SESSION_TOOL_STATE.INTERRUPTED]: SESSION_TOOL_STATE.OUTPUT_ERROR,
+  [SESSION_TOOL_STATE.OUTPUT_ERROR]: SESSION_TOOL_STATE.OUTPUT_ERROR,
+} as const
+
 const toChatTool = (
   tool: NonNullable<AgentSessionMessageVo['tools']>[number],
 ): ChatMessageTool => ({
+  background:
+    tool.state === SESSION_TOOL_STATE.RUNNING ||
+    tool.state === SESSION_TOOL_STATE.STOPPING,
   errorText: tool.errorText,
+  executionId: tool.executionId,
   input: tool.input,
   kind: tool.kind,
   outcome: tool.outcome,
   output: tool.output,
-  state: tool.state,
+  state: CHAT_TOOL_STATE_MAP[tool.state],
   toolCallId: tool.toolCallId,
   toolName: tool.toolName,
   label: tool.label,

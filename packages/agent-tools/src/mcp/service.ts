@@ -550,7 +550,7 @@ export class McpService {
     return { bindings, unavailable }
   }
 
-  /** 执行和审批共享租约；停用会通过生命周期信号取消尚未执行的授权。 */
+  /** 执行时持有连接租约；停用会通过生命周期信号取消调用。 */
   lease(binding: McpToolBinding, sessionId: string, runSignal?: AbortSignal) {
     this.checkBinding(binding)
     const controller = new AbortController()

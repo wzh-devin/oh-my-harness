@@ -14,7 +14,9 @@ import type {
 import { SessionError } from '@earendil-works/pi-agent-core'
 import {
   BUILTIN_TOOL_NAME,
+  parseToolExecutionSnapshot,
   parseTodoWriteInput,
+  type ToolExecutionSnapshot,
   type TodoItem,
 } from '@oh-my-harness/agent-tools'
 import {
@@ -33,6 +35,7 @@ import {
   MESSAGE_ROLE,
   SESSION_TOOL_STATE,
   TODO_STATUS,
+  TOOL_EXECUTION_STATE,
   type ContextCompactionStatus,
   type MessageRole,
   type SessionToolState,
@@ -146,6 +149,7 @@ export interface AgentSessionRuntimeActivity {
 
 export interface AgentSessionTool {
   errorText?: string
+  executionId?: string
   input: Record<string, unknown>
   kind: ToolActivityKind
   outcome?: import('@oh-my-harness/agent-tools').BashOutcome
@@ -316,19 +320,40 @@ function safeToolInput(input: Record<string, unknown>) {
   return { path }
 }
 
+function sessionToolState(
+  execution: ToolExecutionSnapshot | undefined,
+  result: ToolResultMessage | undefined,
+): SessionToolState {
+  if (execution?.background) return execution.state
+  if (!result) return SESSION_TOOL_STATE.INPUT_AVAILABLE
+  return result.isError || execution?.state === TOOL_EXECUTION_STATE.FAILED
+    ? SESSION_TOOL_STATE.OUTPUT_ERROR
+    : SESSION_TOOL_STATE.OUTPUT_AVAILABLE
+}
+
 function toSessionTool(
   toolCall: Extract<AssistantMessage['content'][number], { type: 'toolCall' }>,
   toolResults: ReadonlyMap<string, ToolResultMessage>,
   toolLabels: ReadonlyMap<string, string>,
+  executions: ReadonlyMap<string, ToolExecutionSnapshot>,
 ): AgentSessionTool {
   const result = toolResults.get(toolCall.id)
-  const output = result ? toolResultText(result) : undefined
+  const execution = executions.get(toolCall.id)
+  const output =
+    execution?.output ?? (result ? toolResultText(result) : undefined)
   const outcome =
     toolCall.name === BUILTIN_TOOL_NAME.BASH
       ? safeBashOutcome(result?.details)
       : undefined
   return {
-    ...(result?.isError && output ? { errorText: output } : {}),
+    ...((result?.isError ||
+      execution?.state === SESSION_TOOL_STATE.FAILED ||
+      execution?.state === SESSION_TOOL_STATE.STOPPED ||
+      execution?.state === SESSION_TOOL_STATE.INTERRUPTED) &&
+    (execution?.error || output)
+      ? { errorText: execution?.error ?? output }
+      : {}),
+    ...(execution ? { executionId: execution.executionId } : {}),
     ...(result?.details &&
     typeof result.details === 'object' &&
     typeof (result.details as { displayName?: unknown }).displayName ===
@@ -345,11 +370,7 @@ function toSessionTool(
     kind: getToolActivityKind(toolCall.name),
     ...(!result?.isError && output ? { output } : {}),
     ...(outcome ? { outcome } : {}),
-    state: result
-      ? result.isError
-        ? SESSION_TOOL_STATE.OUTPUT_ERROR
-        : SESSION_TOOL_STATE.OUTPUT_AVAILABLE
-      : SESSION_TOOL_STATE.INPUT_AVAILABLE,
+    state: sessionToolState(execution, result),
     toolCallId: toolCall.id,
     toolName: toolCall.name,
   }
@@ -541,6 +562,7 @@ function toMessage(
   entry: Extract<Entry, { type: 'message' }>,
   toolResults: ReadonlyMap<string, ToolResultMessage>,
   toolLabels: ReadonlyMap<string, string>,
+  executions: ReadonlyMap<string, ToolExecutionSnapshot>,
 ) {
   const { message } = entry
   if (
@@ -586,7 +608,7 @@ function toMessage(
           }
           return [
             {
-              tool: toSessionTool(content, toolResults, toolLabels),
+              tool: toSessionTool(content, toolResults, toolLabels, executions),
               type: MESSAGE_PART_TYPE.TOOL,
             },
           ]
@@ -890,6 +912,16 @@ export class AgentSessionService {
           toolResults.set(entry.message.toolCallId, entry.message)
         }
       }
+      const executions = new Map<string, ToolExecutionSnapshot>()
+      for (const entry of branchEntries.toReversed()) {
+        if (
+          entry.type !== 'custom' ||
+          entry.customType !== SESSION_CUSTOM_TYPE.TOOL_EXECUTION_STATE
+        )
+          continue
+        const execution = parseToolExecutionSnapshot(entry.data)
+        if (execution) executions.set(execution.toolCallId, execution)
+      }
       const compactionCompletions = new Map<
         string,
         NonNullable<ReturnType<typeof contextCompactionCompletion>>
@@ -946,7 +978,7 @@ export class AgentSessionService {
           continue
         const message =
           entry.type === 'message'
-            ? toMessage(entry, toolResults, toolLabels)
+            ? toMessage(entry, toolResults, toolLabels, executions)
             : toContextCompactionMessage(
                 entry,
                 compactionCompletions.get(entry.id),

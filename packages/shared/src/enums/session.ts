@@ -16,6 +16,7 @@ export const SESSION_CUSTOM_TYPE = {
   SESSION_ARCHIVE_CHANGED: 'session/archive-changed',
   TODO_UPDATED: 'todo/updated',
   TOOL_EXECUTION_COMPLETED: 'tool/execution-completed',
+  TOOL_EXECUTION_STATE: 'tool/execution-state',
   TOOL_EXECUTION_STARTED: 'tool/execution-started',
   USER_INPUT: 'user/input',
 } as const
@@ -38,9 +39,15 @@ export type ContextCompactionStatus =
   (typeof CONTEXT_COMPACTION_STATUS)[keyof typeof CONTEXT_COMPACTION_STATUS]
 
 export const SESSION_TOOL_STATE = {
+  FAILED: 'failed',
   INPUT_AVAILABLE: 'input-available',
+  INTERRUPTED: 'interrupted',
   OUTPUT_AVAILABLE: 'output-available',
   OUTPUT_ERROR: 'output-error',
+  RUNNING: 'running',
+  STOPPED: 'stopped',
+  STOPPING: 'stopping',
+  SUCCEEDED: 'succeeded',
 } as const
 export type SessionToolState =
   (typeof SESSION_TOOL_STATE)[keyof typeof SESSION_TOOL_STATE]

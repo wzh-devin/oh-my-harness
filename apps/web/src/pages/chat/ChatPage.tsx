@@ -123,29 +123,30 @@ export function ChatPage({
             </Tabs.Tab>
           </Tabs.List>
         </Tabs.ListContainer>
-        {summaryAvailable ? (
-          <Tooltip delay={300}>
-            <Button
-              aria-controls={summaryId}
-              aria-expanded={isVisible}
-              aria-label={summaryLabel}
-              className="summary-toggle"
-              isIconOnly
-              onPress={() => onSummaryVisibleChange(!isVisible)}
-              ref={(element) => {
-                triggerRef.current = element
-                if (summaryTriggerRef) summaryTriggerRef.current = element
-              }}
-              size="sm"
-              variant="ghost"
-            >
-              <ListIcon aria-hidden="true" className="size-4" />
-            </Button>
-            <Tooltip.Content placement="bottom end">
-              {summaryLabel}
-            </Tooltip.Content>
-          </Tooltip>
-        ) : null}
+        <div className="workbench-toggles">
+          {summaryAvailable ? (
+            <Tooltip delay={300}>
+              <Button
+                aria-controls={summaryId}
+                aria-expanded={isVisible}
+                aria-label={summaryLabel}
+                isIconOnly
+                onPress={() => onSummaryVisibleChange(!isVisible)}
+                ref={(element) => {
+                  triggerRef.current = element
+                  if (summaryTriggerRef) summaryTriggerRef.current = element
+                }}
+                size="sm"
+                variant="ghost"
+              >
+                <ListIcon aria-hidden="true" className="size-4" />
+              </Button>
+              <Tooltip.Content placement="bottom end">
+                {summaryLabel}
+              </Tooltip.Content>
+            </Tooltip>
+          ) : null}
+        </div>
         <Tabs.Panel
           className="summary-content min-h-0 flex-1 overflow-hidden p-0 pt-2"
           id="conversation"

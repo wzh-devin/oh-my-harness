@@ -54,6 +54,7 @@ export type AgentRuntimeEvent =
     }
   | {
       isError: boolean
+      executionId?: string
       filePath?: string
       outcome?: BashOutcome
       output: unknown
@@ -61,6 +62,7 @@ export type AgentRuntimeEvent =
       toolName: string
       label?: string
       kind: ToolActivityKind
+      running?: boolean
       type: typeof AGENT_RUN_EVENT_TYPE.TOOL_END
     }
   | ToolApprovalEvent

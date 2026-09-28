@@ -163,6 +163,45 @@ export const createWorkspaceTools = async (options: WorkspaceToolsOptions) => {
     },
   }))
 
+  const authorizeBash = async (
+    toolCallId: string,
+    args: unknown,
+    signal?: AbortSignal,
+    remember = true,
+  ) => {
+    const input = JSON.stringify(args)
+    const { command, elevated } = parseBashInput(args)
+    const sandboxEscalation =
+      restricted &&
+      elevated === true &&
+      options.permission !== TOOL_PERMISSION.FULL_ACCESS
+    await options.policy.authorize(
+      {
+        permission: options.permission,
+        runId: options.runId,
+        sessionId: options.sessionId,
+        toolCallId,
+        ...POLICY_TOOL.BASH,
+        command,
+        cwd: env.cwd,
+      },
+      {
+        onRequested: options.onApprovalRequested,
+        onResolved: options.onApprovalResolved,
+      },
+      signal,
+      undefined,
+      options.sessionApprovals,
+      sandboxEscalation ? { sandboxEscalation: true } : undefined,
+    )
+    signal?.throwIfAborted()
+    if (remember)
+      authorized.set(toolCallId, {
+        input,
+        toolName: POLICY_TOOL.BASH.toolName,
+      })
+  }
+
   const beforeToolCall = async (
     call: BeforeToolCallContext,
     signal?: AbortSignal,
@@ -183,26 +222,7 @@ export const createWorkspaceTools = async (options: WorkspaceToolsOptions) => {
     try {
       signal?.throwIfAborted()
       if (toolName === POLICY_TOOL.BASH.toolName) {
-        const { command, elevated } = parseBashInput(call.args)
-        const sandboxEscalation =
-          restricted &&
-          elevated === true &&
-          options.permission !== TOOL_PERMISSION.FULL_ACCESS
-        await options.policy.authorize(
-          {
-            ...common,
-            ...POLICY_TOOL.BASH,
-            command,
-            cwd: env.cwd,
-          },
-          hooks,
-          signal,
-          undefined,
-          options.sessionApprovals,
-          sandboxEscalation ? { sandboxEscalation: true } : undefined,
-        )
-        signal?.throwIfAborted()
-        authorized.set(call.toolCall.id, { input, toolName })
+        await authorizeBash(call.toolCall.id, call.args, signal)
         return
       }
       const definition = getFileTool(toolName)
@@ -264,6 +284,17 @@ export const createWorkspaceTools = async (options: WorkspaceToolsOptions) => {
 
   return {
     beforeToolCall,
+    prepareBash: async (
+      toolCallId: string,
+      input: unknown,
+      signal?: AbortSignal,
+    ) => {
+      await authorizeBash(toolCallId, input, signal, false)
+      return (
+        executionSignal?: AbortSignal,
+        onUpdate?: Parameters<AgentTool['execute']>[3],
+      ) => bash.execute(toolCallId, input as never, executionSignal, onUpdate)
+    },
     cleanup: () => {
       authorized.clear()
       return Promise.all([

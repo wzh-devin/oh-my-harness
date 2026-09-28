@@ -6,7 +6,6 @@ import {
   MESSAGE_PART_TYPE,
   SESSION_TOOL_STATE,
   TOOL_EXECUTION_STATE,
-  type ToolExecutionState,
 } from '@oh-my-harness/shared'
 import type {
   ChatAssistantStatus,
@@ -22,7 +21,10 @@ export type ToolActivityDisplayPart =
 
 export interface ToolActivitySummary {
   label: string
-  state: ToolExecutionState
+  state:
+    | typeof TOOL_EXECUTION_STATE.COMPLETE
+    | typeof TOOL_EXECUTION_STATE.FAILED
+    | typeof TOOL_EXECUTION_STATE.RUNNING
 }
 
 interface ToolApprovalPresentation {
@@ -47,9 +49,10 @@ export const isToolActivityRunning = (
     runtimeActivities.some((activity) => activity.status === undefined) ||
     tools.some(
       (tool) =>
-        tool.state === 'input-streaming' ||
-        tool.state === SESSION_TOOL_STATE.INPUT_AVAILABLE ||
-        tool.state === 'requires-action',
+        !tool.background &&
+        (tool.state === 'input-streaming' ||
+          tool.state === SESSION_TOOL_STATE.INPUT_AVAILABLE ||
+          tool.state === 'requires-action'),
     ))
 
 /** 将 Agent Run 毫秒耗时格式化为紧凑中文。 */
@@ -125,8 +128,17 @@ export const getToolActivitySummary = (
     }
   }
 
+  const backgroundCount = tools.filter(
+    (tool) =>
+      tool.background && tool.state === SESSION_TOOL_STATE.INPUT_AVAILABLE,
+  ).length
+  const backgroundLabel = backgroundCount
+    ? `${backgroundCount} 个后台任务`
+    : undefined
   return {
-    label: durationLabel ?? '工具活动',
+    label:
+      [durationLabel, backgroundLabel].filter(Boolean).join(' · ') ||
+      '工具活动',
     state: TOOL_EXECUTION_STATE.COMPLETE,
   }
 }

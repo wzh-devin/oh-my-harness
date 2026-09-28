@@ -6,6 +6,7 @@ import {
   AlertCircleIcon,
   ChevronDownIcon,
   LoaderIcon,
+  TerminalIcon,
   WrenchIcon,
   XCircleIcon,
 } from 'lucide-react'
@@ -77,6 +78,7 @@ const statusIconMap: Record<
 }
 
 function ToolFallbackTrigger({
+  background = false,
   toolName,
   status,
   icon,
@@ -85,28 +87,33 @@ function ToolFallbackTrigger({
   ...props
 }: Omit<React.ComponentProps<typeof CollapsibleTrigger>, 'className'> & {
   className?: string
+  background?: boolean
   icon?: React.ElementType
   label?: string
   status?: ToolCallMessagePartStatus
   toolName: string
 }) {
   const statusType = status?.type ?? 'complete'
-  const isRunning = statusType === 'running'
+  const isBackground = statusType === 'running' && background
+  const isRunning = statusType === 'running' && !background
   const isCancelled =
     status?.type === 'incomplete' && status.reason === 'cancelled'
-  const Icon =
-    statusType === 'complete' ? (icon ?? WrenchIcon) : statusIconMap[statusType]
-  const fallbackLabel = isCancelled
-    ? `已取消 ${toolName}`
-    : statusType === 'incomplete'
-      ? `${toolName} 调用失败`
-      : isRunning
-        ? `正在使用 ${toolName}`
-        : `已使用 ${toolName}`
+  let Icon = icon ?? WrenchIcon
+  if (statusType !== 'complete') Icon = statusIconMap[statusType]
+  if (isBackground) Icon = icon ?? TerminalIcon
+  let fallbackLabel = `已使用 ${toolName}`
+  if (statusType === 'running')
+    fallbackLabel = background
+      ? `后台运行中 · ${toolName}`
+      : `正在使用 ${toolName}`
+  if (statusType === 'incomplete')
+    fallbackLabel = isCancelled ? `已取消 ${toolName}` : `${toolName} 调用失败`
 
   return (
     <CollapsibleTrigger
       data-slot="tool-fallback-trigger"
+      data-background={isBackground || undefined}
+      aria-busy={isRunning}
       className={cn(
         'aui-tool-fallback-trigger group/trigger flex min-w-0 w-fit origin-left items-center gap-2 py-1 text-sm font-normal text-muted transition-[color,scale] hover:text-foreground active:scale-[0.98]',
         className,
@@ -118,7 +125,8 @@ function ToolFallbackTrigger({
         className={cn(
           'aui-tool-fallback-trigger-icon size-4 shrink-0',
           isCancelled && 'text-muted',
-          isRunning && 'animate-spin [animation-duration:0.6s]',
+          isRunning &&
+            'animate-spin [animation-duration:0.6s] motion-reduce:animate-none',
         )}
       />
       <span

@@ -9,7 +9,7 @@ export const createReadToolResultTool = (
   name: BUILTIN_TOOL_NAME.READ_TOOL_RESULT,
   label: 'read tool result',
   description:
-    'Read original text from a completed tool call in this session. Use character offset and limit to page through shortened output; nextOffset identifies the next page. This does not rerun the tool.',
+    'Read text output from a running or completed tool call in this session. Use the original toolCallId (not executionId). Use character offset and limit to page through retained output; nextOffset identifies the next page. This does not rerun the tool.',
   parameters: {
     type: 'object',
     additionalProperties: false,

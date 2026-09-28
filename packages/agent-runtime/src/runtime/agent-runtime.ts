@@ -20,12 +20,19 @@ import {
 } from '@oh-my-harness/agent-policy'
 import {
   BUILTIN_TOOL_NAME,
+  MAX_TOOL_EXECUTION_OUTPUT_BYTES,
+  ToolExecutionManager,
+  createGetToolExecutionTool,
   createSkillResourceTool,
   createTodoWriteTool,
   createReadToolResultTool,
   createWorkspaceTools,
   createMcpTools,
+  parseBashInput,
+  parseToolExecutionSnapshot,
   type McpService,
+  type ToolExecutionRunOptions,
+  type ToolExecutionSnapshot,
 } from '@oh-my-harness/agent-tools'
 import { ModelServiceError, type ModelService } from '@oh-my-harness/llm'
 import {
@@ -40,6 +47,7 @@ import {
   MCP_CONNECTION_STATUS,
   SANDBOX_MODE,
   TRAJECTORY_STREAM_BLOCK,
+  TOOL_EXECUTION_STATE,
   type AgentOperationKind,
   type SandboxMode,
 } from '@oh-my-harness/shared'
@@ -50,6 +58,7 @@ import {
   createCustomMessage,
   type AgentEvent,
   type AgentMessage,
+  type AgentTool,
 } from '@earendil-works/pi-agent-core'
 import {
   EventStream,
@@ -249,6 +258,12 @@ export class AgentRuntime {
   private readonly active = new Map<string, ActiveOperation>()
   private readonly capabilities?: AgentCapabilityService
   private readonly attachments?: AttachmentStore
+  private readonly executions?: ToolExecutionManager
+  private readonly executionSessions = new Map<
+    string,
+    Awaited<ReturnType<AgentSessionService['open']>>['session']
+  >()
+  private readonly restoredExecutionSessions = new Set<string>()
   private changingCapabilities = false
 
   /** 导入技能后使随后目录查询和 Run 使用新的能力快照。 */
@@ -305,6 +320,11 @@ export class AgentRuntime {
     this.models = models
     this.sessions = new AgentSessionService(repository, projection)
     this.toolOptions = toolOptions
+    this.executions = toolOptions?.dataDirectory
+      ? new ToolExecutionManager(toolOptions.dataDirectory, (snapshot) =>
+          this.persistExecution(snapshot),
+        )
+      : undefined
     this.attachments = toolOptions?.dataDirectory
       ? new AttachmentStore(toolOptions.dataDirectory)
       : undefined
@@ -373,6 +393,7 @@ export class AgentRuntime {
 
   async getMessages(id: string, options: { before?: number; limit: number }) {
     this.assertOpen()
+    await this.restoreExecutions(id)
     if (!this.active.has(id)) {
       const opened = await this.sessions.open(id)
       await this.repairInterruptedTools(opened.session, opened.entries, id)
@@ -380,8 +401,128 @@ export class AgentRuntime {
     return this.sessions.messages(id, options)
   }
 
+  /** 返回当前会话的权威工具执行目录，恢复时不重放失联任务。 */
+  async listExecutions(id: string) {
+    this.assertOpen()
+    await this.restoreExecutions(id)
+    return this.executions?.listExecutions(id) ?? []
+  }
+
+  async getExecution(id: string, executionId: string) {
+    this.assertOpen()
+    await this.restoreExecutions(id)
+    try {
+      return this.requireExecutions().getExecution(id, executionId)
+    } catch {
+      throw new AgentRuntimeError(
+        'TOOL_EXECUTION_NOT_FOUND',
+        '工具执行不存在。',
+        404,
+      )
+    }
+  }
+
+  async readExecutionOutput(
+    id: string,
+    executionId: string,
+    offset = 0,
+    limit = 16_000,
+  ) {
+    this.assertOpen()
+    await this.restoreExecutions(id)
+    try {
+      return await this.requireExecutions().readOutput(
+        id,
+        executionId,
+        offset,
+        limit,
+      )
+    } catch (error) {
+      const message = error instanceof Error ? error.message : ''
+      throw new AgentRuntimeError(
+        message.includes('不存在')
+          ? 'TOOL_EXECUTION_NOT_FOUND'
+          : 'INVALID_TOOL_EXECUTION_OUTPUT_REQUEST',
+        message.includes('不存在') ? '工具执行不存在。' : '输出读取参数无效。',
+        message.includes('不存在') ? 404 : 400,
+      )
+    }
+  }
+
+  async stopExecution(id: string, executionId: string) {
+    this.assertOpen()
+    await this.restoreExecutions(id)
+    try {
+      return await this.requireExecutions().stopExecution(id, executionId)
+    } catch {
+      throw new AgentRuntimeError(
+        'TOOL_EXECUTION_NOT_FOUND',
+        '工具执行不存在。',
+        404,
+      )
+    }
+  }
+
+  /** 删除服务入口前等待真实执行停止，保留会话中的工具历史。 */
+  async removeService(id: string, executionId: string) {
+    this.assertOpen()
+    await this.restoreExecutions(id)
+    // 查询单独完成：跨会话与不存在返回 404，停止或持久化失败不能伪装为不存在。
+    await this.getExecution(id, executionId)
+    try {
+      return await this.requireExecutions().removeService(id, executionId)
+    } catch {
+      throw new AgentRuntimeError(
+        'SERVICE_REMOVE_FAILED',
+        '删除服务失败，请等待当前操作结束后重试。服务记录已保留。',
+        409,
+      )
+    }
+  }
+
+  async restartExecution(id: string, executionId: string) {
+    this.assertOpen()
+    await this.restoreExecutions(id)
+    try {
+      return await this.requireExecutions().restartExecution(id, executionId)
+    } catch (error) {
+      if (error instanceof ToolPolicyError)
+        throw new AgentRuntimeError(error.code, error.message, 409)
+      const message = error instanceof Error ? error.message : ''
+      throw new AgentRuntimeError(
+        message.includes('不可重启')
+          ? 'TOOL_EXECUTION_RESTART_UNAVAILABLE'
+          : message.includes('不存在')
+            ? 'TOOL_EXECUTION_NOT_FOUND'
+            : 'TOOL_EXECUTION_RESTART_FAILED',
+        message || '工具执行重启失败。',
+        message.includes('不存在') ? 404 : 409,
+      )
+    }
+  }
+
+  async subscribeExecutions(
+    id: string,
+    listener: (snapshot: ToolExecutionSnapshot) => void,
+    onSnapshot?: (snapshotList: ToolExecutionSnapshot[]) => void,
+  ) {
+    this.assertOpen()
+    await this.restoreExecutions(id)
+    const manager = this.requireExecutions()
+    const unsubscribe = manager.subscribeExecution(id, listener)
+    try {
+      // 同步注册监听与读取快照，避免首次连接或重连期间漏掉终态。
+      onSnapshot?.(manager.listExecutions(id))
+      return unsubscribe
+    } catch (error) {
+      unsubscribe()
+      throw error
+    }
+  }
+
   async getTrajectory(id: string) {
     this.assertOpen()
+    await this.restoreExecutions(id)
     const snapshot = this.active.get(id)?.trajectory?.snapshot
     if (snapshot) return snapshot
     return this.sessions.trajectory(
@@ -441,6 +582,9 @@ export class AgentRuntime {
     this.assertOpen()
     const operation = this.reserve(id, AGENT_OPERATION_KIND.MUTATION)
     try {
+      await this.executions?.deleteSession(id)
+      this.executionSessions.delete(id)
+      this.restoredExecutionSessions.delete(id)
       await this.sessions.delete(id)
       await this.attachments?.deleteSession(id)
     } finally {
@@ -601,6 +745,7 @@ export class AgentRuntime {
       operation.agent?.abort()
     }
     await Promise.allSettled(operations.map((operation) => operation.settled))
+    await this.executions?.close()
   }
 
   private async startRun(
@@ -627,6 +772,8 @@ export class AgentRuntime {
     }
     try {
       const opened = await this.sessions.open(id)
+      this.executionSessions.set(id, opened.session)
+      await this.restoreExecutions(id, opened.entries)
       if (opened.archived) {
         throw new AgentRuntimeError(
           'SESSION_ARCHIVED',
@@ -909,32 +1056,34 @@ export class AgentRuntime {
         model: model.id,
         sessionId: id,
       })
-      const workspaceTools = this.toolOptions
-        ? await createWorkspaceTools({
-            sessionApprovals,
-            cwd: opened.metadata.cwd,
-            onApprovalRequested: async (approval) => {
-              await this.appendApprovalRequested(opened.session, approval)
-              events.push(toToolApprovalEvent(approval))
-            },
-            onApprovalResolved: (resolution) =>
-              this.appendApprovalResolved(
-                opened.session,
-                resolution,
-                sessionApprovals,
-              ),
-            permission,
-            policy: this.toolOptions.policy,
-            protectedRoots: this.toolOptions.protectedRoots,
-            attachmentRoot: this.attachments?.sessionDirectory(id),
-            runId,
-            sandboxMode:
-              process.platform === 'darwin'
-                ? sandboxMode
-                : SANDBOX_MODE.DANGER_FULL_ACCESS,
-            sessionId: id,
-          })
-        : undefined
+      const createWorkspaceToolset = (toolRunId: string) =>
+        this.toolOptions
+          ? createWorkspaceTools({
+              sessionApprovals,
+              cwd: opened.metadata.cwd,
+              onApprovalRequested: async (approval) => {
+                await this.appendApprovalRequested(opened.session, approval)
+                events.push(toToolApprovalEvent(approval))
+              },
+              onApprovalResolved: (resolution) =>
+                this.appendApprovalResolved(
+                  opened.session,
+                  resolution,
+                  sessionApprovals,
+                ),
+              permission,
+              policy: this.toolOptions.policy,
+              protectedRoots: this.toolOptions.protectedRoots,
+              attachmentRoot: this.attachments?.sessionDirectory(id),
+              runId: toolRunId,
+              sandboxMode:
+                process.platform === 'darwin'
+                  ? sandboxMode
+                  : SANDBOX_MODE.DANGER_FULL_ACCESS,
+              sessionId: id,
+            })
+          : undefined
+      const workspaceTools = await createWorkspaceToolset(runId)
       if (workspaceTools) cleanups.push(() => workspaceTools.cleanup())
       const mcpTools = this.toolOptions?.mcp
         ? await createMcpTools({
@@ -986,33 +1135,113 @@ export class AgentRuntime {
           type: AGENT_RUN_EVENT_TYPE.TODO_UPDATED,
         })
       })
-      const tools = [
+      const readToolResult = createReadToolResultTool(async (toolCallId) => {
+        const execution = this.executions?.findByToolCallId(id, toolCallId)
+        if (execution) {
+          const output = await this.executions!.readOutput(
+            id,
+            execution.executionId,
+            0,
+            MAX_TOOL_EXECUTION_OUTPUT_BYTES,
+          )
+          return output.text
+        }
+        // ponytail: 按需扫描当前分支；回读成为热点时再按 toolCallId 建索引。
+        const result = (
+          await opened.session.findEntriesOnBranch({
+            type: 'message',
+            order: 'newestFirst',
+          })
+        ).find(
+          (entry) =>
+            entry.type === 'message' &&
+            entry.message.role === 'toolResult' &&
+            entry.message.toolCallId === toolCallId,
+        )
+        return result?.type === 'message' &&
+          result.message.role === 'toolResult'
+          ? result.message.content
+              .filter((block) => block.type === 'text')
+              .map((block) => block.text)
+              .join('\n')
+          : undefined
+      }, budget.toolResultChars)
+      const rawTools: AgentTool[] = [
         ...(mcpTools?.tools ?? []),
         ...(workspaceTools?.tools ?? []),
         ...(skillResourceTool ? [skillResourceTool] : []),
         todoTool,
-        createReadToolResultTool(async (toolCallId) => {
-          // ponytail: 按需扫描当前分支；回读成为热点时再按 toolCallId 建索引。
-          const result = (
-            await opened.session.findEntriesOnBranch({
-              type: 'message',
-              order: 'newestFirst',
-            })
-          ).find(
-            (entry) =>
-              entry.type === 'message' &&
-              entry.message.role === 'toolResult' &&
-              entry.message.toolCallId === toolCallId,
-          )
-          return result?.type === 'message' &&
-            result.message.role === 'toolResult'
-            ? result.message.content
-                .filter((block) => block.type === 'text')
-                .map((block) => block.text)
-                .join('\n')
-            : undefined
-        }, budget.toolResultChars),
+        readToolResult,
+        ...(this.executions
+          ? [
+              createGetToolExecutionTool((executionId) =>
+                this.executions!.getExecution(id, executionId),
+              ),
+            ]
+          : []),
       ]
+      const createBashRestart =
+        (input: unknown): (() => Promise<ToolExecutionRunOptions>) =>
+        async () => {
+          const restartRunId = randomUUID()
+          const toolCallId = randomUUID()
+          const toolset = await createWorkspaceToolset(restartRunId)
+          if (!toolset) throw new Error('Bash 工具不可用。')
+          try {
+            const execute = await toolset.prepareBash(toolCallId, input)
+            return {
+              execute: async (signal, update) => {
+                try {
+                  return await execute(signal, update)
+                } finally {
+                  await toolset.cleanup()
+                  this.toolOptions?.policy.clearRun(restartRunId)
+                }
+              },
+              label: BUILTIN_TOOL_NAME.BASH,
+              restart: createBashRestart(input),
+              runId: restartRunId,
+              ...serviceMetadata(BUILTIN_TOOL_NAME.BASH, input),
+              sessionId: id,
+              throwOnFailure: true,
+              toolCallId,
+              toolName: BUILTIN_TOOL_NAME.BASH,
+            }
+          } catch (error) {
+            await toolset.cleanup()
+            this.toolOptions?.policy.clearRun(restartRunId)
+            throw error
+          }
+        }
+      /** 只使用明确声明的常驻服务及真实工作区，不把慢工具推断成服务。 */
+      const serviceMetadata = (toolName: string, input: unknown) => {
+        if (toolName !== BUILTIN_TOOL_NAME.BASH) return {}
+        const bash = parseBashInput(input)
+        return bash.service
+          ? { service: { command: bash.command, cwd: opened.metadata.cwd } }
+          : {}
+      }
+      const tools = this.executions
+        ? rawTools.map<AgentTool>((tool) => ({
+            ...tool,
+            execute: (toolCallId, params, signal, _onUpdate) =>
+              this.executions!.run({
+                execute: (executionSignal, update) =>
+                  tool.execute(toolCallId, params, executionSignal, update),
+                label: tool.label,
+                ...serviceMetadata(tool.name, params),
+                ...(tool.name === BUILTIN_TOOL_NAME.BASH
+                  ? { restart: createBashRestart(params) }
+                  : {}),
+                runId,
+                sessionId: id,
+                signal,
+                throwOnFailure: true,
+                toolCallId,
+                toolName: tool.name,
+              }),
+          }))
+        : rawTools
       await opened.session.appendCustomEntry(SESSION_CUSTOM_TYPE.RUN_POLICY, {
         activeToolNames: tools.map((tool) => tool.name),
         ...(mcpTools?.tools.length
@@ -1269,7 +1498,8 @@ export class AgentRuntime {
             ? mcpTools.beforeToolCall(call, signal)
             : call.toolCall.name === BUILTIN_TOOL_NAME.LOAD_SKILL_RESOURCE ||
                 call.toolCall.name === BUILTIN_TOOL_NAME.TODO_WRITE ||
-                call.toolCall.name === BUILTIN_TOOL_NAME.READ_TOOL_RESULT
+                call.toolCall.name === BUILTIN_TOOL_NAME.READ_TOOL_RESULT ||
+                call.toolCall.name === BUILTIN_TOOL_NAME.GET_TOOL_EXECUTION
               ? undefined
               : workspaceTools?.beforeToolCall(call, signal),
         initialState: {
@@ -1346,7 +1576,9 @@ export class AgentRuntime {
           (mcpTools?.tools ?? []).map((tool) => [tool.name, tool.label]),
         ),
         agent,
-        cleanupTools: cleanup,
+        cleanupTools: this.executions
+          ? () => this.executions!.releaseRun(runId, cleanup)
+          : cleanup,
         events,
         ...(incoming ? { incoming } : {}),
         operation,
@@ -1522,6 +1754,10 @@ export class AgentRuntime {
           return
         }
         if (event.type === 'tool_execution_end') {
+          const executionId = (
+            event.result?.details as { executionId?: unknown } | undefined
+          )?.executionId
+          if (typeof executionId === 'string') return
           await options.session.appendCustomEntry(
             SESSION_CUSTOM_TYPE.TOOL_EXECUTION_COMPLETED,
             {
@@ -1745,13 +1981,23 @@ export class AgentRuntime {
         type: AGENT_RUN_EVENT_TYPE.TOOL_START,
       })
     } else if (event.type === 'tool_execution_end') {
+      const execution = event.result?.details as
+        { executionId?: unknown; executionState?: unknown } | undefined
+      const executionId =
+        typeof execution?.executionId === 'string'
+          ? execution.executionId
+          : undefined
+      const running = execution?.executionState === TOOL_EXECUTION_STATE.RUNNING
       const outcome =
         event.toolName === BUILTIN_TOOL_NAME.BASH
           ? safeBashOutcome(event.result?.details)
           : undefined
       events.push({
         label: labels.get(event.toolName),
-        isError: event.isError,
+        isError:
+          event.isError ||
+          execution?.executionState === TOOL_EXECUTION_STATE.FAILED,
+        ...(executionId ? { executionId } : {}),
         ...(toolFilePath(event.result?.details)
           ? { filePath: toolFilePath(event.result?.details) }
           : {}),
@@ -1760,9 +2006,79 @@ export class AgentRuntime {
         toolCallId: event.toolCallId,
         toolName: event.toolName,
         kind: getToolActivityKind(event.toolName),
+        ...(running ? { running: true as const } : {}),
         type: AGENT_RUN_EVENT_TYPE.TOOL_END,
       })
     }
+  }
+
+  private requireExecutions() {
+    if (!this.executions)
+      throw new AgentRuntimeError(
+        'TOOL_EXECUTION_UNAVAILABLE',
+        '工具执行服务不可用。',
+        500,
+      )
+    return this.executions
+  }
+
+  private async restoreExecutions(
+    sessionId: string,
+    currentEntries?: Awaited<
+      ReturnType<AgentSessionService['open']>
+    >['entries'],
+  ) {
+    if (!this.executions || this.restoredExecutionSessions.has(sessionId))
+      return
+    this.restoredExecutionSessions.add(sessionId)
+    try {
+      const entries =
+        currentEntries ?? (await this.sessions.open(sessionId)).entries
+      const snapshots = new Map<string, ToolExecutionSnapshot>()
+      for (const entry of entries) {
+        if (
+          entry.type !== 'custom' ||
+          entry.customType !== SESSION_CUSTOM_TYPE.TOOL_EXECUTION_STATE
+        )
+          continue
+        const snapshot = parseToolExecutionSnapshot(entry.data)
+        if (snapshot?.sessionId === sessionId)
+          snapshots.set(snapshot.executionId, snapshot)
+      }
+      await this.executions.restore(sessionId, [...snapshots.values()])
+    } catch (error) {
+      this.restoredExecutionSessions.delete(sessionId)
+      throw error
+    }
+  }
+
+  private async persistExecution(snapshot: ToolExecutionSnapshot) {
+    const session =
+      this.executionSessions.get(snapshot.sessionId) ??
+      (await this.sessions.open(snapshot.sessionId)).session
+    this.executionSessions.set(snapshot.sessionId, session)
+    await session.appendCustomEntry(
+      SESSION_CUSTOM_TYPE.TOOL_EXECUTION_STATE,
+      snapshot,
+    )
+    if (
+      snapshot.completedAt !== undefined &&
+      snapshot.service?.removedAt === undefined
+    ) {
+      await session.appendCustomEntry(
+        SESSION_CUSTOM_TYPE.TOOL_EXECUTION_COMPLETED,
+        {
+          completedAt: snapshot.completedAt,
+          executionId: snapshot.executionId,
+          isError: snapshot.state !== TOOL_EXECUTION_STATE.SUCCEEDED,
+          schemaVersion: 1,
+          state: snapshot.state,
+          toolCallId: snapshot.toolCallId,
+          toolName: snapshot.toolName,
+        },
+      )
+    }
+    await this.sessions.changed(snapshot.sessionId)
   }
 
   private async appendApprovalRequested(
@@ -1957,6 +2273,9 @@ export class AgentRuntime {
         )
       }
       for (const session of sessions) {
+        await this.executions?.deleteSession(session.id)
+        this.executionSessions.delete(session.id)
+        this.restoredExecutionSessions.delete(session.id)
         await this.sessions.delete(session.id)
         await this.attachments?.deleteSession(session.id)
       }

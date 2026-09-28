@@ -2,6 +2,7 @@ export const BUILTIN_TOOL_NAME = {
   READ: 'read',
   WRITE: 'write',
   EDIT: 'edit',
+  GET_TOOL_EXECUTION: 'get_tool_execution',
   BASH: 'bash',
   LOAD_SKILL_RESOURCE: 'load_skill_resource',
   TODO_WRITE: 'todo_write',
@@ -30,7 +31,24 @@ export type ToolActivityKind =
 export const TOOL_EXECUTION_STATE = {
   COMPLETE: 'complete',
   FAILED: 'failed',
+  INTERRUPTED: 'interrupted',
   RUNNING: 'running',
+  STOPPED: 'stopped',
+  STOPPING: 'stopping',
+  SUCCEEDED: 'succeeded',
 } as const
 export type ToolExecutionState =
   (typeof TOOL_EXECUTION_STATE)[keyof typeof TOOL_EXECUTION_STATE]
+
+export const TOOL_EXECUTION_EVENT_TYPE = {
+  EXECUTION: 'execution',
+  SNAPSHOT: 'snapshot',
+} as const
+
+export const TOOL_EXECUTION_ACTION = {
+  STOP: 'stop',
+  RESTART: 'restart',
+  REMOVE_SERVICE: 'remove-service',
+} as const
+export type ToolExecutionAction =
+  (typeof TOOL_EXECUTION_ACTION)[keyof typeof TOOL_EXECUTION_ACTION]

@@ -34,3 +34,9 @@ export {
 export type { ChatWorkspace, FileEditorSelectionVo } from './workspace/index.ts'
 export { createPendingChatThread, useAgentSessions } from './session/index.ts'
 export type { PendingToolApprovalVo } from './session/index.ts'
+export {
+  ToolExecutionConsole,
+  ServiceSummary,
+  useToolExecutions,
+  projectToolExecutions,
+} from './execution/index.ts'

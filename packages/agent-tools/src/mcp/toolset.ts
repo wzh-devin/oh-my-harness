@@ -32,10 +32,7 @@ export const createMcpTools = async (options: McpRunOptions) => {
   const { bindings, unavailable } = await options.service.snapshot()
   const validators = new AjvJsonSchemaValidator()
   const registry = new Map<string, McpToolIdentity>()
-  const authorized = new Map<
-    string,
-    { name: string; input: string; lease: ReturnType<McpService['lease']> }
-  >()
+  const authorized = new Map<string, { name: string; input: string }>()
   const tools: AgentTool[] = []
   for (const binding of bindings) {
     let validate: ReturnType<AjvJsonSchemaValidator['getValidator']>
@@ -74,14 +71,12 @@ export const createMcpTools = async (options: McpRunOptions) => {
           call.name !== binding.name ||
           call.input !== JSON.stringify(params)
         ) {
-          call?.lease.release()
           throw new Error('MCP 调用没有匹配的单次授权。')
         }
+        const lease = options.service.lease(binding, options.sessionId, signal)
         try {
           signal?.throwIfAborted()
-          const result = await call.lease.execute(
-            params as Record<string, unknown>,
-          )
+          const result = await lease.execute(params as Record<string, unknown>)
           const content: Awaited<ReturnType<AgentTool['execute']>>['content'] =
             []
           for (const block of result.content ?? []) {
@@ -132,7 +127,7 @@ export const createMcpTools = async (options: McpRunOptions) => {
             },
           }
         } finally {
-          call.lease.release()
+          lease.release()
         }
       },
     })
@@ -148,15 +143,13 @@ export const createMcpTools = async (options: McpRunOptions) => {
     )
     if (!identity || !binding)
       return { block: true, reason: 'MCP 工具未登记在本轮工具目录中。' }
-    authorized.get(call.toolCall.id)?.lease.release()
     authorized.delete(call.toolCall.id)
-    let lease: ReturnType<McpService['lease']> | undefined
     try {
-      lease = options.service.lease(
-        binding,
-        options.sessionId,
-        AbortSignal.any([options.signal, ...(signal ? [signal] : [])]),
-      )
+      const authorizationSignal = AbortSignal.any([
+        options.signal,
+        binding.connection.controller.signal,
+        ...(signal ? [signal] : []),
+      ])
       await options.policy.authorize(
         {
           ...identity,
@@ -171,17 +164,15 @@ export const createMcpTools = async (options: McpRunOptions) => {
           onRequested: options.onApprovalRequested,
           onResolved: options.onApprovalResolved,
         },
-        lease.signal,
+        authorizationSignal,
         registry,
       )
-      lease.signal.throwIfAborted()
+      authorizationSignal.throwIfAborted()
       authorized.set(call.toolCall.id, {
         name: binding.name,
         input: JSON.stringify(call.args),
-        lease,
       })
     } catch {
-      lease?.release()
       return { block: true, reason: 'MCP 调用被拒绝、取消，或服务配置已变化。' }
     }
   }
@@ -191,7 +182,6 @@ export const createMcpTools = async (options: McpRunOptions) => {
     has: (name: string) => registry.has(name),
     beforeToolCall,
     cleanup: async () => {
-      authorized.forEach((call) => call.lease.release())
       authorized.clear()
     },
   }

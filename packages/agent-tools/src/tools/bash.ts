@@ -7,6 +7,7 @@ import type { AgentTool } from '@earendil-works/pi-agent-core'
 export interface BashInput {
   command: string
   elevated?: true
+  service?: true
 }
 
 export interface BashOutcome {
@@ -29,7 +30,6 @@ interface BashToolOptions {
 
 const MAX_COMMAND_BYTES = 32 * 1024
 const MAX_OUTPUT_BYTES = 256 * 1024
-const TIMEOUT_MS = 60_000
 const environmentKeys = [
   'HOME',
   'LANG',
@@ -57,6 +57,12 @@ const parameters = {
         'Request one-time approval to run this command outside the active sandbox. Use only when the user request requires access blocked by the sandbox; never use it to retry a failed sandboxed command automatically.',
       type: 'boolean',
     },
+    service: {
+      const: true,
+      description:
+        'Set only when intentionally starting a long-lived service, such as a development server. Run it in the foreground without & or nohup so the host owns its process and console. Builds, tests and ordinary commands must omit this flag. After 5 seconds the host returns running while the same process continues.',
+      type: 'boolean',
+    },
   },
   required: ['command'],
   type: 'object',
@@ -70,11 +76,12 @@ export function parseBashInput(input: unknown): BashInput {
   const values = input as Record<string, unknown>
   if (
     Object.keys(values).some(
-      (key) => key !== 'command' && key !== 'elevated',
+      (key) => key !== 'command' && key !== 'elevated' && key !== 'service',
     ) ||
     typeof values.command !== 'string' ||
     values.command.includes('\0') ||
-    (values.elevated !== undefined && values.elevated !== true)
+    (values.elevated !== undefined && values.elevated !== true) ||
+    (values.service !== undefined && values.service !== true)
   ) {
     throw new Error('Bash input is invalid.')
   }
@@ -85,6 +92,7 @@ export function parseBashInput(input: unknown): BashInput {
   return {
     command,
     ...(values.elevated === true ? { elevated: true as const } : {}),
+    ...(values.service === true ? { service: true as const } : {}),
   }
 }
 
@@ -131,24 +139,15 @@ export function createMacosSandboxProfile(
   ].join('\n')
 }
 
-const resultText = (
-  stdout: Buffer[],
-  stderr: Buffer[],
-  outcome: BashOutcome,
-) => {
-  const text = [
-    Buffer.concat(stdout).toString('utf8'),
-    Buffer.concat(stderr).length
-      ? `[stderr]\n${Buffer.concat(stderr).toString('utf8')}`
-      : '',
-  ].filter(Boolean)
+const resultText = (output: Buffer, outcome: BashOutcome) => {
+  const text = [output.toString('utf8')].filter(Boolean)
   if (outcome.outputExceeded) {
-    text.push('[output exceeded 256 KiB]')
+    text.unshift('[earlier output truncated; showing last 256 KiB]\n')
   } else if (outcome.timedOut) {
-    text.push('[timed out after 60000ms]')
+    text.push('[timed out]')
   } else if (outcome.signal) {
     text.push(`[killed by signal: ${outcome.signal}]`)
-  } else if (outcome.exitCode !== 0) {
+  } else if (outcome.exitCode !== null && outcome.exitCode !== 0) {
     text.push(`[exit code: ${outcome.exitCode ?? 'unknown'}]`)
   }
   return text.join('\n') || '(no output)'
@@ -160,7 +159,7 @@ export const createBashTool = (
   options: BashToolOptions = {},
 ): AgentTool => ({
   description:
-    'Run a complete Bash command in the workspace for builds, tests, Git, directory listing, file discovery, content search, or scripts that perform computation or format conversion. To inspect known file contents, use read, including when inspecting several files or a line range; do not batch cat/head/tail/sed reads or printing loops through bash. A targeted command fallback is allowed when read reports a content limitation; permission denials must never be bypassed. Pipes, redirections, conditionals, and multiple commands are supported for command tasks. ' +
+    'Run a complete Bash command in the workspace. For a long-lived service you MUST set service=true and run one foreground server per call, for example {"command":"pnpm dev --port 5199","service":true}. The host automatically returns running after 5 seconds and keeps that same process alive, with a service entry, stop/restart controls and captured console output. Do not use nohup, disown, setsid, detached child processes, trailing &, or redirect server output to a log file; those bypass service tracking. Run setup and verification as separate ordinary calls. Builds, tests, Git and other finite commands must omit service. To inspect known file contents, use read, including when inspecting several files or a line range; do not batch cat/head/tail/sed reads or printing loops through bash. A targeted command fallback is allowed when read reports a content limitation; permission denials must never be bypassed. Pipes, redirections, conditionals, and multiple commands are supported for ordinary command tasks. ' +
     (options.fullAccess
       ? 'Calls are authorized by the full-access run policy and run outside the active sandbox.'
       : options.sandbox
@@ -169,7 +168,7 @@ export const createBashTool = (
   label: 'bash',
   name: BUILTIN_TOOL_NAME.BASH,
   parameters,
-  async execute(_toolCallId, input, signal) {
+  async execute(_toolCallId, input, signal, onUpdate) {
     signal?.throwIfAborted()
     const { command, elevated } = parseBashInput(input)
     const restricted =
@@ -189,13 +188,11 @@ export const createBashTool = (
         ]
       : ['-c', command]
     return new Promise((resolve, reject) => {
-      const stdout: Buffer[] = []
-      const stderr: Buffer[] = []
       let aborted = false
+      let output = Buffer.alloc(0)
       let outputExceeded = false
-      let outputSize = 0
       let settled = false
-      let timedOut = false
+      let totalOutputBytes = 0
       const child = spawn(executable, arguments_, {
         cwd,
         detached: process.platform !== 'win32',
@@ -214,7 +211,6 @@ export const createBashTool = (
       })
 
       const cleanup = () => {
-        clearTimeout(timer)
         signal?.removeEventListener('abort', onAbort)
       }
       const fail = (error: Error) => {
@@ -234,30 +230,38 @@ export const createBashTool = (
         }
         child.kill('SIGKILL')
       }
-      const collect = (target: Buffer[], chunk: Buffer) => {
-        if (outputExceeded) return
-        const remaining = MAX_OUTPUT_BYTES - outputSize
-        if (chunk.byteLength > remaining) {
-          if (remaining > 0) target.push(chunk.subarray(0, remaining))
-          outputSize = MAX_OUTPUT_BYTES
+      const currentOutcome = (): BashOutcome => ({
+        exitCode: null,
+        outputExceeded,
+        signal: null,
+        timedOut: false,
+      })
+      const collect = (chunk: Buffer, stderr = false) => {
+        const framed = stderr
+          ? Buffer.concat([Buffer.from('[stderr]\n'), chunk])
+          : chunk
+        totalOutputBytes += framed.byteLength
+        output = Buffer.concat([output, framed])
+        if (output.byteLength > MAX_OUTPUT_BYTES) {
           outputExceeded = true
-          stop()
-          return
+          let start = output.byteLength - MAX_OUTPUT_BYTES
+          while (start < output.byteLength && (output[start]! & 0xc0) === 0x80)
+            start++
+          output = output.subarray(start)
         }
-        outputSize += chunk.byteLength
-        target.push(chunk)
+        onUpdate?.({
+          content: [
+            { text: resultText(output, currentOutcome()), type: 'text' },
+          ],
+          details: { ...currentOutcome(), totalOutputBytes },
+        })
       }
       const onAbort = () => {
         aborted = true
         stop()
       }
-      const timer = setTimeout(() => {
-        timedOut = true
-        stop()
-      }, TIMEOUT_MS)
-
-      child.stdout.on('data', (chunk: Buffer) => collect(stdout, chunk))
-      child.stderr.on('data', (chunk: Buffer) => collect(stderr, chunk))
+      child.stdout.on('data', (chunk: Buffer) => collect(chunk))
+      child.stderr.on('data', (chunk: Buffer) => collect(chunk, true))
       child.once('error', (error) =>
         fail(
           new Error(
@@ -277,13 +281,11 @@ export const createBashTool = (
           exitCode,
           outputExceeded,
           signal: childSignal,
-          timedOut,
+          timedOut: false,
         }
         resolve({
-          content: [
-            { text: resultText(stdout, stderr, outcome), type: 'text' },
-          ],
-          details: outcome,
+          content: [{ text: resultText(output, outcome), type: 'text' }],
+          details: { ...outcome, totalOutputBytes },
         })
       })
       signal?.addEventListener('abort', onAbort, { once: true })
