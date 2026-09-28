@@ -7,6 +7,14 @@ import {
 import type { WorkspaceGitService } from '../../infrastructure/workspace/workspace-git-service.ts'
 import { WorkspaceError } from '../../infrastructure/workspace/workspace-store.ts'
 
+const writeActionFields = new Map<GitAction, string[]>([
+  [GIT_ACTION.STAGE, ['path']],
+  [GIT_ACTION.UNSTAGE, ['path']],
+  [GIT_ACTION.SWITCH_BRANCH, ['branch']],
+  [GIT_ACTION.COMMIT, ['message']],
+  [GIT_ACTION.PUSH, []],
+])
+
 /** 工作区 Git 的 HTTP 边界：拒绝额外参数和非枚举写动作，隐藏底层异常。 */
 export const createWorkspaceGitController = (git: WorkspaceGitService) => {
   const protect =
@@ -62,23 +70,9 @@ export const createWorkspaceGitController = (git: WorkspaceGitService) => {
         )
       const record = body as Record<string, unknown>
       const action = record.action as GitAction
-      const fields =
-        action === GIT_ACTION.STAGE || action === GIT_ACTION.UNSTAGE
-          ? ['path']
-          : action === GIT_ACTION.SWITCH_BRANCH
-            ? ['branch']
-            : action === GIT_ACTION.COMMIT
-              ? ['message']
-              : []
-      const writeActionList: GitAction[] = [
-        GIT_ACTION.STAGE,
-        GIT_ACTION.UNSTAGE,
-        GIT_ACTION.SWITCH_BRANCH,
-        GIT_ACTION.COMMIT,
-        GIT_ACTION.PUSH,
-      ]
+      const fields = writeActionFields.get(action)
       if (
-        !writeActionList.includes(action) ||
+        !fields ||
         typeof record.revision !== 'string' ||
         !/^[a-f0-9]{64}$/.test(record.revision) ||
         Object.keys(record).some(

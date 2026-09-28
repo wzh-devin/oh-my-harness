@@ -2,6 +2,15 @@ import { useEffect, useState } from 'react'
 import { parsePatchFiles, type CodeViewDiffItem } from '@pierre/diffs'
 import { readGitDiff } from './api/workspace-git-api.ts'
 
+export const getGitDiffNotice = (content: string) => {
+  if (!content) return '此文件在当前暂存层没有文本差异。'
+  if (content.includes('Binary files '))
+    return '二进制文件已变化，无法显示文本行差异。'
+  if (content.startsWith('diff --git '))
+    return '文件元数据已变化，没有文本行差异。'
+  return content
+}
+
 /** 按工作区、文件和暂存层隔离差异，切换时立即丢弃旧结果并取消读取。 */
 export const useGitDiff = (
   workspaceId: string,
@@ -42,15 +51,7 @@ export const useGitDiff = (
         setState({
           key: requestKey,
           items: hasLines ? items : [],
-          notice: hasLines
-            ? undefined
-            : !content
-              ? '此文件在当前暂存层没有文本差异。'
-              : content.includes('Binary files ')
-                ? '二进制文件已变化，无法显示文本行差异。'
-                : content.startsWith('diff --git ')
-                  ? '文件元数据已变化，没有文本行差异。'
-                  : content,
+          notice: hasLines ? undefined : getGitDiffNotice(content),
         })
       })
       .catch((error: unknown) => {

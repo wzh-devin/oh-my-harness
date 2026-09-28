@@ -22,6 +22,7 @@ import {
   RefreshCwIcon,
 } from 'lucide-react'
 import type { SummarySection } from '../summary-sections.ts'
+import type { WorkspaceGitVo } from '../api/workspace-git-api.ts'
 import type { WorkspaceGitController } from '../use-workspace-git.ts'
 import { GitActionDialog } from './GitActionDialog.tsx'
 import {
@@ -39,6 +40,15 @@ interface PinnedSummaryProps {
   loadError?: string
   onRetry: () => void
   onOpenChanges: () => void
+}
+
+const getGitNotice = (snapshot: WorkspaceGitVo) => {
+  if (snapshot.state === GIT_REPOSITORY_STATE.CONFLICTED)
+    return '存在合并冲突，请先在本地解决。'
+  if (snapshot.operationInProgress)
+    return '有进行中的 Git 操作，请先在本地完成。'
+  if (snapshot.behind > 0) return `落后上游 ${snapshot.behind} 个提交`
+  return null
 }
 
 /** 按事实枚举组合 Git、计划与来源；缺失内容不会产生标题、占位或分隔线。 */
@@ -60,6 +70,7 @@ export function PinnedSummary({
       {sections.map((section) => {
         if (section.type === PINNED_SUMMARY_SECTION_TYPE.GIT) {
           const snapshot = section.git
+          const notice = getGitNotice(snapshot)
           return (
             <section
               className="summary-section"
@@ -171,17 +182,7 @@ export function PinnedSummary({
                   无法获取 Pull Request 状态
                 </div>
               )}
-              {snapshot.state === GIT_REPOSITORY_STATE.CONFLICTED ||
-              snapshot.operationInProgress ||
-              snapshot.behind > 0 ? (
-                <p className="summary-empty">
-                  {snapshot.state === GIT_REPOSITORY_STATE.CONFLICTED
-                    ? '存在合并冲突，请先在本地解决。'
-                    : snapshot.operationInProgress
-                      ? '有进行中的 Git 操作，请先在本地完成。'
-                      : `落后上游 ${snapshot.behind} 个提交`}
-                </p>
-              ) : null}
+              {notice ? <p className="summary-empty">{notice}</p> : null}
             </section>
           )
         }

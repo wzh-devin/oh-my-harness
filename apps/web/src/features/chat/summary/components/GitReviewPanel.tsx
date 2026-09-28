@@ -46,6 +46,14 @@ interface GitReviewPanelProps {
   onClose: () => void
 }
 
+const getEmptyMessage = (git: WorkspaceGitController) => {
+  if (git.isLoading) return '正在读取 Git 状态…'
+  if (!git.snapshot) return '未能读取工作区状态。'
+  if (git.snapshot.state === GIT_REPOSITORY_STATE.NOT_REPOSITORY)
+    return '当前工作区不是 Git 仓库。'
+  return '工作区没有变更。'
+}
+
 function IconButton({
   label,
   children,
@@ -393,13 +401,7 @@ export default function GitReviewPanel({
                 </Virtualizer>
               ) : (
                 <div className="git-review-empty" role="status">
-                  {git.isLoading
-                    ? '正在读取 Git 状态…'
-                    : snapshot?.state === GIT_REPOSITORY_STATE.NOT_REPOSITORY
-                      ? '当前工作区不是 Git 仓库。'
-                      : snapshot
-                        ? '工作区没有变更。'
-                        : '未能读取工作区状态。'}
+                  {getEmptyMessage(git)}
                 </div>
               )}
             </div>

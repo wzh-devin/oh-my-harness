@@ -43,6 +43,49 @@ const fail = (
   throw new WorkspaceError(code, message, 409)
 }
 
+type GitCommandFailure = {
+  code?: number | string
+  stdout?: string
+  stderr?: string
+  killed?: boolean
+}
+
+// 按优先级取首个匹配；只返回固定文案，避免泄露 stderr 中的远端凭据。
+const gitErrorRules = [
+  {
+    pattern: /Author identity unknown|unable to auto-detect email/,
+    message: '请先在 Git 中配置提交者姓名和邮箱。',
+  },
+  {
+    pattern: /index.lock|another git process/i,
+    message: '仓库正在被其他 Git 操作使用，请稍后重试。',
+  },
+  {
+    pattern: /non-fast-forward|fetch first|rejected/i,
+    message: '推送被拒绝，请先在本地同步远端分支。',
+  },
+  {
+    pattern: /Authentication|Permission denied|could not read Username/i,
+    message: 'Git 认证失败，请在本地检查远端凭据。',
+  },
+  {
+    pattern: /would be overwritten|local changes/i,
+    message: '本地修改阻止了操作，请先处理修改。',
+  },
+]
+
+export const getGitErrorMessage = (failure: GitCommandFailure): string => {
+  if (failure.code === 'ENOENT') return '未安装 Git。'
+  if (failure.killed) return 'Git 操作超时，请刷新状态后重试。'
+  if (failure.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER')
+    return 'Git 输出过大，请使用本地 Git 工具处理。'
+  const stderr = failure.stderr ?? ''
+  return (
+    gitErrorRules.find(({ pattern }) => pattern.test(stderr))?.message ??
+    'Git 操作失败，请在本地检查仓库后重试。'
+  )
+}
+
 /** 使用固定参数执行 Git，禁用交互与外部差异驱动，避免继承 Git 目录覆盖变量。 */
 const runGit = async (
   cwd: string,
@@ -78,12 +121,7 @@ const runGit = async (
       )
     ).stdout
   } catch (error) {
-    const failure = error as {
-      code?: number | string
-      stdout?: string
-      stderr?: string
-      killed?: boolean
-    }
+    const failure = error as GitCommandFailure
     const stderr = failure.stderr ?? ''
     const expectedAbsence = args.includes('--show-toplevel')
       ? /not a git repository|must be run in a work tree/i.test(stderr)
@@ -96,27 +134,11 @@ const runGit = async (
       allowedExitCodes.includes(failure.code)
     )
       return failure.stdout ?? ''
-    const message =
-      failure.code === 'ENOENT'
-        ? '未安装 Git。'
-        : failure.killed
-          ? 'Git 操作超时，请刷新状态后重试。'
-          : failure.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
-            ? 'Git 输出过大，请使用本地 Git 工具处理。'
-            : /Author identity unknown|unable to auto-detect email/.test(stderr)
-              ? '请先在 Git 中配置提交者姓名和邮箱。'
-              : /index.lock|another git process/i.test(stderr)
-                ? '仓库正在被其他 Git 操作使用，请稍后重试。'
-                : /non-fast-forward|fetch first|rejected/i.test(stderr)
-                  ? '推送被拒绝，请先在本地同步远端分支。'
-                  : /Authentication|Permission denied|could not read Username/i.test(
-                        stderr,
-                      )
-                    ? 'Git 认证失败，请在本地检查远端凭据。'
-                    : /would be overwritten|local changes/i.test(stderr)
-                      ? '本地修改阻止了操作，请先处理修改。'
-                      : 'Git 操作失败，请在本地检查仓库后重试。'
-    throw new WorkspaceError(GIT_ERROR_CODE.UNAVAILABLE, message, 409)
+    throw new WorkspaceError(
+      GIT_ERROR_CODE.UNAVAILABLE,
+      getGitErrorMessage(failure),
+      409,
+    )
   }
 }
 
@@ -479,77 +501,86 @@ export class WorkspaceGitService {
           fail('仓库已变化，请刷新后重新确认。', GIT_ERROR_CODE.STALE_STATE)
         if (!snapshot.actions.includes(input.action))
           fail('当前仓库状态不支持此操作。')
-        if (
-          input.action === GIT_ACTION.STAGE ||
-          input.action === GIT_ACTION.UNSTAGE
-        ) {
-          const file = snapshot.files.find((item) => item.path === input.path)
-          if (!file) fail('文件已不在变更列表。')
-          const paths = [
-            file!.path,
-            ...(file!.originalPath ? [file!.originalPath] : []),
-          ]
-          if (
-            paths.some(
-              (path) =>
-                isAbsolute(path) ||
-                relative(root!, resolve(root!, path)).startsWith('..'),
+        switch (input.action) {
+          case GIT_ACTION.STAGE:
+          case GIT_ACTION.UNSTAGE: {
+            const file = snapshot.files.find((item) => item.path === input.path)
+            if (!file) fail('文件已不在变更列表。')
+            const paths = [
+              file!.path,
+              ...(file!.originalPath ? [file!.originalPath] : []),
+            ]
+            if (
+              paths.some(
+                (path) =>
+                  isAbsolute(path) ||
+                  relative(root!, resolve(root!, path)).startsWith('..'),
+              )
             )
-          )
-            fail('文件路径超出工作区。')
-          if (input.action === GIT_ACTION.STAGE)
-            await runGit(root!, ['add', '--', file!.path])
-          else if (snapshot.head)
-            await runGit(root!, ['restore', '--staged', '--', ...paths])
-          else await runGit(root!, ['rm', '--cached', '--', ...paths])
-        } else if (input.action === GIT_ACTION.SWITCH_BRANCH) {
-          if (
-            !snapshot.branches.some(
-              (item) => item.local && item.name === input.branch,
-            ) ||
-            input.branch === snapshot.branch
-          )
-            fail('请选择其他本地分支。')
-          await runGit(root!, ['switch', '--no-guess', input.branch!])
-        } else if (input.action === GIT_ACTION.COMMIT) {
-          if (
-            !input.message?.trim() ||
-            input.message.length > 10_000 ||
-            input.message.includes('\0')
-          )
-            fail('请填写有效提交说明。', GIT_ERROR_CODE.INVALID_REQUEST)
-          await runGit(root!, ['commit', '-m', input.message!])
-        } else if (input.action === GIT_ACTION.PUSH) {
-          const remote = (
+              fail('文件路径超出工作区。')
+            if (input.action === GIT_ACTION.STAGE) {
+              await runGit(root!, ['add', '--', file!.path])
+              break
+            }
+            if (snapshot.head)
+              await runGit(root!, ['restore', '--staged', '--', ...paths])
+            else await runGit(root!, ['rm', '--cached', '--', ...paths])
+            break
+          }
+          case GIT_ACTION.SWITCH_BRANCH:
+            if (
+              !snapshot.branches.some(
+                (item) => item.local && item.name === input.branch,
+              ) ||
+              input.branch === snapshot.branch
+            )
+              fail('请选择其他本地分支。')
+            await runGit(root!, ['switch', '--no-guess', input.branch!])
+            break
+          case GIT_ACTION.COMMIT:
+            if (
+              !input.message?.trim() ||
+              input.message.length > 10_000 ||
+              input.message.includes('\0')
+            )
+              fail('请填写有效提交说明。', GIT_ERROR_CODE.INVALID_REQUEST)
+            await runGit(root!, ['commit', '-m', input.message!])
+            break
+          case GIT_ACTION.PUSH: {
+            const remote = (
+              await runGit(root!, [
+                'config',
+                '--get',
+                `branch.${snapshot.branch}.remote`,
+              ])
+            ).trim()
+            const target = (
+              await runGit(root!, [
+                'config',
+                '--get',
+                `branch.${snapshot.branch}.merge`,
+              ])
+            ).trim()
+            if (
+              !remote ||
+              remote === '.' ||
+              remote.startsWith('-') ||
+              !target.startsWith('refs/heads/')
+            )
+              fail('请先配置可推送的远端上游分支。')
             await runGit(root!, [
-              'config',
-              '--get',
-              `branch.${snapshot.branch}.remote`,
+              'push',
+              '--no-follow-tags',
+              '--recurse-submodules=no',
+              '--',
+              remote,
+              `HEAD:${target}`,
             ])
-          ).trim()
-          const target = (
-            await runGit(root!, [
-              'config',
-              '--get',
-              `branch.${snapshot.branch}.merge`,
-            ])
-          ).trim()
-          if (
-            !remote ||
-            remote === '.' ||
-            remote.startsWith('-') ||
-            !target.startsWith('refs/heads/')
-          )
-            fail('请先配置可推送的远端上游分支。')
-          await runGit(root!, [
-            'push',
-            '--no-follow-tags',
-            '--recurse-submodules=no',
-            '--',
-            remote,
-            `HEAD:${target}`,
-          ])
-        } else fail('不支持此写操作。', GIT_ERROR_CODE.INVALID_REQUEST)
+            break
+          }
+          default:
+            fail('不支持此写操作。', GIT_ERROR_CODE.INVALID_REQUEST)
+        }
         try {
           return await this.readSnapshot(root!)
         } catch {

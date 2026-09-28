@@ -13,6 +13,11 @@ const viewTitles: Partial<Record<GitAction, string>> = {
   [GIT_ACTION.COMMIT]: '提交已暂存内容',
   [GIT_ACTION.PUSH]: '推送提交',
 }
+const confirmLabels: Partial<Record<GitAction, string>> = {
+  [GIT_ACTION.SWITCH_BRANCH]: '切换分支',
+  [GIT_ACTION.COMMIT]: '确认提交',
+  [GIT_ACTION.PUSH]: '确认推送',
+}
 interface GitActionDialogProps {
   view: GitAction
   snapshot: WorkspaceGitVo
@@ -176,13 +181,7 @@ export function GitActionDialog({
                 }
                 onPress={() => void execute(view)}
               >
-                {pending
-                  ? '正在处理…'
-                  : view === GIT_ACTION.SWITCH_BRANCH
-                    ? '切换分支'
-                    : view === GIT_ACTION.COMMIT
-                      ? '确认提交'
-                      : '确认推送'}
+                {pending ? '正在处理…' : confirmLabels[view]}
               </Button>
             ) : null}
           </Modal.Footer>

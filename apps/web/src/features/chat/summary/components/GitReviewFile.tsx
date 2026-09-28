@@ -13,6 +13,15 @@ import {
   CollapsibleTrigger,
 } from '../../../../components/ui/collapsible.tsx'
 
+const getEmptyMessage = (
+  diff: ReturnType<typeof useGitDiff>,
+  active: boolean,
+) => {
+  if (!active || diff.loading) return '正在读取差异…'
+  if (diff.error) return `差异加载失败：${diff.error}`
+  return diff.notice
+}
+
 /** 连续审查中的单个文件；差异层、重试和暂存动作始终绑定本文件。 */
 export function GitReviewFile({
   workspaceId,
@@ -52,6 +61,7 @@ export function GitReviewFile({
   const name = file.path.slice(file.path.lastIndexOf('/') + 1)
   const directory = file.path.slice(0, file.path.length - name.length)
   const action = showStaged ? GIT_ACTION.UNSTAGE : GIT_ACTION.STAGE
+  const emptyRole = active ? (diff.error ? 'alert' : 'status') : undefined
 
   return (
     <>
@@ -134,18 +144,9 @@ export function GitReviewFile({
             />
           ))
         ) : (
-          <div
-            className="git-review-empty"
-            role={active ? (diff.error ? 'alert' : 'status') : undefined}
-          >
+          <div className="git-review-empty" role={emptyRole}>
             <span className="break-all">{file.path}</span>
-            <span>
-              {!active || diff.loading
-                ? '正在读取差异…'
-                : diff.error
-                  ? `差异加载失败：${diff.error}`
-                  : diff.notice}
-            </span>
+            <span>{getEmptyMessage(diff, active)}</span>
             {diff.error ? (
               <Button
                 size="sm"
