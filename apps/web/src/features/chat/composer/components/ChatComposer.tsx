@@ -490,6 +490,18 @@ export function ChatComposer({
     }
   }
 
+  /** 让输入法 Enter 完成候选词确认，避免 PromptInput 抢先发送拼音。 */
+  const handleComposerKeyDownCapture = (
+    event: KeyboardEvent<HTMLTextAreaElement>,
+  ) => {
+    if (
+      event.key === 'Enter' &&
+      (isComposingRef.current || event.nativeEvent.isComposing)
+    ) {
+      event.stopPropagation()
+    }
+  }
+
   const isGenerating = status === 'submitted' || status === 'streaming'
   const canSend = Boolean(
     !isDisabled &&
@@ -596,6 +608,7 @@ export function ChatComposer({
                         setMenuState(null)
                       }}
                       onInput={handleTextAreaEvent}
+                      onKeyDownCapture={handleComposerKeyDownCapture}
                       onKeyDown={handleComposerKeyDown}
                       onSelect={handleTextAreaEvent}
                     />
