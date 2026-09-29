@@ -710,37 +710,60 @@ export const subscribeToolExecutions = (
     onSnapshot(executions: ToolExecutionVo[]): void
   },
 ) => {
-  const source = new EventSource(`${executionPath(sessionId)}/stream`)
-  source.addEventListener(
-    TOOL_EXECUTION_EVENT_TYPE.SNAPSHOT,
-    (event: MessageEvent<string>) => {
-      try {
-        const value = JSON.parse(event.data) as { executions?: unknown }
-        if (!Array.isArray(value.executions)) throw new Error()
-        const executions = value.executions.map(parseToolExecution)
-        if (executions.some((execution) => execution === undefined))
-          throw new Error()
-        handlers.onSnapshot(executions as ToolExecutionVo[])
-      } catch {
-        handlers.onError()
-      }
-    },
-  )
-  source.addEventListener(
-    TOOL_EXECUTION_EVENT_TYPE.EXECUTION,
-    (event: MessageEvent<string>) => {
-      try {
-        const value = JSON.parse(event.data) as { execution?: unknown }
-        const execution = parseToolExecution(value.execution)
-        if (!execution) throw new Error()
-        handlers.onExecution(execution)
-      } catch {
-        handlers.onError()
-      }
-    },
-  )
-  source.onerror = handlers.onError
-  return () => source.close()
+  let source: EventSource | undefined
+  let disposed = false
+  let retry: ReturnType<typeof setTimeout> | undefined
+  const connect = () => {
+    const connection = new EventSource(`${executionPath(sessionId)}/stream`)
+    source = connection
+    connection.addEventListener(
+      TOOL_EXECUTION_EVENT_TYPE.SNAPSHOT,
+      (event: MessageEvent<string>) => {
+        if (disposed || connection !== source) return
+        try {
+          const value = JSON.parse(event.data) as { executions?: unknown }
+          if (!Array.isArray(value.executions)) throw new Error()
+          const executions = value.executions.map(parseToolExecution)
+          if (executions.some((execution) => execution === undefined))
+            throw new Error()
+          handlers.onSnapshot(executions as ToolExecutionVo[])
+        } catch {
+          handlers.onError()
+        }
+      },
+    )
+    connection.addEventListener(
+      TOOL_EXECUTION_EVENT_TYPE.EXECUTION,
+      (event: MessageEvent<string>) => {
+        if (disposed || connection !== source) return
+        try {
+          const value = JSON.parse(event.data) as { execution?: unknown }
+          const execution = parseToolExecution(value.execution)
+          if (!execution) throw new Error()
+          handlers.onExecution(execution)
+        } catch {
+          handlers.onError()
+        }
+      },
+    )
+    connection.onerror = () => {
+      if (disposed || connection !== source) return
+      handlers.onError()
+      // CONNECTING 由浏览器重连；HTTP 错误后的 CLOSED 需要重新创建连接。
+      if (connection.readyState !== EventSource.CLOSED || retry !== undefined)
+        return
+      retry = setTimeout(() => {
+        retry = undefined
+        if (!disposed) connect()
+      }, 1000)
+    }
+  }
+  connect()
+  return () => {
+    disposed = true
+    if (retry !== undefined) clearTimeout(retry)
+    source?.close()
+  }
 }
 
 /** 永久删除一个会话及其持久化历史。 */

@@ -2063,7 +2063,9 @@ export class AgentRuntime {
     )
     if (
       snapshot.completedAt !== undefined &&
-      snapshot.service?.removedAt === undefined
+      snapshot.service?.removedAt === undefined &&
+      // 手动重启没有模型 toolCall，只持久化执行状态，不伪造模型调用完成事件。
+      snapshot.previousExecutionId === undefined
     ) {
       await session.appendCustomEntry(
         SESSION_CUSTOM_TYPE.TOOL_EXECUTION_COMPLETED,

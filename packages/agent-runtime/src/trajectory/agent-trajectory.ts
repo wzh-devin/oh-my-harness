@@ -134,6 +134,7 @@ interface ToolStartedData {
 
 interface ToolCompletedData {
   completedAt: number
+  executionId?: string
   isError: boolean
   schemaVersion: 1
   toolCallId: string
@@ -287,6 +288,8 @@ const toolCompletedData = (entry: Entry): ToolCompletedData | undefined => {
     data.schemaVersion === 1 &&
       Number.isFinite(data.completedAt) &&
       typeof data.isError === 'boolean' &&
+      (data.executionId === undefined ||
+        typeof data.executionId === 'string') &&
       typeof data.toolCallId === 'string' &&
       typeof data.toolName === 'string',
   )
@@ -762,6 +765,18 @@ export const projectAgentTrajectory = (options: {
       ? toolRecordByCall.get(toolCompleted.toolCallId)
       : undefined
     if (toolCompleted) {
+      const execution = executionStates.get(toolCompleted.toolCallId)
+      if (toolIndex === undefined && execution?.previousExecutionId) {
+        // 重启属于服务生命周期；只排除可由同会话执行事实核实的完成记录。
+        requireFact(
+          execution.sessionId === options.sessionId &&
+            execution.executionId === toolCompleted.executionId &&
+            execution.toolName === toolCompleted.toolName &&
+            execution.completedAt === toolCompleted.completedAt &&
+            !toolCalls.has(toolCompleted.toolCallId),
+        )
+        continue
+      }
       requireFact(toolIndex !== undefined)
       const record = records[toolIndex]
       requireFact(
