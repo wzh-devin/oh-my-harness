@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react'
 import { useEffect, useState } from 'react'
+import { CHAT_ROUTE_KIND } from '@oh-my-harness/shared'
 import { Sidebar } from '@agile-avocation/ui-pro/sidebar'
 import { Sheet } from '@agile-avocation/ui-pro/sheet'
 import type { ChatSidebarProps } from '../types/chat-sidebar.ts'
@@ -52,9 +53,10 @@ export function ChatSidebar({
     }
   }
 
-  /** 选择工作区，并切换其会话列表的展开状态。 */
+  /** 展开会话目录；已有会话保持所属工作区，非会话页允许选择工作区。 */
   const handleWorkspaceToggle = (workspaceId: string) => {
-    onWorkspaceSelect(workspaceId)
+    if (activePage.kind !== CHAT_ROUTE_KIND.THREAD)
+      onWorkspaceSelect(workspaceId)
     setExpandedWorkspaceIds((currentIds) => {
       const nextIds = new Set(currentIds)
 

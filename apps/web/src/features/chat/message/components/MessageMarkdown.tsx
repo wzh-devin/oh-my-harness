@@ -10,6 +10,17 @@ import {
 const markdownSlots = markdownVariants()
 
 const LOCALIZED_COMPONENTS = {
+  a: function MessageLink({ node: _node, href, ...props }) {
+    const isWebLink = /^(https?:)?\/\//i.test(href ?? '')
+    return (
+      <a
+        {...props}
+        href={href}
+        rel={isWebLink ? 'noopener noreferrer' : undefined}
+        target={isWebLink ? '_blank' : undefined}
+      />
+    )
+  },
   code: function LocalizedCode({ children, className, node, ...props }) {
     const { onFileOpen, selectedWorkspaceId } = useChatWorkspace()
     const isInline =
@@ -62,7 +73,7 @@ interface MessageMarkdownProps {
   children: string
 }
 
-/** 使用 UI Pro 渲染消息 Markdown，并提供中文复制名称。 */
+/** 渲染消息 Markdown，网页链接在新标签页打开，文件引用沿用本地应用。 */
 export function MessageMarkdown({ children }: MessageMarkdownProps) {
   return <Markdown components={LOCALIZED_COMPONENTS}>{children}</Markdown>
 }

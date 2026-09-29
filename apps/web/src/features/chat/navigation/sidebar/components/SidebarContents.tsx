@@ -417,6 +417,8 @@ export function SidebarContents({
                       </div>
 
                       <CollapsibleContent
+                        // 会话 Tree 分两次提交；保留内容，让展开动画测到完整列表高度。
+                        keepMounted
                         id={`${idPrefix}workspace-${workspace.id}`}
                         inert={!isExpanded}
                       >
