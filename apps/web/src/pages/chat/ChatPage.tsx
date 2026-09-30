@@ -68,13 +68,22 @@ export function ChatPage({
 }: ChatPageProps) {
   const [draft, setDraft] = useState('')
   const [isRestoring, setIsRestoring] = useState(false)
+  const [selectedView, setSelectedView] = useState('conversation')
   const summaryId = useId()
   const { containerRef, triggerRef, isVisible, reserveSpace, handleKeyDown } =
     usePinnedSummary(
-      summaryAvailable ? summaryVisible : false,
+      summaryAvailable && selectedView === 'conversation'
+        ? summaryVisible
+        : false,
       onSummaryVisibleChange,
     )
   const summaryLabel = isVisible ? '隐藏置顶简介' : '显示置顶简介'
+
+  /** 切换会话视图；轨迹页只隐藏简介，不修改对话页的显隐偏好。 */
+  const handleViewChange = (key: string | number) => {
+    const nextView = String(key)
+    setSelectedView(nextView)
+  }
   const initialModelKey = thread.providerId
     ? `${thread.providerId}:${thread.modelId}`
     : undefined
@@ -108,7 +117,8 @@ export function ChatPage({
     >
       <Tabs
         className="relative flex min-h-0 flex-1 flex-col gap-0"
-        defaultSelectedKey="conversation"
+        selectedKey={selectedView}
+        onSelectionChange={handleViewChange}
         variant="secondary"
       >
         <Tabs.ListContainer className="summary-toolbar shrink-0 border-b border-divider px-4">
@@ -124,7 +134,7 @@ export function ChatPage({
           </Tabs.List>
         </Tabs.ListContainer>
         <div className="workbench-toggles">
-          {summaryAvailable ? (
+          {summaryAvailable && selectedView === 'conversation' ? (
             <Tooltip delay={300}>
               <Button
                 aria-controls={summaryId}
@@ -199,13 +209,14 @@ export function ChatPage({
       </Tabs>
 
       <aside
-        aria-hidden={!isVisible}
+        aria-hidden={!isVisible || selectedView !== 'conversation'}
         aria-label="置顶简介"
         className="pinned-summary"
+        hidden={selectedView !== 'conversation'}
         id={summaryId}
-        inert={!isVisible}
+        inert={!isVisible || selectedView !== 'conversation'}
         onKeyDown={handleKeyDown}
-        tabIndex={isVisible ? 0 : -1}
+        tabIndex={isVisible && selectedView === 'conversation' ? 0 : -1}
       >
         {summaryContent}
       </aside>
