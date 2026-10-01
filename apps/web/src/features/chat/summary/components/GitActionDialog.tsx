@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { Button, Modal } from '@heroui/react'
+import { Button, Label, Modal, TextArea, TextField } from '@heroui/react'
 import {
   GIT_ACTION,
   GIT_FILE_STATUS,
   type GitAction,
 } from '@oh-my-harness/shared'
+import { SelectMenu } from '../../../../components/ui/index.ts'
 import type { WorkspaceGitVo } from '../api/workspace-git-api.ts'
 import type { WorkspaceGitController } from '../use-workspace-git.ts'
 
@@ -58,7 +59,7 @@ export function GitActionDialog({
       isOpen
       isDismissable={!pending}
       isKeyboardDismissDisabled={pending}
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/25"
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/45 backdrop-blur-sm"
       onOpenChange={(open) => {
         if (!open && !pending) onClose()
       }}
@@ -67,13 +68,18 @@ export function GitActionDialog({
         placement="center"
         className="w-full max-w-[calc(100vw-24px)] p-0 sm:max-w-[860px]"
       >
-        <Modal.Dialog className="git-dialog w-full max-w-none gap-0 overflow-hidden rounded-2xl bg-surface p-0 shadow-xl outline-none">
-          <Modal.Header className="px-5 pt-5 pb-3">
-            <Modal.Heading className="text-base font-medium">
+        <Modal.Dialog className="max-h-[calc(100svh-32px)] w-full max-w-none gap-0 overflow-hidden rounded-3xl bg-surface p-0 shadow-2xl outline-none">
+          <Modal.CloseTrigger
+            aria-label={`关闭${viewTitles[view] ?? 'Git 操作'}`}
+            isDisabled={pending}
+            className="bg-transparent text-foreground hover:bg-surface-secondary"
+          />
+          <Modal.Header className="px-5 pt-5 pb-3 sm:px-6 sm:pt-6">
+            <Modal.Heading className="text-lg font-medium text-foreground">
               {viewTitles[view]}
             </Modal.Heading>
           </Modal.Header>
-          <Modal.Body className="!m-0 !w-full space-y-3 overflow-y-auto px-5 py-0 text-[13px]">
+          <Modal.Body className="!m-0 !w-full space-y-4 overflow-y-auto px-5 py-0 text-sm sm:px-6">
             {controller.error ? (
               <div role="alert" className="flex items-center gap-2 text-danger">
                 <span>{controller.error}</span>
@@ -88,21 +94,21 @@ export function GitActionDialog({
               </div>
             ) : null}
             {view === GIT_ACTION.SWITCH_BRANCH ? (
-              <label className="grid gap-2">
-                目标本地分支
-                <select
-                  className="git-select"
+              <div className="flex flex-col gap-2">
+                <Label>目标本地分支</Label>
+                <SelectMenu
+                  ariaLabel="目标本地分支"
+                  className="w-full"
+                  isDisabled={pending}
+                  options={branchOptions.map((item) => ({
+                    id: item.name,
+                    label: item.name,
+                  }))}
+                  triggerClassName="w-full bg-surface-secondary"
                   value={branch}
-                  disabled={pending}
-                  onChange={(event) => setSelectedBranch(event.target.value)}
-                >
-                  {branchOptions.map((item) => (
-                    <option key={item.ref} value={item.name}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  onChange={setSelectedBranch}
+                />
+              </div>
             ) : null}
             {view === GIT_ACTION.SWITCH_BRANCH ? (
               <p className="text-muted">
@@ -133,17 +139,19 @@ export function GitActionDialog({
                       </li>
                     ))}
                 </ul>
-                <label className="grid gap-2">
-                  提交说明
-                  <textarea
-                    className="git-select min-h-24 resize-y"
+                <TextField className="flex flex-col gap-2" isDisabled={pending}>
+                  <Label>提交说明</Label>
+                  <TextArea
+                    aria-label="提交说明"
+                    className="w-full"
                     maxLength={10000}
+                    rows={4}
                     value={message}
-                    disabled={pending}
                     onChange={(event) => setMessage(event.target.value)}
                     placeholder="描述本次修改"
+                    variant="secondary"
                   />
-                </label>
+                </TextField>
               </>
             ) : null}
             {view === GIT_ACTION.PUSH ? (
@@ -156,13 +164,8 @@ export function GitActionDialog({
               </>
             ) : null}
           </Modal.Body>
-          <Modal.Footer className="flex flex-wrap justify-end gap-2 px-5 pt-4 pb-5">
-            <Button
-              variant="ghost"
-              size="sm"
-              isDisabled={pending}
-              onPress={onClose}
-            >
+          <Modal.Footer className="flex flex-wrap justify-end gap-2 px-5 pt-5 pb-5 sm:px-6 sm:pb-6">
+            <Button variant="outline" isDisabled={pending} onPress={onClose}>
               关闭
             </Button>
             {[
@@ -171,8 +174,7 @@ export function GitActionDialog({
               GIT_ACTION.PUSH,
             ].some((action) => action === view) ? (
               <Button
-                size="sm"
-                className="bg-foreground text-background"
+                variant="primary"
                 isDisabled={
                   pending ||
                   !snapshot.actions.includes(view) ||

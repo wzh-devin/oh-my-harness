@@ -212,19 +212,3 @@
   flex: 1;
   min-width: 0;
 }
-.git-dialog {
-  max-height: calc(100svh - 32px);
-}
-.git-select {
-  width: 100%;
-  min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  padding: 8px 10px;
-  color: var(--foreground);
-}
-.git-select:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
