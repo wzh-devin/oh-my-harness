@@ -3,7 +3,6 @@ import type {
   KeyboardEvent,
   PointerEvent,
   ReactNode,
-  WheelEvent,
 } from 'react'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { Check, Copy, Maximize2, Minus, Plus, RotateCcw } from 'lucide-react'
@@ -117,6 +116,22 @@ function MermaidDiagram({ code, fallback }: MermaidDiagramProps) {
     return () => window.cancelAnimationFrame(frame)
   }, [fitPreview, isExpanded, result.svg])
 
+  const changeZoom = useCallback((delta: number) => {
+    setZoom((value) => Math.min(4, Math.max(0.1, value + delta)))
+  }, [])
+
+  useEffect(() => {
+    if (!isExpanded) return
+    const preview = previewRef.current
+    if (!preview) return
+    const handlePreviewWheel = (event: globalThis.WheelEvent) => {
+      event.preventDefault()
+      changeZoom(event.deltaY < 0 ? 0.1 : -0.1)
+    }
+    preview.addEventListener('wheel', handlePreviewWheel, { passive: false })
+    return () => preview.removeEventListener('wheel', handlePreviewWheel)
+  }, [changeZoom, isExpanded])
+
   if (result.code === code && result.error) return fallback
   if (result.code !== code || !result.svg) {
     return (
@@ -133,16 +148,6 @@ function MermaidDiagram({ code, fallback }: MermaidDiagramProps) {
       setIsCopied(true)
       window.setTimeout(() => setIsCopied(false), 1200)
     })
-  }
-
-  const changeZoom = (delta: number) => {
-    setZoom((value) => Math.min(4, Math.max(0.1, value + delta)))
-  }
-
-  /** 将鼠标滚轮和触控板手势转换为预览缩放。 */
-  const handlePreviewWheel = (event: WheelEvent<HTMLDivElement>) => {
-    event.preventDefault()
-    changeZoom(event.deltaY < 0 ? 0.1 : -0.1)
   }
 
   const resetView = () => {
@@ -295,12 +300,12 @@ function MermaidDiagram({ code, fallback }: MermaidDiagramProps) {
               onPointerMove={handlePointerMove}
               onPointerUp={stopDragging}
               onDragStart={(event) => event.preventDefault()}
-              onWheel={handlePreviewWheel}
             >
               <div
                 className="message-mermaid__preview-stage"
                 style={{
-                  transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`,
+                  transform: `translate(${offset.x}px, ${offset.y}px)`,
+                  width: `${zoom * 100}%`,
                 }}
                 dangerouslySetInnerHTML={{ __html: result.svg }}
               />
