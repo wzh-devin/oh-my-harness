@@ -10,6 +10,11 @@ const sessionBodyLimit = bodyLimit({
   onError: (context) =>
     context.json({ code: 'REQUEST_TOO_LARGE', message: '请求内容过大。' }, 413),
 })
+const forkBodyLimit = bodyLimit({
+  maxSize: 1024 * 1024 + 4096,
+  onError: (context) =>
+    context.json({ code: 'REQUEST_TOO_LARGE', message: '请求内容过大。' }, 413),
+})
 
 /** 注册 Agent Session CRUD 与消息读取路由。 */
 export function createAgentSessionRouter(
@@ -21,6 +26,13 @@ export function createAgentSessionRouter(
   router.post('/', sessionBodyLimit, controller.create)
   router.get('/', controller.list)
   router.delete('/archived', controller.clearArchived)
+  router.post('/:id/fork', forkBodyLimit, controller.fork)
+  router.post('/:id/regenerate', sessionBodyLimit, controller.regenerate)
+  router.post(
+    '/:id/messages/:messageId/feedback',
+    sessionBodyLimit,
+    controller.feedback,
+  )
   router.get('/:id/attachments/:attachmentId', controller.attachment)
   router.get('/:id/messages', controller.messages)
   router.get('/:id/trajectory', controller.trajectory)

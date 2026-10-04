@@ -6,6 +6,7 @@ import {
   CHAT_MESSAGE_SOURCE_TYPE,
   CHAT_ROUTE_KIND,
   MESSAGE_PART_TYPE,
+  type MessageFeedback,
   type ContextCompactionStatus,
   type ChatAssistantStatus,
   type ChatRouteKind,
@@ -166,6 +167,7 @@ export interface ChatMessage {
   text?: string
   tools?: readonly ChatMessageTool[]
   tokenUsage?: ChatTokenUsage
+  feedback?: MessageFeedback
 }
 
 export interface ChatThread {

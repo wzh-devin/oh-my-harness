@@ -2,6 +2,7 @@ import type { POLICY_TOOL } from '@oh-my-harness/agent-policy/contracts'
 import type { PermissionId } from '../../../settings/index.ts'
 import {
   AGENT_RUN_EVENT_TYPE,
+  type MessageFeedback,
   MESSAGE_PART_TYPE,
   TOOL_ACTIVITY_KIND,
   type AgentContextKind,
@@ -71,7 +72,17 @@ export interface AgentSessionMessageVo {
   stopReason?: string
   timestamp: number
   tools?: AgentSessionToolVo[]
+  feedback?: MessageFeedback
 }
+
+export interface AgentSessionForkVo {
+  runRequired: boolean
+  session: AgentSessionVo
+  sourceMessageId: string
+  sourceSessionId: string
+}
+
+export type AgentSessionRegenerateVo = AgentSessionForkVo
 
 export interface AgentSessionRuntimeActivityVo {
   afterTokens?: number

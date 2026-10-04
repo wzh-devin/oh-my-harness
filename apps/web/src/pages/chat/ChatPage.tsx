@@ -1,5 +1,5 @@
 import { useId, useState, type ReactNode, type RefObject } from 'react'
-import { MESSAGE_ROLE } from '@oh-my-harness/shared'
+import { MESSAGE_ROLE, type MessageFeedback } from '@oh-my-harness/shared'
 import { ChatConversation } from '@agile-avocation/ui-pro/chat-conversation'
 import type { ChatStatus } from '@agile-avocation/ui-pro/prompt-input'
 import { Button, Tabs, Tooltip } from '@heroui/react'
@@ -37,10 +37,16 @@ interface ChatPageProps {
   onStop: () => void
   pendingApproval?: PendingToolApprovalVo
   onApprovalResolve: (decision: ApprovalDecision) => Promise<void>
+  onFeedback: (
+    messageId: string,
+    feedback: MessageFeedback | null,
+  ) => Promise<void>
+  onForkMessage: (messageId: string) => Promise<void>
   onModelChange: (
     selection: Pick<ChatSubmitPayload, 'modelId' | 'providerId'>,
   ) => Promise<boolean>
   onRestore: () => Promise<string>
+  onRegenerateMessage: (messageId: string) => Promise<void>
   onSteer: (message: string) => boolean | Promise<boolean>
   onSubmit: (payload: ChatSubmitPayload) => boolean | Promise<boolean>
 }
@@ -52,10 +58,13 @@ export function ChatPage({
   isLoading,
   onModelChange,
   onApprovalResolve,
+  onFeedback,
+  onForkMessage,
   onStop,
   onSteer,
   onSubmit,
   onRestore,
+  onRegenerateMessage,
   pendingApproval,
   status,
   thread,
@@ -186,7 +195,13 @@ export function ChatPage({
                       className={compact ? '-mt-8' : undefined}
                       key={message.id}
                     >
-                      <ThreadMessage compact={compact} message={message} />
+                      <ThreadMessage
+                        compact={compact}
+                        message={message}
+                        onFeedback={onFeedback}
+                        onFork={onForkMessage}
+                        onRegenerate={onRegenerateMessage}
+                      />
                     </div>
                   )
                 })}

@@ -7,7 +7,11 @@ import {
   useRef,
   useState,
 } from 'react'
-import { CHAT_ROUTE_KIND } from '@oh-my-harness/shared'
+import {
+  CHAT_ROUTE_KIND,
+  MESSAGE_ACTION,
+  type MessageFeedback,
+} from '@oh-my-harness/shared'
 import {
   type ChatActivePage,
   type ChatSubmitPayload,
@@ -67,6 +71,7 @@ export function App() {
     errors,
     globalError,
     forgetSessions,
+    forkMessage,
     isCreating,
     loadingIds,
     loadThread,
@@ -76,6 +81,7 @@ export function App() {
     renameSession,
     resolveApproval,
     sendMessage,
+    setMessageFeedback,
     steerMessage,
     statuses,
     runPermissions,
@@ -288,6 +294,30 @@ export function App() {
     [sendMessage],
   )
 
+  const messageAction = useCallback(
+    async (
+      action: typeof MESSAGE_ACTION.BRANCH | typeof MESSAGE_ACTION.REGENERATE,
+      messageId: string,
+    ) => {
+      if (!selectedThread) return
+      const nextId = await forkMessage(
+        selectedThread.id,
+        { action, messageId },
+        runPermissions[selectedThread.id] ?? selectedThread.permission,
+      )
+      if (nextId && nextId !== selectedThread.id) commitNavigation(`/${nextId}`)
+    },
+    [commitNavigation, forkMessage, runPermissions, selectedThread],
+  )
+
+  const handleMessageFeedback = useCallback(
+    async (messageId: string, feedback: MessageFeedback | null) => {
+      if (!selectedThread) return
+      await setMessageFeedback(selectedThread.id, messageId, feedback)
+    },
+    [selectedThread, setMessageFeedback],
+  )
+
   /** 永久删除归档会话，当前页命中时回到新建页。 */
   const handleArchivedDelete = useCallback(
     async (threadId: string) => {
@@ -437,8 +467,15 @@ export function App() {
             onApprovalResolve={(decision) =>
               resolveApproval(activePage.thread.id, decision)
             }
+            onFeedback={handleMessageFeedback}
+            onForkMessage={(messageId) =>
+              messageAction(MESSAGE_ACTION.BRANCH, messageId)
+            }
             onSubmit={(payload) =>
               handleThreadSubmit(activePage.thread, payload)
+            }
+            onRegenerateMessage={(messageId) =>
+              messageAction(MESSAGE_ACTION.REGENERATE, messageId)
             }
           />
         )

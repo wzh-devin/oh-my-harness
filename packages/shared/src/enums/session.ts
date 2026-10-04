@@ -2,6 +2,8 @@ export const SESSION_CUSTOM_TYPE = {
   AGENT_CONTEXT: 'agent/context',
   APPROVAL_REQUESTED: 'approval/requested',
   APPROVAL_RESOLVED: 'approval/resolved',
+  APPROVAL_GRANTS_RESET: 'approval/grants-reset',
+  ATTACHMENTS_COPIED: 'attachments/copied',
   CONTEXT_COMPACTION_COMPLETED: 'context/compaction-completed',
   CONTEXT_COMPACTION_STARTED: 'context/compaction-started',
   CONTEXT_USAGE_SNAPSHOT: 'context_usage_snapshot',
@@ -19,9 +21,24 @@ export const SESSION_CUSTOM_TYPE = {
   TOOL_EXECUTION_STATE: 'tool/execution-state',
   TOOL_EXECUTION_STARTED: 'tool/execution-started',
   USER_INPUT: 'user/input',
+  MESSAGE_FEEDBACK_CHANGED: 'message/feedback-changed',
 } as const
 export type SessionCustomType =
   (typeof SESSION_CUSTOM_TYPE)[keyof typeof SESSION_CUSTOM_TYPE]
+
+export const MESSAGE_FEEDBACK = {
+  NEGATIVE: 'negative',
+  POSITIVE: 'positive',
+} as const
+export type MessageFeedback =
+  (typeof MESSAGE_FEEDBACK)[keyof typeof MESSAGE_FEEDBACK]
+
+export const MESSAGE_ACTION = {
+  BRANCH: 'branch',
+  EDIT: 'edit',
+  REGENERATE: 'regenerate',
+} as const
+export type MessageAction = (typeof MESSAGE_ACTION)[keyof typeof MESSAGE_ACTION]
 
 export const MESSAGE_PART_TYPE = {
   REASONING: 'reasoning',

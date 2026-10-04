@@ -39,6 +39,11 @@ export type {
 export type {
   AgentSessionModelConfig,
   AgentSessionDetail,
+  AgentSessionForkAction,
+  AgentSessionForkInput,
+  AgentSessionForkPrompt,
+  AgentSessionForkResult,
+  AgentSessionRegenerateResult,
   AgentSessionInfo,
   AgentSessionMessage,
   AgentSessionMessagePart,

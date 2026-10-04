@@ -1,5 +1,9 @@
 import { ChatLoader } from '@agile-avocation/ui-pro/chat-loader'
-import { CHAT_ASSISTANT_STATUS, MESSAGE_ROLE } from '@oh-my-harness/shared'
+import {
+  CHAT_ASSISTANT_STATUS,
+  MESSAGE_ROLE,
+  type MessageFeedback,
+} from '@oh-my-harness/shared'
 import { ChatMessage as ChatMessagePrimitive } from '@agile-avocation/ui-pro/chat-message'
 import { ChatSources } from '@agile-avocation/ui-pro/chat-source'
 import { TextShimmer } from '@agile-avocation/ui-pro/text-shimmer'
@@ -17,10 +21,22 @@ import { ToolActivity } from './ToolActivity.tsx'
 interface ThreadMessageProps {
   compact?: boolean
   message: ChatMessage
+  onFeedback?: (
+    messageId: string,
+    feedback: MessageFeedback | null,
+  ) => void | Promise<void>
+  onFork?: (messageId: string) => void | Promise<void>
+  onRegenerate?: (messageId: string) => void | Promise<void>
 }
 
 /** 根据消息契约组合用户消息或助手消息。 */
-export function ThreadMessage({ compact, message }: ThreadMessageProps) {
+export function ThreadMessage({
+  compact,
+  message,
+  onFeedback,
+  onFork,
+  onRegenerate,
+}: ThreadMessageProps) {
   if (message.role === MESSAGE_ROLE.USER) {
     return (
       <ChatMessagePrimitive.User>
@@ -41,6 +57,14 @@ export function ThreadMessage({ compact, message }: ThreadMessageProps) {
             {message.text}
           </ChatMessagePrimitive.Content>
         </ChatMessagePrimitive.Bubble>
+        {onFork ? (
+          <MessageActions
+            compact={compact}
+            content={message.text ?? ''}
+            onFork={() => void onFork(message.id)}
+            variant="minimal"
+          />
+        ) : null}
       </ChatMessagePrimitive.User>
     )
   }
@@ -161,10 +185,17 @@ export function ThreadMessage({ compact, message }: ThreadMessageProps) {
             {message.actions ? (
               <MessageActions
                 compact={compact}
+                content={message.markdown || message.text || ''}
+                feedback={message.feedback}
                 variant={message.actions}
                 tokenUsage={message.tokenUsage}
                 modelId={message.modelId}
                 providerId={message.providerId}
+                onFeedback={(feedback) =>
+                  void onFeedback?.(message.id, feedback)
+                }
+                onFork={() => void onFork?.(message.id)}
+                onRegenerate={() => void onRegenerate?.(message.id)}
               />
             ) : null}
           </>

@@ -9,17 +9,26 @@ import type {
 import {
   AGENT_TRAJECTORY_RECORD_KIND,
   AGENT_TRAJECTORY_STATUS,
+  MESSAGE_ACTION,
+  MESSAGE_FEEDBACK,
+  type MessageAction,
+  type MessageFeedback,
 } from '@oh-my-harness/shared'
 import type { Context } from 'hono'
 
 import type {
   AgentSessionDetailDto,
+  AgentSessionForkDto,
+  AgentSessionRegenerateDto,
   AgentSessionDto,
   AgentSessionMessagePageDto,
   AgentTrajectoryDto,
   AgentTrajectoryRecordDetailDto,
   AgentTrajectorySearchDto,
   CreateAgentSessionDto,
+  ForkAgentSessionDto,
+  RegenerateAgentSessionDto,
+  SetAgentSessionFeedbackDto,
   UpdateAgentSessionDto,
 } from '../../dto/agent/session-dto.ts'
 import type { WorkspaceStore } from '../../infrastructure/workspace/workspace-store.ts'
@@ -89,6 +98,75 @@ function parseUpdateSession(value: unknown): UpdateAgentSessionDto | undefined {
     modelId.length <= 512
     ? { modelId, providerId }
     : undefined
+}
+
+function parseForkSession(value: unknown): ForkAgentSessionDto | undefined {
+  if (!isObject(value)) return undefined
+  if (
+    Object.keys(value).some(
+      (key) => !['action', 'content', 'messageId'].includes(key),
+    ) ||
+    typeof value.messageId !== 'string' ||
+    !value.messageId.trim() ||
+    value.messageId.length > 256 ||
+    value.messageId.includes('\0') ||
+    !Object.values(MESSAGE_ACTION).includes(
+      value.action as (typeof MESSAGE_ACTION)[keyof typeof MESSAGE_ACTION],
+    )
+  )
+    return undefined
+  if (value.action === MESSAGE_ACTION.REGENERATE) return undefined
+  if (value.action === MESSAGE_ACTION.EDIT) {
+    if (
+      typeof value.content !== 'string' ||
+      !value.content.trim() ||
+      value.content.length > 1_000_000
+    )
+      return undefined
+    return {
+      action: value.action as Exclude<MessageAction, 'regenerate'>,
+      content: value.content,
+      messageId: value.messageId,
+    }
+  }
+  if (value.content !== undefined) return undefined
+  return {
+    action: value.action as Exclude<MessageAction, 'regenerate'>,
+    messageId: value.messageId,
+  }
+}
+
+function parseRegenerateSession(
+  value: unknown,
+): RegenerateAgentSessionDto | undefined {
+  if (
+    !isObject(value) ||
+    !hasOnlyKeys(value, ['messageId']) ||
+    typeof value.messageId !== 'string' ||
+    !value.messageId.trim() ||
+    value.messageId.length > 256 ||
+    value.messageId.includes('\0')
+  ) {
+    return undefined
+  }
+  return { messageId: value.messageId }
+}
+
+function parseFeedback(value: unknown): SetAgentSessionFeedbackDto | undefined {
+  if (
+    !isObject(value) ||
+    Object.keys(value).some((key) => key !== 'feedback') ||
+    !Object.hasOwn(value, 'feedback')
+  )
+    return undefined
+  if (
+    value.feedback !== null &&
+    !Object.values(MESSAGE_FEEDBACK).includes(
+      value.feedback as (typeof MESSAGE_FEEDBACK)[keyof typeof MESSAGE_FEEDBACK],
+    )
+  )
+    return undefined
+  return { feedback: value.feedback as MessageFeedback | null }
 }
 
 function parseMessagesQuery(context: Context) {
@@ -213,6 +291,84 @@ export function createAgentSessionController(
       try {
         await runtime.deleteArchivedSessions()
         return context.body(null, 204)
+      } catch (error) {
+        return agentErrorResponse(context, error)
+      }
+    },
+    feedback: async (context: Context) => {
+      const input = parseFeedback(
+        await context.req.json<unknown>().catch(() => undefined),
+      )
+      if (!input) {
+        return context.json(
+          { code: 'INVALID_MESSAGE_FEEDBACK', message: '消息反馈无效。' },
+          400,
+        )
+      }
+      try {
+        const messageId = context.req.param('messageId')!
+        return context.json(
+          await runtime.setMessageFeedback(
+            context.req.param('id')!,
+            messageId,
+            input.feedback,
+          ),
+        )
+      } catch (error) {
+        return agentErrorResponse(context, error)
+      }
+    },
+    fork: async (context: Context) => {
+      const input = parseForkSession(
+        await context.req.json<unknown>().catch(() => undefined),
+      )
+      if (!input) {
+        return context.json(
+          { code: 'INVALID_SESSION_REQUEST', message: '分支请求无效。' },
+          400,
+        )
+      }
+      try {
+        const result = await runtime.forkSession(
+          context.req.param('id')!,
+          input,
+        )
+        const ids = await workspaceMap(workspaces)
+        return context.json(
+          {
+            runRequired: Boolean(result.prompt),
+            session: sessionDto(result.info, ids.get(result.info.cwd) ?? null),
+            sourceMessageId: result.sourceMessageId,
+            sourceSessionId: result.sourceSessionId,
+          } satisfies AgentSessionForkDto,
+          201,
+        )
+      } catch (error) {
+        return agentErrorResponse(context, error)
+      }
+    },
+    regenerate: async (context: Context) => {
+      const input = parseRegenerateSession(
+        await context.req.json<unknown>().catch(() => undefined),
+      )
+      if (!input) {
+        return context.json(
+          { code: 'INVALID_SESSION_REQUEST', message: '重新生成请求无效。' },
+          400,
+        )
+      }
+      try {
+        const result = await runtime.regenerateSession(
+          context.req.param('id')!,
+          input.messageId,
+        )
+        const ids = await workspaceMap(workspaces)
+        return context.json({
+          runRequired: true,
+          session: sessionDto(result.info, ids.get(result.info.cwd) ?? null),
+          sourceMessageId: result.sourceMessageId,
+          sourceSessionId: result.sourceSessionId,
+        } satisfies AgentSessionRegenerateDto)
       } catch (error) {
         return agentErrorResponse(context, error)
       }

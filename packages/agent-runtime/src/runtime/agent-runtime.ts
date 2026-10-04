@@ -56,6 +56,7 @@ import {
   buildSessionContext,
   convertToLlm,
   createCustomMessage,
+  type Entry,
   type AgentEvent,
   type AgentMessage,
   type AgentTool,
@@ -82,6 +83,7 @@ import { AgentRuntimeError } from '../error/agent-runtime-error.ts'
 import { toolFilePath } from '../execution/tool-file-path.ts'
 import {
   attachmentManifest,
+  structuredMessageDetails,
   type StoredAttachment,
 } from '../execution/attachment-message.ts'
 import { safeBashOutcome } from '../execution/bash-outcome.ts'
@@ -108,6 +110,10 @@ import type {
 } from '../execution/run-input.ts'
 import {
   AgentSessionService,
+  type AgentSessionForkInput,
+  type AgentSessionForkResult,
+  type AgentSessionForkPrompt,
+  type AgentSessionRegenerateResult,
   projectRecoverableTodos,
   type AgentSessionInfo,
   type AgentSessionProjection,
@@ -201,6 +207,42 @@ const buildStructuredUserPrompt = (
   }
   if (attachments.length) content.push(attachmentManifest(attachments))
   return { attachments, content }
+}
+
+const continuationSelections = (entries: readonly Entry[]) => {
+  const task = [...entries]
+    .toReversed()
+    .find(
+      (entry) =>
+        entry.type === 'message' &&
+        entry.message.role === 'custom' &&
+        entry.message.customType === SESSION_CUSTOM_TYPE.USER_INPUT,
+    )
+  if (
+    task?.type !== 'message' ||
+    task.message.role !== 'custom' ||
+    task.message.customType !== SESSION_CUSTOM_TYPE.USER_INPUT
+  )
+    return undefined
+  const details = structuredMessageDetails(task.message.details)
+  if (!details) return undefined
+  const ids = (kind: AgentMessageContextItem['kind']) =>
+    details.contextItems
+      .filter((item) => item.kind === kind)
+      .map((item) => item.sourceId)
+  const skillIds = ids(CAPABILITY_KIND.SKILL)
+  const mcpServerIds = ids(CAPABILITY_KIND.MCP)
+  const pluginIds = ids(CAPABILITY_KIND.PLUGIN)
+  const commandId = details.contextItems.find(
+    (item) => item.kind === CAPABILITY_KIND.COMMAND,
+  )?.sourceId
+  return {
+    ...(commandId ? { commandId } : {}),
+    content: details.content,
+    ...(skillIds.length ? { skillIds } : {}),
+    ...(mcpServerIds.length ? { mcpServerIds } : {}),
+    ...(pluginIds.length ? { pluginIds } : {}),
+  }
 }
 
 function toDurableMessage(message: AgentMessage, aborted: boolean) {
@@ -389,6 +431,121 @@ export class AgentRuntime {
     } finally {
       this.release(id, operation)
     }
+  }
+
+  async forkSession(
+    sourceSessionId: string,
+    input: Omit<AgentSessionForkInput, 'sourceSessionId'>,
+  ): Promise<AgentSessionForkResult> {
+    this.assertOpen()
+    const operation = this.reserve(
+      sourceSessionId,
+      AGENT_OPERATION_KIND.MUTATION,
+    )
+    let result: AgentSessionForkResult | undefined
+    try {
+      result = await this.sessions.fork({
+        ...input,
+        sourceSessionId,
+      })
+      const inherited = result.inheritedAttachments
+      const promptAttachments = result.prompt?.attachments ?? []
+      if ((inherited.length || promptAttachments.length) && !this.attachments) {
+        throw new AgentRuntimeError(
+          'ATTACHMENT_STORAGE_UNAVAILABLE',
+          '附件存储不可用。',
+          500,
+        )
+      }
+      const copiedInherited = await this.copyForkAttachments(
+        sourceSessionId,
+        result.info.id,
+        inherited,
+      )
+      if (inherited.length)
+        await this.sessions.appendAttachmentCopies(
+          result.info.id,
+          inherited,
+          copiedInherited,
+        )
+      if (result.prompt) {
+        const copiedPrompt = await this.copyForkAttachments(
+          sourceSessionId,
+          result.info.id,
+          promptAttachments,
+        )
+        await this.sessions.appendForkInput(
+          result.info.id,
+          result.prompt,
+          copiedPrompt,
+        )
+      }
+      return result
+    } catch (error) {
+      if (result) {
+        await this.sessions.delete(result.info.id).catch(() => undefined)
+        await this.attachments
+          ?.deleteSession(result.info.id)
+          .catch(() => undefined)
+      }
+      throw error
+    } finally {
+      this.release(sourceSessionId, operation)
+    }
+  }
+
+  async regenerateSession(
+    sourceSessionId: string,
+    messageId: string,
+  ): Promise<AgentSessionRegenerateResult> {
+    this.assertOpen()
+    const operation = this.reserve(
+      sourceSessionId,
+      AGENT_OPERATION_KIND.MUTATION,
+    )
+    try {
+      return await this.sessions.regenerate({
+        messageId,
+        sourceSessionId,
+      })
+    } finally {
+      this.release(sourceSessionId, operation)
+    }
+  }
+
+  async setMessageFeedback(
+    sessionId: string,
+    messageId: string,
+    feedback: import('@oh-my-harness/shared').MessageFeedback | null,
+  ) {
+    this.assertOpen()
+    const operation = this.reserve(sessionId, AGENT_OPERATION_KIND.MUTATION)
+    try {
+      return await this.sessions.setMessageFeedback(
+        sessionId,
+        messageId,
+        feedback,
+      )
+    } finally {
+      this.release(sessionId, operation)
+    }
+  }
+
+  private async copyForkAttachments(
+    sourceSessionId: string,
+    targetSessionId: string,
+    attachments: readonly AgentSessionForkPrompt['attachments'][number][],
+  ) {
+    if (!attachments.length || !this.attachments) return []
+    const uploads = await Promise.all(
+      attachments.map(async (attachment) => ({
+        data: await this.attachments!.read(sourceSessionId, attachment),
+        mimeType: attachment.mimeType,
+        name: attachment.name,
+        size: attachment.size,
+      })),
+    )
+    return this.attachments.save(targetSessionId, uploads)
   }
 
   async getMessages(id: string, options: { before?: number; limit: number }) {
@@ -797,33 +954,40 @@ export class AgentRuntime {
         )
       }
       operation.controller.signal.throwIfAborted()
+      const continuation = input
+        ? undefined
+        : continuationSelections(opened.entries)
+      const selectionInput = input ?? continuation
       const resolved = await this.capabilities?.resolve(
         opened.metadata.cwd,
-        input ?? { content: '' },
+        selectionInput ?? { content: '' },
       )
       const mcpCatalog =
-        input?.mcpServerIds?.length || input?.pluginIds?.length
+        selectionInput?.mcpServerIds?.length ||
+        selectionInput?.pluginIds?.length
           ? await this.toolOptions?.mcp?.list()
           : undefined
-      const selectedMcpServers = (input?.mcpServerIds ?? []).map((serverId) => {
-        const server = mcpCatalog?.servers.find(
-          (candidate) => candidate.id === serverId,
-        )
-        if (
-          !server ||
-          !server.enabled ||
-          server.status !== MCP_CONNECTION_STATUS.CONNECTED ||
-          !server.toolCount
-        ) {
-          throw new AgentRuntimeError(
-            'MCP_SELECTION_UNAVAILABLE',
-            '选中的 MCP 服务已移除、停用或尚未连接，请重新选择。',
-            409,
+      const selectedMcpServers = (selectionInput?.mcpServerIds ?? []).map(
+        (serverId) => {
+          const server = mcpCatalog?.servers.find(
+            (candidate) => candidate.id === serverId,
           )
-        }
-        return server
-      })
-      const pluginIds = input?.pluginIds ?? []
+          if (
+            !server ||
+            !server.enabled ||
+            server.status !== MCP_CONNECTION_STATUS.CONNECTED ||
+            !server.toolCount
+          ) {
+            throw new AgentRuntimeError(
+              'MCP_SELECTION_UNAVAILABLE',
+              '选中的 MCP 服务已移除、停用或尚未连接，请重新选择。',
+              409,
+            )
+          }
+          return server
+        },
+      )
+      const pluginIds = selectionInput?.pluginIds ?? []
       if (pluginIds.length > 5 || new Set(pluginIds).size !== pluginIds.length)
         throw new AgentRuntimeError(
           'PLUGIN_SELECTION_INVALID',

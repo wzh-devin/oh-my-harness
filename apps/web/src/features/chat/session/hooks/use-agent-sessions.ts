@@ -5,8 +5,11 @@ import {
   CHAT_ASSISTANT_STATUS,
   MESSAGE_PART_TYPE,
   MESSAGE_ROLE,
+  MESSAGE_ACTION,
   SESSION_TOOL_STATE,
   TODO_STATUS,
+  type MessageAction,
+  type MessageFeedback,
 } from '@oh-my-harness/shared'
 import type { PermissionId } from '../../../settings/index.ts'
 import { publishTraceUpdate } from '../../../trace/api/index.ts'
@@ -23,15 +26,19 @@ import type { ApprovalDecision } from '../../message/index.ts'
 import {
   abortAgentSession,
   clearArchivedAgentSessions,
+  continueAgentSession,
   createAgentSession,
   deleteAgentSession,
   getAgentSession,
   getPendingToolApproval,
+  forkAgentSession,
   listAgentSessionMessages,
   listAgentSessions,
   reconnectAgentRun,
+  regenerateAgentSession,
   renameAgentSession,
   resolveToolApproval,
+  setAgentSessionMessageFeedback,
   steerAgentSession,
   streamAgentMessage,
   updateAgentSessionModel,
@@ -1138,6 +1145,173 @@ export function useAgentSessions() {
     [],
   )
 
+  const forkMessage = useCallback(
+    async (
+      sessionId: string,
+      input: { action: MessageAction; content?: string; messageId: string },
+      permission: PermissionId,
+    ) => {
+      setErrors((current) => ({ ...current, [sessionId]: '' }))
+      try {
+        const result =
+          input.action === MESSAGE_ACTION.REGENERATE
+            ? await regenerateAgentSession(sessionId, input.messageId)
+            : await forkAgentSession(sessionId, {
+                ...input,
+                action: input.action as 'branch' | 'edit',
+              })
+        const nextThread = toChatThread(result.session)
+        if (nextThread.id === sessionId) {
+          await loadThread(sessionId, true)
+        } else {
+          setThreads((current) => [
+            nextThread,
+            ...current.filter((thread) => thread.id !== nextThread.id),
+          ])
+          await loadThread(nextThread.id)
+        }
+        if (result.runRequired) {
+          const assistantId = `pending-assistant-${crypto.randomUUID()}`
+          updateThread(nextThread.id, (thread) => ({
+            ...thread,
+            messages: [...thread.messages, streamingAssistant(assistantId)],
+            todos: undefined,
+            updatedAt: '刚刚',
+          }))
+          setStatus(nextThread.id, 'streaming')
+          let runError = ''
+          try {
+            await continueAgentSession(nextThread.id, permission, (event) => {
+              switch (event.type) {
+                case AGENT_RUN_EVENT_TYPE.TRAJECTORY_UPDATED:
+                case AGENT_RUN_EVENT_TYPE.TRAJECTORY_DELTA:
+                  publishTraceUpdate(nextThread.id, event)
+                  break
+                case AGENT_RUN_EVENT_TYPE.TRAJECTORY_CHANGED:
+                  bumpTrajectory(nextThread.id)
+                  break
+                case AGENT_RUN_EVENT_TYPE.START:
+                  setRunPermissions((current) => ({
+                    ...current,
+                    [nextThread.id]: event.permission,
+                  }))
+                  updateThread(nextThread.id, (thread) => ({
+                    ...thread,
+                    permission: event.permission,
+                  }))
+                  break
+                case AGENT_RUN_EVENT_TYPE.TEXT_DELTA:
+                  updateThread(nextThread.id, (thread) => ({
+                    ...thread,
+                    messages: thread.messages.map((item) =>
+                      item.id === assistantId
+                        ? appendStreamingText(item, event.delta)
+                        : item,
+                    ),
+                  }))
+                  break
+                case AGENT_RUN_EVENT_TYPE.REASONING_DELTA:
+                  updateThread(nextThread.id, (thread) => ({
+                    ...thread,
+                    messages: thread.messages.map((item) =>
+                      item.id === assistantId
+                        ? appendStreamingReasoning(item, event.delta)
+                        : item,
+                    ),
+                  }))
+                  break
+                case AGENT_RUN_EVENT_TYPE.TODO_UPDATED:
+                  updateThread(nextThread.id, (thread) => ({
+                    ...thread,
+                    todos: event.todos.length ? event.todos : undefined,
+                  }))
+                  break
+                case AGENT_RUN_EVENT_TYPE.CONTEXT_USAGE_UPDATED:
+                  updateThread(nextThread.id, (thread) => ({
+                    ...thread,
+                    contextUsage: event.contextUsage,
+                  }))
+                  break
+                case AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED:
+                  setPendingApprovals((current) => ({
+                    ...current,
+                    [nextThread.id]: event,
+                  }))
+                  break
+                case AGENT_RUN_EVENT_TYPE.TOOL_END:
+                  setPendingApprovals((current) =>
+                    current[nextThread.id]?.toolCallId === event.toolCallId
+                      ? { ...current, [nextThread.id]: undefined }
+                      : current,
+                  )
+                  break
+                case AGENT_RUN_EVENT_TYPE.ERROR:
+                  runError = visibleRunError(event.code, event.message)
+                  break
+                default:
+                  break
+              }
+            })
+          } catch (error) {
+            runError = errorMessage(error)
+          } finally {
+            await loadMessages(nextThread.id)
+            const pendingApproval = await getPendingToolApproval(
+              nextThread.id,
+            ).catch(() => undefined)
+            setPendingApprovals((current) => ({
+              ...current,
+              [nextThread.id]: pendingApproval,
+            }))
+            setStatus(nextThread.id, 'ready')
+            if (runError)
+              setErrors((current) => ({
+                ...current,
+                [nextThread.id]: runError,
+              }))
+          }
+        }
+        return nextThread.id
+      } catch (error) {
+        const message = errorMessage(error)
+        setErrors((current) => ({ ...current, [sessionId]: message }))
+        return undefined
+      }
+    },
+    [bumpTrajectory, loadMessages, loadThread, setStatus, updateThread],
+  )
+
+  const setMessageFeedback = useCallback(
+    async (
+      sessionId: string,
+      messageId: string,
+      feedback: MessageFeedback | null,
+    ) => {
+      try {
+        await setAgentSessionMessageFeedback(sessionId, messageId, feedback)
+        updateThread(sessionId, (thread) => ({
+          ...thread,
+          messages: thread.messages.map((message) =>
+            message.id !== messageId
+              ? message
+              : {
+                  ...message,
+                  ...(feedback ? { feedback } : { feedback: undefined }),
+                },
+          ),
+        }))
+        return true
+      } catch (error) {
+        setErrors((current) => ({
+          ...current,
+          [sessionId]: errorMessage(error),
+        }))
+        return false
+      }
+    },
+    [updateThread],
+  )
+
   const resolveApproval = useCallback(
     async (sessionId: string, decision: ApprovalDecision) => {
       const approval = pendingApprovals[sessionId]
@@ -1199,6 +1373,7 @@ export function useAgentSessions() {
     createSession,
     deleteSessionPermanently,
     errors,
+    forkMessage,
     globalError,
     forgetSessions,
     isCreating,
@@ -1210,6 +1385,7 @@ export function useAgentSessions() {
     renameSession,
     resolveApproval,
     sendMessage,
+    setMessageFeedback,
     steerMessage,
     statuses,
     runPermissions,

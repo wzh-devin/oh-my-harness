@@ -3,6 +3,8 @@ export type {
   BashOutcomeVo,
   ContextUsageVo,
   AgentSessionDetailVo,
+  AgentSessionForkVo,
+  AgentSessionRegenerateVo,
   AgentSessionMessagePageVo,
   AgentSessionMessagePartVo,
   AgentSessionMessageVo,

@@ -2,6 +2,7 @@ import {
   getToolActivityKind,
   type ToolActivityKind,
 } from '../execution/tool-presentation.ts'
+import { randomUUID } from 'node:crypto'
 import type {
   Entry,
   JsonValue,
@@ -10,7 +11,9 @@ import type {
   SessionMetadata,
   SessionRepo,
   SessionStats,
+  SessionTree,
 } from '@earendil-works/pi-agent-core'
+import { createCustomMessage } from '@earendil-works/pi-agent-core'
 import { SessionError } from '@earendil-works/pi-agent-core'
 import {
   BUILTIN_TOOL_NAME,
@@ -36,14 +39,21 @@ import {
   SESSION_TOOL_STATE,
   TODO_STATUS,
   TOOL_EXECUTION_STATE,
+  MESSAGE_FEEDBACK,
+  type MessageAction,
   type ContextCompactionStatus,
   type MessageRole,
   type SessionToolState,
+  type MessageFeedback,
 } from '@oh-my-harness/shared'
 
 import { AgentRuntimeError } from '../error/agent-runtime-error.ts'
 import { toolFilePath } from '../execution/tool-file-path.ts'
-import { structuredMessageDetails } from '../execution/attachment-message.ts'
+import {
+  attachmentManifest,
+  structuredMessageDetails,
+  type StoredAttachment,
+} from '../execution/attachment-message.ts'
 import { safeBashOutcome } from '../execution/bash-outcome.ts'
 import {
   parseContextUsageSnapshot,
@@ -132,6 +142,36 @@ export interface AgentSessionMessage {
   tokenUsage?: TokenUsage
   timestamp: number
   tools?: AgentSessionTool[]
+  feedback?: MessageFeedback
+}
+
+export type AgentSessionForkAction = Exclude<MessageAction, 'regenerate'>
+
+export interface AgentSessionForkInput {
+  action: AgentSessionForkAction
+  content?: string
+  messageId: string
+  sourceSessionId: string
+}
+
+export interface AgentSessionForkPrompt {
+  attachments: StoredAttachment[]
+  content: string
+  contextItems: AgentMessageContextItem[]
+}
+
+export interface AgentSessionForkResult {
+  info: AgentSessionInfo
+  prompt?: AgentSessionForkPrompt
+  inheritedAttachments: StoredAttachment[]
+  sourceMessageId: string
+  sourceSessionId: string
+}
+
+export interface AgentSessionRegenerateResult {
+  info: AgentSessionInfo
+  sourceMessageId: string
+  sourceSessionId: string
 }
 
 export interface AgentSessionRuntimeActivity {
@@ -283,6 +323,84 @@ function messageText(message: AssistantMessage | UserMessage) {
     .filter((content) => content.type === 'text')
     .map((content) => content.text)
     .join('')
+}
+
+function isTaskMessage(entry: Entry) {
+  return (
+    entry.type === 'message' &&
+    (entry.message.role === MESSAGE_ROLE.USER ||
+      (entry.message.role === 'custom' &&
+        entry.message.customType === SESSION_CUSTOM_TYPE.USER_INPUT))
+  )
+}
+
+function forkPrompt(entry: Extract<Entry, { type: 'message' }>) {
+  if (
+    entry.message.role === 'custom' &&
+    entry.message.customType === SESSION_CUSTOM_TYPE.USER_INPUT
+  ) {
+    const details = structuredMessageDetails(entry.message.details)
+    if (!details)
+      throw new AgentRuntimeError(
+        'SESSION_MESSAGE_INVALID',
+        '消息数据无效。',
+        409,
+      )
+    return {
+      attachments: details.attachments,
+      content: details.content,
+      contextItems: details.contextItems,
+    } satisfies AgentSessionForkPrompt
+  }
+  if (entry.message.role !== MESSAGE_ROLE.USER) {
+    throw new AgentRuntimeError(
+      'SESSION_MESSAGE_INVALID',
+      '目标消息不是用户消息。',
+      409,
+    )
+  }
+  return {
+    attachments: [],
+    content: messageText(entry.message),
+    contextItems: [],
+  } satisfies AgentSessionForkPrompt
+}
+
+async function appendPromptToTree(
+  tree: SessionTree,
+  prompt: AgentSessionForkPrompt,
+  attachments: AgentSessionForkPrompt['attachments'],
+) {
+  return tree.appendMessage(
+    createCustomMessage(
+      SESSION_CUSTOM_TYPE.USER_INPUT,
+      [
+        ...(prompt.content
+          ? [{ text: prompt.content, type: 'text' as const }]
+          : []),
+        ...(attachments.length ? [attachmentManifest(attachments)] : []),
+      ],
+      true,
+      {
+        attachments,
+        content: prompt.content,
+        contextItems: prompt.contextItems,
+        schemaVersion: 1,
+      },
+      Date.now(),
+    ),
+  )
+}
+
+function forkName(name: string | undefined) {
+  const prefix = name?.trim() || '新对话'
+  return `${prefix} · 分支`.slice(0, 200)
+}
+
+function isMessageFeedback(value: unknown): value is MessageFeedback {
+  return (
+    value === MESSAGE_FEEDBACK.POSITIVE || value === MESSAGE_FEEDBACK.NEGATIVE
+  )
 }
 
 function toolResultText(message: ToolResultMessage) {
@@ -452,6 +570,93 @@ export function projectRecoverableTodos(entries: readonly Entry[]) {
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value)
+
+function parseStoredAttachment(value: unknown): StoredAttachment | undefined {
+  const details = structuredMessageDetails({
+    attachments: [value],
+    content: '',
+    contextItems: [],
+    schemaVersion: 1,
+  })
+  return details?.attachments[0]
+}
+
+function copiedAttachments(entry: Entry) {
+  if (
+    entry.type !== 'custom' ||
+    entry.customType !== SESSION_CUSTOM_TYPE.ATTACHMENTS_COPIED ||
+    !isObject(entry.data) ||
+    entry.data.schemaVersion !== 1 ||
+    !Array.isArray(entry.data.mappings)
+  )
+    return []
+  return entry.data.mappings.flatMap((value) => {
+    if (!isObject(value) || typeof value.sourceId !== 'string') return []
+    const attachment = parseStoredAttachment(value.attachment)
+    return attachment ? [{ attachment, sourceId: value.sourceId }] : []
+  })
+}
+
+function remapEntries(entries: readonly Entry[]) {
+  const remaps = new Map<string, StoredAttachment>()
+  for (const entry of entries) {
+    for (const mapping of copiedAttachments(entry))
+      remaps.set(mapping.sourceId, mapping.attachment)
+  }
+  if (!remaps.size) return [...entries]
+  return entries.map((entry) => {
+    if (
+      entry.type !== 'message' ||
+      entry.message.role !== 'custom' ||
+      entry.message.customType !== SESSION_CUSTOM_TYPE.USER_INPUT
+    )
+      return entry
+    const details = structuredMessageDetails(entry.message.details)
+    if (!details) return entry
+    const attachments = details.attachments.map(
+      (attachment) => remaps.get(attachment.id) ?? attachment,
+    )
+    if (
+      attachments.every(
+        (attachment, index) => attachment.id === details.attachments[index]?.id,
+      )
+    )
+      return entry
+    const manifest = attachmentManifest(attachments).text
+    return {
+      ...entry,
+      message: {
+        ...entry.message,
+        content: Array.isArray(entry.message.content)
+          ? entry.message.content.map((part) =>
+              part.type === 'text' && part.text.startsWith('<attachments>')
+                ? { ...part, text: manifest }
+                : part,
+            )
+          : entry.message.content.startsWith('<attachments>')
+            ? manifest
+            : entry.message.content,
+        details: { ...details, attachments },
+      },
+    }
+  })
+}
+
+function collectAttachments(entries: readonly Entry[]) {
+  const attachments = new Map<string, StoredAttachment>()
+  for (const entry of entries) {
+    if (
+      entry.type !== 'message' ||
+      entry.message.role !== 'custom' ||
+      entry.message.customType !== SESSION_CUSTOM_TYPE.USER_INPUT
+    )
+      continue
+    for (const attachment of structuredMessageDetails(entry.message.details)
+      ?.attachments ?? [])
+      attachments.set(attachment.id, attachment)
+  }
+  return [...attachments.values()]
+}
 
 interface ParsedContextCompactionCompletion {
   activityId: string
@@ -892,6 +1097,253 @@ export class AgentSessionService {
     }
   }
 
+  async fork(input: AgentSessionForkInput): Promise<AgentSessionForkResult> {
+    const source = await this.openSession(input.sourceSessionId ?? '')
+    if (source.archived) {
+      throw new AgentRuntimeError(
+        'SESSION_ARCHIVED',
+        '已归档的会话需要恢复后才能继续。',
+        409,
+      )
+    }
+    const entries = await this.entriesOnBranch(source.session, 'oldestFirst')
+    const target = entries.find((entry) => entry.id === input.messageId)
+    if (!target || target.type !== 'message') {
+      throw new AgentRuntimeError(
+        'SESSION_MESSAGE_NOT_FOUND',
+        '消息不存在。',
+        404,
+      )
+    }
+    let prompt: AgentSessionForkPrompt | undefined
+    const targetIndex = entries.indexOf(target)
+    let inheritedEntries = entries.slice(0, targetIndex + 1)
+    let entryId = target.id
+    let position: 'at' | 'before' = 'at'
+    if (input.action === 'branch') {
+      if (
+        !isTaskMessage(target) &&
+        target.message.role !== MESSAGE_ROLE.ASSISTANT
+      ) {
+        throw new AgentRuntimeError(
+          'SESSION_MESSAGE_INVALID',
+          '目标消息不可创建分支。',
+          409,
+        )
+      }
+    } else {
+      const task = target
+      if (target.message.role !== MESSAGE_ROLE.USER && !isTaskMessage(target)) {
+        throw new AgentRuntimeError(
+          'SESSION_MESSAGE_INVALID',
+          '目标消息不是用户消息。',
+          409,
+        )
+      }
+      if (typeof input.content !== 'string' || !input.content.trim()) {
+        throw new AgentRuntimeError(
+          'INVALID_MESSAGE_CONTENT',
+          '编辑内容不能为空。',
+          400,
+        )
+      }
+      prompt = { ...forkPrompt(task), content: input.content }
+      entryId = task.id
+      position = 'before'
+      inheritedEntries = entries.slice(0, entries.indexOf(task))
+    }
+    let forked: Session<AgentSessionMetadata> | undefined
+    try {
+      forked = await this.serializeRepository(() =>
+        this.repository.fork(source.metadata, {
+          cwd: source.metadata.cwd,
+          metadata: { ...(source.metadata.metadata ?? {}), ...source.config },
+          position,
+          entryId,
+          scope: 'branch',
+        }),
+      )
+      await forked.setName(forkName(await source.session.getName()))
+      await forked.appendCustomEntry(
+        SESSION_CUSTOM_TYPE.APPROVAL_GRANTS_RESET,
+        {
+          schemaVersion: 1,
+        },
+      )
+      const metadata = await forked.getMetadata()
+      if (this.metadataIndex)
+        (await this.metadataIndex).set(metadata.id, metadata)
+      const info = toInfo(metadata, source.config, await forked.getName())
+      this.updateListCache(info)
+      await this.projectChanged(info.id)
+      return {
+        info,
+        ...(prompt ? { prompt } : {}),
+        inheritedAttachments: collectAttachments(inheritedEntries),
+        sourceMessageId: input.messageId,
+        sourceSessionId: input.sourceSessionId,
+      }
+    } catch (error) {
+      if (forked) {
+        const metadata = await forked.getMetadata().catch(() => undefined)
+        if (metadata)
+          await this.serializeRepository(() =>
+            this.repository.delete(metadata),
+          ).catch(() => undefined)
+      }
+      return sessionFailure(error)
+    }
+  }
+
+  async regenerate(input: {
+    messageId: string
+    sourceSessionId: string
+  }): Promise<AgentSessionRegenerateResult> {
+    const source = await this.openSession(input.sourceSessionId)
+    if (source.archived) {
+      throw new AgentRuntimeError(
+        'SESSION_ARCHIVED',
+        '已归档的会话需要恢复后才能继续。',
+        409,
+      )
+    }
+    const entries = await this.entriesOnBranch(source.session, 'oldestFirst')
+    const targetIndex = entries.findIndex(
+      (entry) => entry.id === input.messageId,
+    )
+    const target = targetIndex === -1 ? undefined : entries[targetIndex]
+    if (
+      !target ||
+      target.type !== 'message' ||
+      target.message.role !== MESSAGE_ROLE.ASSISTANT
+    ) {
+      throw new AgentRuntimeError(
+        'SESSION_MESSAGE_INVALID',
+        '重新生成只能作用于助手消息。',
+        409,
+      )
+    }
+    const task = entries.slice(0, targetIndex).toReversed().find(isTaskMessage)
+    if (!task || task.type !== 'message') {
+      throw new AgentRuntimeError(
+        'SESSION_MESSAGE_INVALID',
+        '无法定位原始用户消息。',
+        409,
+      )
+    }
+    const prompt = forkPrompt(task)
+    const lane = `regenerate-${randomUUID()}`
+    let switched = false
+    try {
+      await source.session.createLane(lane, task.parentId)
+      const promptId = await appendPromptToTree(
+        source.session.view(lane),
+        prompt,
+        prompt.attachments,
+      )
+      await source.session.moveLane('main', promptId)
+      switched = true
+      const info = toInfo(
+        source.metadata,
+        source.config,
+        await source.session.getName(),
+        false,
+      )
+      this.projectChanged(input.sourceSessionId)
+      return {
+        info,
+        sourceMessageId: input.messageId,
+        sourceSessionId: input.sourceSessionId,
+      }
+    } catch (error) {
+      if (!switched)
+        await source.session.moveLane(lane, null).catch(() => undefined)
+      return sessionFailure(error)
+    }
+  }
+
+  async appendForkInput(
+    id: string,
+    prompt: AgentSessionForkPrompt,
+    attachments: AgentSessionForkPrompt['attachments'],
+  ) {
+    const opened = await this.openSession(id)
+    try {
+      await appendPromptToTree(opened.session, prompt, attachments)
+      this.projectChanged(id)
+    } catch (error) {
+      return sessionFailure(error)
+    }
+  }
+
+  async appendAttachmentCopies(
+    id: string,
+    source: readonly StoredAttachment[],
+    copied: readonly StoredAttachment[],
+  ) {
+    if (source.length !== copied.length)
+      throw new AgentRuntimeError(
+        'ATTACHMENT_COPY_FAILED',
+        '附件副本数量不一致。',
+        500,
+      )
+    if (!source.length) return
+    const opened = await this.openSession(id)
+    try {
+      await opened.session.appendCustomEntry(
+        SESSION_CUSTOM_TYPE.ATTACHMENTS_COPIED,
+        {
+          mappings: source.map((attachment, index) => ({
+            attachment: copied[index],
+            sourceId: attachment.id,
+          })),
+          schemaVersion: 1,
+        },
+      )
+      this.projectChanged(id)
+    } catch (error) {
+      return sessionFailure(error)
+    }
+  }
+
+  async setMessageFeedback(
+    id: string,
+    messageId: string,
+    feedback: MessageFeedback | null,
+  ) {
+    if (feedback !== null && !isMessageFeedback(feedback)) {
+      throw new AgentRuntimeError(
+        'INVALID_MESSAGE_FEEDBACK',
+        '反馈值无效。',
+        400,
+      )
+    }
+    const opened = await this.openSession(id)
+    const entries = await this.entriesOnBranch(opened.session, 'oldestFirst')
+    const target = entries.find((entry) => entry.id === messageId)
+    if (
+      !target ||
+      target.type !== 'message' ||
+      target.message.role !== MESSAGE_ROLE.ASSISTANT
+    ) {
+      throw new AgentRuntimeError(
+        'SESSION_MESSAGE_INVALID',
+        '目标消息不是助手消息。',
+        409,
+      )
+    }
+    try {
+      await opened.session.appendCustomEntry(
+        SESSION_CUSTOM_TYPE.MESSAGE_FEEDBACK_CHANGED,
+        { feedback, messageId, schemaVersion: 1 },
+      )
+      this.projectChanged(id)
+      return { feedback, messageId }
+    } catch (error) {
+      return sessionFailure(error)
+    }
+  }
+
   async messages(
     id: string,
     options: { before?: number; limit: number },
@@ -899,9 +1351,10 @@ export class AgentSessionService {
     const opened = await this.openSession(id)
     try {
       // ponytail: 首版主分支分页在内存中过滤；100k entries 压测不达标时改用上游 before-cursor/index。
-      const branchEntries = await opened.session.findEntriesOnBranch({
-        order: 'newestFirst',
-      })
+      const branchEntries = await this.entriesOnBranch(
+        opened.session,
+        'newestFirst',
+      )
       const entries = branchEntries.filter(
         (entry): entry is Extract<Entry, { type: 'message' }> =>
           entry.type === 'message',
@@ -973,6 +1426,21 @@ export class AgentSessionService {
         }
       }
       const candidates: AgentSessionMessage[] = []
+      const feedbackByMessage = new Map<string, MessageFeedback>()
+      for (const entry of branchEntries.toReversed()) {
+        if (
+          entry.type !== 'custom' ||
+          entry.customType !== SESSION_CUSTOM_TYPE.MESSAGE_FEEDBACK_CHANGED ||
+          !isObject(entry.data) ||
+          typeof entry.data.messageId !== 'string' ||
+          entry.data.schemaVersion !== 1
+        )
+          continue
+        if (entry.data.feedback === null)
+          feedbackByMessage.delete(entry.data.messageId)
+        else if (isMessageFeedback(entry.data.feedback))
+          feedbackByMessage.set(entry.data.messageId, entry.data.feedback)
+      }
       for (const entry of branchEntries) {
         if (options.before !== undefined && entry.seq >= options.before)
           continue
@@ -986,7 +1454,20 @@ export class AgentSessionService {
         if (message) {
           const runTokenUsage = runUsageByEntry.get(entry.id)
           candidates.push(
-            runTokenUsage ? { ...message, tokenUsage: runTokenUsage } : message,
+            runTokenUsage
+              ? {
+                  ...message,
+                  ...(feedbackByMessage.get(message.entryId)
+                    ? { feedback: feedbackByMessage.get(message.entryId) }
+                    : {}),
+                  tokenUsage: runTokenUsage,
+                }
+              : {
+                  ...message,
+                  ...(feedbackByMessage.get(message.entryId)
+                    ? { feedback: feedbackByMessage.get(message.entryId) }
+                    : {}),
+                },
           )
         }
         if (candidates.length > options.limit) break
@@ -1046,9 +1527,10 @@ export class AgentSessionService {
     const opened = await this.openSession(id)
     try {
       // ponytail: 会话内线性查找避免第二份附件索引；超长会话下载不达标时再加索引。
-      for (const entry of await opened.session.findEntriesOnBranch({
-        order: 'newestFirst',
-      })) {
+      for (const entry of await this.entriesOnBranch(
+        opened.session,
+        'newestFirst',
+      )) {
         if (
           entry.type !== 'message' ||
           entry.message.role !== 'custom' ||
@@ -1070,9 +1552,7 @@ export class AgentSessionService {
   async open(id: string): Promise<OpenAgentSession> {
     const opened = await this.openSession(id)
     try {
-      const entries = await opened.session.findEntriesOnBranch({
-        order: 'oldestFirst',
-      })
+      const entries = await this.entriesOnBranch(opened.session, 'oldestFirst')
       return { ...opened, entries }
     } catch (error) {
       return sessionFailure(error)
@@ -1117,6 +1597,17 @@ export class AgentSessionService {
     } catch (error) {
       return sessionFailure(error)
     }
+  }
+
+  private async entriesOnBranch(
+    session: Session<AgentSessionMetadata>,
+    order: 'newestFirst' | 'oldestFirst',
+  ) {
+    return remapEntries(
+      await session.findEntriesOnBranch({
+        order,
+      }),
+    )
   }
 
   private updateListCache(info: AgentSessionInfo) {

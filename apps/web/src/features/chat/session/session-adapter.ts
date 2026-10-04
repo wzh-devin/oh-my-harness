@@ -114,6 +114,7 @@ const toActivityParts = (
 export const toChatMessage = (message: AgentSessionMessageVo): ChatMessage => ({
   actions: message.role === MESSAGE_ROLE.ASSISTANT ? 'full' : undefined,
   attachments: message.attachments,
+  feedback: message.feedback,
   contextItems: message.contextItems,
   id: message.entryId,
   reasoning: message.reasoning

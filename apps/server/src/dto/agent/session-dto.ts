@@ -12,6 +12,8 @@ import {
   type AgentTrajectoryRecordKind,
   type AgentTrajectoryStatus,
   type MessageRole,
+  type MessageAction,
+  type MessageFeedback,
   type SessionToolState,
   type TodoStatus,
 } from '@oh-my-harness/shared'
@@ -84,6 +86,40 @@ export interface AgentSessionMessageDto {
   stopReason?: string
   timestamp: number
   tools?: AgentSessionToolDto[]
+  feedback?: MessageFeedback
+}
+
+export interface ForkAgentSessionDto {
+  action: Exclude<MessageAction, 'regenerate'>
+  content?: string
+  messageId: string
+}
+
+export interface AgentSessionForkDto {
+  runRequired: boolean
+  session: AgentSessionDto
+  sourceMessageId: string
+  sourceSessionId: string
+}
+
+export interface RegenerateAgentSessionDto {
+  messageId: string
+}
+
+export interface AgentSessionRegenerateDto {
+  runRequired: boolean
+  session: AgentSessionDto
+  sourceMessageId: string
+  sourceSessionId: string
+}
+
+export interface SetAgentSessionFeedbackDto {
+  feedback: MessageFeedback | null
+}
+
+export interface AgentSessionFeedbackDto extends SetAgentSessionFeedbackDto {
+  feedback: MessageFeedback | null
+  messageId: string
 }
 
 export interface AgentSessionRuntimeActivityDto {

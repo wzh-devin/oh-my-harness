@@ -19,6 +19,7 @@ import type {
   AgentRunEventVo,
   AgentSessionDetailVo,
   AgentSessionMessagePageVo,
+  AgentSessionRegenerateVo,
   AgentSessionVo,
   AgentSessionToolVo,
   AgentTodoItemVo,
@@ -28,6 +29,7 @@ import type {
   ToolExecutionOutputVo,
   ToolExecutionVo,
 } from '../types/index.ts'
+import type { MessageAction, MessageFeedback } from '@oh-my-harness/shared'
 import type { ApprovalDecision } from '../../message/index.ts'
 import type {
   ModelThinkingLevel,
@@ -52,6 +54,12 @@ interface UpdateAgentSessionArchiveInput {
 
 interface RenameAgentSessionInput {
   name: string
+}
+
+interface ForkAgentSessionInput {
+  action: Exclude<MessageAction, 'regenerate'>
+  content?: string
+  messageId: string
 }
 
 interface ParsedSseFrames {
@@ -814,6 +822,40 @@ export const renameAgentSession = (
     method: 'PATCH',
   })
 
+export const forkAgentSession = (
+  sessionId: string,
+  input: ForkAgentSessionInput,
+) =>
+  request<import('../types/index.ts').AgentSessionForkVo>(
+    `${sessionPath(sessionId)}/fork`,
+    {
+      body: JSON.stringify(input),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    },
+  )
+
+export const regenerateAgentSession = (sessionId: string, messageId: string) =>
+  request<AgentSessionRegenerateVo>(`${sessionPath(sessionId)}/regenerate`, {
+    body: JSON.stringify({ messageId }),
+    headers: { 'content-type': 'application/json' },
+    method: 'POST',
+  })
+
+export const setAgentSessionMessageFeedback = (
+  sessionId: string,
+  messageId: string,
+  feedback: MessageFeedback | null,
+) =>
+  request<{ feedback: MessageFeedback | null; messageId: string }>(
+    `${sessionPath(sessionId)}/messages/${encodeURIComponent(messageId)}/feedback`,
+    {
+      body: JSON.stringify({ feedback }),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    },
+  )
+
 export const listAgentSessionMessages = (
   sessionId: string,
   before?: number,
@@ -942,6 +984,28 @@ export async function streamAgentMessage(
     ...(typeof body === 'string'
       ? { headers: { 'content-type': 'application/json' } }
       : {}),
+    method: 'POST',
+  })
+  if (!response.ok) {
+    const body = (await response.json().catch(() => undefined)) as
+      { code?: string; message?: string } | undefined
+    throw new AgentSessionApiError(
+      body?.message ?? `请求失败（${response.status}）`,
+      body?.code ?? 'AGENT_REQUEST_FAILED',
+      response.status,
+    )
+  }
+  await consumeAgentEventStream(response, onEvent)
+}
+
+export async function continueAgentSession(
+  sessionId: string,
+  permission: PermissionId,
+  onEvent: (event: AgentRunEventVo) => void,
+) {
+  const response = await fetch(`${sessionPath(sessionId)}/continue/stream`, {
+    body: JSON.stringify({ permission }),
+    headers: { 'content-type': 'application/json' },
     method: 'POST',
   })
   if (!response.ok) {

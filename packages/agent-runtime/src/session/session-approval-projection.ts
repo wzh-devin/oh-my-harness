@@ -17,6 +17,13 @@ export function projectSessionApprovals(
   const grants = new Map<string, SessionApprovalGrant>()
   for (const entry of entries) {
     if (
+      entry.type === 'custom' &&
+      entry.customType === SESSION_CUSTOM_TYPE.APPROVAL_GRANTS_RESET
+    ) {
+      grants.clear()
+      continue
+    }
+    if (
       entry.type !== 'custom' ||
       entry.customType !== SESSION_CUSTOM_TYPE.APPROVAL_RESOLVED ||
       !entry.data ||
