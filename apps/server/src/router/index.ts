@@ -5,7 +5,6 @@ import { Hono } from 'hono'
 import { createAgentRunRouter } from './agent/run-router.ts'
 import { createAgentCapabilityRouter } from './agent/capability-router.ts'
 import { createAgentSessionRouter } from './agent/session-router.ts'
-import { createRunSummaryRouter } from './agent/run-summary-router.ts'
 import { createHealthRouter } from './health/health-router.ts'
 import { createCompletionRouter } from './llm/completion-router.ts'
 import { createOAuthRouter } from './llm/oauth-router.ts'
@@ -41,7 +40,6 @@ export function createApiRouter(
     '/agent/sessions',
     createAgentRunRouter(runtime, sandboxSettings),
   )
-  router.route('/agent/runs', createRunSummaryRouter(runtime, sandboxSettings))
   router.route(
     '/agent/capabilities',
     createAgentCapabilityRouter(runtime, workspaces),

@@ -135,19 +135,3 @@ export const AGENT_TRAJECTORY_STATUS = {
 } as const
 export type AgentTrajectoryStatus =
   (typeof AGENT_TRAJECTORY_STATUS)[keyof typeof AGENT_TRAJECTORY_STATUS]
-
-export const RUN_RECOVERY_ACTION = {
-  CONTINUE: 'continue',
-  RETRY: 'retry',
-} as const
-export type RunRecoveryAction =
-  (typeof RUN_RECOVERY_ACTION)[keyof typeof RUN_RECOVERY_ACTION]
-
-export const RUN_STATUS = {
-  ABORTED: 'aborted',
-  COMPLETED: 'completed',
-  FAILED: 'failed',
-  INTERRUPTED: 'interrupted',
-  RUNNING: 'running',
-} as const
-export type RunStatus = (typeof RUN_STATUS)[keyof typeof RUN_STATUS]

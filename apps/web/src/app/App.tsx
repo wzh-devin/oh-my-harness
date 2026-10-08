@@ -30,7 +30,6 @@ import { ChatPage } from '../pages/chat/index.ts'
 import { ExplorePage } from '../pages/explore/index.ts'
 import { LibraryPage } from '../pages/library/index.ts'
 import { NewChatPage } from '../pages/new-chat/index.ts'
-import { RunRecoveryPage } from '../pages/runs/RunRecoveryPage.tsx'
 import { ChatLayout } from './ChatLayout.tsx'
 import { PreferencesProvider } from '../features/settings/index.ts'
 import { PinnedSummary } from '../features/chat/summary/components/index.ts'
@@ -386,8 +385,6 @@ export function App() {
         return <ExplorePage onNavigate={navigate} />
       case CHAT_ROUTE_KIND.LIBRARY:
         return <LibraryPage />
-      case CHAT_ROUTE_KIND.RUNS:
-        return <RunRecoveryPage onNavigate={navigate} />
       case CHAT_ROUTE_KIND.THREAD:
         return (
           <ChatPage

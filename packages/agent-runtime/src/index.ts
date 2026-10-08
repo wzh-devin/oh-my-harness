@@ -56,14 +56,7 @@ export type {
   AgentSessionProjection,
   AgentSessionRepository,
 } from './session/session-service.ts'
-export type {
-  AgentRunPage,
-  AgentRunProjection,
-  AgentRunSummary,
-  RunRecoveryAction,
-  RunStatus,
-} from './session/run-summary.ts'
-export { RUN_RECOVERY_ACTION, RUN_STATUS } from './session/run-summary.ts'
+export type { AgentCostProjection } from './session/cost-projection.ts'
 export type {
   ApprovalDecision,
   PendingToolApproval,

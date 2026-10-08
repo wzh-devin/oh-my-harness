@@ -48,10 +48,7 @@ import {
   SANDBOX_MODE,
   TRAJECTORY_STREAM_BLOCK,
   TOOL_EXECUTION_STATE,
-  RUN_RECOVERY_ACTION,
-  RUN_STATUS,
   type AgentOperationKind,
-  type RunRecoveryAction,
   type SandboxMode,
 } from '@oh-my-harness/shared'
 import {
@@ -122,11 +119,7 @@ import {
   type AgentSessionProjection,
   type AgentSessionRepository,
 } from '../session/session-service.ts'
-import type {
-  AgentRunPage,
-  AgentRunProjection,
-  AgentRunSummary,
-} from '../session/run-summary.ts'
+import type { AgentCostProjection } from '../session/cost-projection.ts'
 import { SESSION_CUSTOM_TYPE } from '../session/session-custom-type.ts'
 import { projectSessionApprovals } from '../session/session-approval-projection.ts'
 
@@ -165,13 +158,12 @@ export interface AgentRuntimeSettingsProvider {
   }>
 }
 
-const isAgentRunProjection = (
+const isAgentCostProjection = (
   projection: AgentSessionProjection | undefined,
-): projection is AgentSessionProjection & AgentRunProjection =>
+): projection is AgentSessionProjection & AgentCostProjection =>
   !!projection &&
-  typeof (projection as Partial<AgentRunProjection>).listRuns === 'function' &&
-  typeof (projection as Partial<AgentRunProjection>).getRun === 'function' &&
-  typeof (projection as Partial<AgentRunProjection>).getCostSince === 'function'
+  typeof (projection as Partial<AgentCostProjection>).getCostSince ===
+    'function'
 
 /** 向每个已连接消费者广播活跃 Run 事件，断开只移除当前订阅。 */
 class ActiveRunEventChannel {
@@ -374,7 +366,7 @@ export class AgentRuntime {
   }
   private readonly models: ModelService
   private readonly sessions: AgentSessionService
-  private readonly runProjection?: AgentRunProjection
+  private readonly costProjection?: AgentCostProjection
   private readonly toolOptions?: AgentRuntimeToolOptions
   private readonly startedHookSessions = new Set<string>()
   private closed = false
@@ -387,7 +379,7 @@ export class AgentRuntime {
   ) {
     this.models = models
     this.sessions = new AgentSessionService(repository, projection)
-    this.runProjection = isAgentRunProjection(projection)
+    this.costProjection = isAgentCostProjection(projection)
       ? projection
       : undefined
     this.toolOptions = toolOptions
@@ -421,111 +413,6 @@ export class AgentRuntime {
   async listSessions() {
     this.assertOpen()
     return this.sessions.list()
-  }
-
-  async listRuns(options: {
-    cursor?: string
-    limit: number
-    status?: import('@oh-my-harness/shared').RunStatus
-  }): Promise<AgentRunPage> {
-    this.assertOpen()
-    if (!this.runProjection) return { items: [], nextCursor: null }
-    const page = await this.runProjection.listRuns(options)
-    const activeRunIds = new Map(
-      [...this.active.entries()]
-        .filter(([, operation]) => operation.kind === AGENT_OPERATION_KIND.RUN)
-        .flatMap(([sessionId, operation]) =>
-          operation.runId ? [[sessionId, operation.runId] as const] : [],
-        ),
-    )
-    return {
-      ...page,
-      items: page.items.map((run) =>
-        activeRunIds.get(run.sessionId) === run.runId
-          ? { ...run, status: RUN_STATUS.RUNNING, recoveryAction: undefined }
-          : run,
-      ),
-    }
-  }
-
-  async getRun(runId: string): Promise<AgentRunSummary | undefined> {
-    this.assertOpen()
-    const run = await this.runProjection?.getRun(runId)
-    if (!run) return undefined
-    const active = this.active.get(run.sessionId)
-    return active?.kind === AGENT_OPERATION_KIND.RUN &&
-      active.runId === run.runId
-      ? { ...run, status: RUN_STATUS.RUNNING, recoveryAction: undefined }
-      : run
-  }
-
-  async recoverRun(
-    runId: string,
-    action: RunRecoveryAction,
-    sandboxMode: SandboxMode,
-    sandboxSupported: boolean,
-  ) {
-    this.assertOpen()
-    if (
-      action !== RUN_RECOVERY_ACTION.CONTINUE &&
-      action !== RUN_RECOVERY_ACTION.RETRY
-    ) {
-      throw new AgentRuntimeError(
-        'INVALID_RECOVERY_ACTION',
-        '恢复动作无效。',
-        400,
-      )
-    }
-    const summary = await this.getRun(runId)
-    if (!summary) {
-      throw new AgentRuntimeError('RUN_NOT_FOUND', '运行记录不存在。', 404)
-    }
-    if (summary.status === RUN_STATUS.RUNNING) {
-      throw new AgentRuntimeError('RUN_ALREADY_ACTIVE', '运行仍在执行中。', 409)
-    }
-    if (
-      action === RUN_RECOVERY_ACTION.CONTINUE &&
-      summary.status !== RUN_STATUS.INTERRUPTED
-    ) {
-      throw new AgentRuntimeError(
-        'RUN_RECOVERY_UNAVAILABLE',
-        '该运行不能继续。',
-        409,
-      )
-    }
-    if (
-      action === RUN_RECOVERY_ACTION.RETRY &&
-      summary.status !== RUN_STATUS.FAILED
-    ) {
-      throw new AgentRuntimeError(
-        'RUN_RECOVERY_UNAVAILABLE',
-        '该运行不能重试。',
-        409,
-      )
-    }
-    const permission = isToolPermission(summary.permission)
-      ? summary.permission
-      : TOOL_PERMISSION.WORKSPACE_WRITE
-    if (action === RUN_RECOVERY_ACTION.RETRY) {
-      if (!summary.lastAssistantMessageId) {
-        throw new AgentRuntimeError(
-          'RUN_RECOVERY_UNAVAILABLE',
-          '缺少可重试的助手消息。',
-          409,
-        )
-      }
-      await this.regenerateSession(
-        summary.sessionId,
-        summary.lastAssistantMessageId,
-      )
-    }
-    const run = await this.continue(
-      summary.sessionId,
-      permission,
-      sandboxMode,
-      sandboxSupported,
-    )
-    return { action, run, runId, sessionId: summary.sessionId }
   }
 
   async getSession(id: string) {
@@ -1942,10 +1829,10 @@ export class AgentRuntime {
         409,
       )
     }
-    if (budget.dailyUsd === null || !this.runProjection) return
+    if (budget.dailyUsd === null || !this.costProjection) return
     const now = new Date()
     now.setHours(0, 0, 0, 0)
-    const dailyCost = await this.runProjection.getCostSince(now.getTime())
+    const dailyCost = await this.costProjection.getCostSince(now.getTime())
     if (dailyCost >= budget.dailyUsd) {
       throw new AgentRuntimeError(
         'DAILY_BUDGET_EXCEEDED',

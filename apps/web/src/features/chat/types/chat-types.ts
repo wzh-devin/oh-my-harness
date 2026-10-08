@@ -216,5 +216,4 @@ export type ChatActivePage =
   | { kind: typeof CHAT_ROUTE_KIND.EXPLORE }
   | { kind: typeof CHAT_ROUTE_KIND.LIBRARY }
   | { kind: typeof CHAT_ROUTE_KIND.NEW }
-  | { kind: typeof CHAT_ROUTE_KIND.RUNS }
   | { kind: typeof CHAT_ROUTE_KIND.THREAD; thread: ChatThread }

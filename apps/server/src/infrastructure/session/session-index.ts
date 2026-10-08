@@ -1,11 +1,8 @@
 import {
   SESSION_CUSTOM_TYPE,
+  type AgentCostProjection,
   type AgentSessionInfo,
   type AgentSessionProjection,
-  type AgentRunPage,
-  type AgentRunProjection,
-  type AgentRunSummary,
-  type RunStatus,
 } from '@oh-my-harness/agent-runtime'
 import {
   JsonlSessionRepo,
@@ -14,10 +11,13 @@ import {
 import { chmod, lstat, open, rename, rm, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
-import { projectRuns } from './run-projection.ts'
+import {
+  projectRequestCosts,
+  type RequestCostProjection,
+} from './request-cost-projection.ts'
 
 const APPLICATION_ID = 0x44564149 // DVAI
-const SCHEMA_VERSION = 3
+const SCHEMA_VERSION = 4
 const DATABASE_NAME = 'session-index.sqlite'
 const COLUMNS = [
   'id',
@@ -34,29 +34,11 @@ const COLUMNS = [
   'next_byte_offset',
   'last_seq',
 ]
-const RUN_COLUMNS = [
-  'run_id',
+const REQUEST_COST_COLUMNS = [
   'session_id',
-  'provider_id',
-  'model_id',
-  'permission',
-  'started_at',
+  'request_id',
   'completed_at',
-  'status',
-  'error_code',
-  'error_message',
-  'last_assistant_message_id',
-  'input_tokens',
-  'output_tokens',
-  'cache_read_tokens',
-  'cache_write_tokens',
-  'total_tokens',
-  'cost_input',
-  'cost_output',
-  'cost_cache_read',
-  'cost_cache_write',
   'cost_total',
-  'updated_at',
 ]
 
 interface SessionIndexRow {
@@ -78,31 +60,6 @@ interface SessionIndexRow {
 interface FileRevision {
   mtimeMs: number
   size: number
-}
-
-interface RunIndexRow {
-  cacheReadTokens: number
-  cacheWriteTokens: number
-  completedAt: number | null
-  costCacheRead: number
-  costCacheWrite: number
-  costInput: number
-  costOutput: number
-  costTotal: number
-  errorCode: string | null
-  errorMessage: string | null
-  inputTokens: number
-  lastAssistantMessageId: string | null
-  modelId: string
-  outputTokens: number
-  permission: string | null
-  providerId: string
-  runId: string
-  sessionId: string
-  startedAt: number
-  status: RunStatus
-  totalTokens: number
-  updatedAt: number
 }
 
 class UnknownSessionIndexError extends Error {}
@@ -194,122 +151,6 @@ function decodeRow(value: Record<string, unknown>): SessionIndexRow {
   }
 }
 
-function decodeRunRow(value: Record<string, unknown>): RunIndexRow {
-  const row = value as Record<string, unknown>
-  const numeric = [
-    'started_at',
-    'input_tokens',
-    'output_tokens',
-    'cache_read_tokens',
-    'cache_write_tokens',
-    'total_tokens',
-    'cost_input',
-    'cost_output',
-    'cost_cache_read',
-    'cost_cache_write',
-    'cost_total',
-    'updated_at',
-  ]
-  if (
-    typeof row.run_id !== 'string' ||
-    typeof row.session_id !== 'string' ||
-    typeof row.provider_id !== 'string' ||
-    typeof row.model_id !== 'string' ||
-    (row.permission !== null && typeof row.permission !== 'string') ||
-    numeric.some((key) => typeof row[key] !== 'number') ||
-    (row.completed_at !== null && typeof row.completed_at !== 'number') ||
-    (row.error_code !== null && typeof row.error_code !== 'string') ||
-    (row.error_message !== null && typeof row.error_message !== 'string') ||
-    (row.last_assistant_message_id !== null &&
-      typeof row.last_assistant_message_id !== 'string') ||
-    typeof row.status !== 'string'
-  ) {
-    throw new Error('Run index row is invalid')
-  }
-  const numberValue = (key: string) => row[key] as number
-  return {
-    cacheReadTokens: numberValue('cache_read_tokens'),
-    cacheWriteTokens: numberValue('cache_write_tokens'),
-    completedAt: row.completed_at as number | null,
-    costCacheRead: numberValue('cost_cache_read'),
-    costCacheWrite: numberValue('cost_cache_write'),
-    costInput: numberValue('cost_input'),
-    costOutput: numberValue('cost_output'),
-    costTotal: numberValue('cost_total'),
-    errorCode: row.error_code,
-    errorMessage: row.error_message,
-    inputTokens: numberValue('input_tokens'),
-    lastAssistantMessageId: row.last_assistant_message_id,
-    modelId: row.model_id,
-    outputTokens: numberValue('output_tokens'),
-    permission: row.permission,
-    providerId: row.provider_id,
-    runId: row.run_id,
-    sessionId: row.session_id,
-    startedAt: numberValue('started_at'),
-    status: row.status as RunStatus,
-    totalTokens: numberValue('total_tokens'),
-    updatedAt: numberValue('updated_at'),
-  }
-}
-
-function runInfo(row: RunIndexRow): AgentRunSummary {
-  const tokenUsage = {
-    cacheRead: row.cacheReadTokens,
-    cacheWrite: row.cacheWriteTokens,
-    cost: {
-      cacheRead: row.costCacheRead,
-      cacheWrite: row.costCacheWrite,
-      input: row.costInput,
-      output: row.costOutput,
-      total: row.costTotal,
-    },
-    input: row.inputTokens,
-    output: row.outputTokens,
-    total: row.totalTokens,
-  }
-  return {
-    ...(row.completedAt === null ? {} : { completedAt: row.completedAt }),
-    cost: tokenUsage.cost,
-    ...(row.errorCode === null ? {} : { errorCode: row.errorCode }),
-    ...(row.errorMessage === null ? {} : { errorMessage: row.errorMessage }),
-    ...(row.lastAssistantMessageId === null
-      ? {}
-      : { lastAssistantMessageId: row.lastAssistantMessageId }),
-    modelId: row.modelId,
-    ...(row.permission === null ? {} : { permission: row.permission }),
-    providerId: row.providerId,
-    ...(row.status === 'interrupted'
-      ? { recoveryAction: 'continue' as const }
-      : row.status === 'failed'
-        ? { recoveryAction: 'retry' as const }
-        : {}),
-    runId: row.runId,
-    sessionId: row.sessionId,
-    startedAt: row.startedAt,
-    status: row.status,
-    tokenUsage,
-    updatedAt: row.updatedAt,
-  }
-}
-
-function encodeRunCursor(updatedAt: number, runId: string) {
-  return Buffer.from(`${updatedAt}:${runId}`, 'utf8').toString('base64url')
-}
-
-function decodeRunCursor(value: string) {
-  try {
-    const [timestamp, runId] = Buffer.from(value, 'base64url')
-      .toString('utf8')
-      .split(':')
-    if (!timestamp || !runId || !Number.isSafeInteger(Number(timestamp)))
-      return undefined
-    return { runId, updatedAt: Number(timestamp) }
-  } catch {
-    return undefined
-  }
-}
-
 function createSchema(database: DatabaseSync) {
   database.exec(`
     PRAGMA journal_mode = DELETE;
@@ -333,33 +174,15 @@ function createSchema(database: DatabaseSync) {
       ON sessions(updated_at DESC, id DESC);
     CREATE INDEX sessions_cwd_updated_at
       ON sessions(cwd, updated_at DESC, id DESC);
-    CREATE TABLE runs (
-      run_id                    TEXT PRIMARY KEY,
-      session_id                TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-      provider_id               TEXT NOT NULL,
-      model_id                  TEXT NOT NULL,
-      permission                TEXT,
-      started_at                INTEGER NOT NULL,
-      completed_at              INTEGER,
-      status                    TEXT NOT NULL,
-      error_code                TEXT,
-      error_message             TEXT,
-      last_assistant_message_id TEXT,
-      input_tokens              INTEGER NOT NULL,
-      output_tokens             INTEGER NOT NULL,
-      cache_read_tokens         INTEGER NOT NULL,
-      cache_write_tokens        INTEGER NOT NULL,
-      total_tokens              INTEGER NOT NULL,
-      cost_input                REAL NOT NULL,
-      cost_output               REAL NOT NULL,
-      cost_cache_read           REAL NOT NULL,
-      cost_cache_write          REAL NOT NULL,
-      cost_total                REAL NOT NULL,
-      updated_at                INTEGER NOT NULL
+    CREATE TABLE request_costs (
+      session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      request_id  TEXT NOT NULL,
+      completed_at INTEGER NOT NULL,
+      cost_total  REAL NOT NULL CHECK (cost_total >= 0),
+      PRIMARY KEY (session_id, request_id)
     ) STRICT;
-    CREATE INDEX runs_updated_at ON runs(updated_at DESC, run_id DESC);
-    CREATE INDEX runs_status_updated_at ON runs(status, updated_at DESC, run_id DESC);
-    CREATE INDEX runs_session_updated_at ON runs(session_id, updated_at DESC, run_id DESC);
+    CREATE INDEX request_costs_completed_at
+      ON request_costs(completed_at);
     PRAGMA application_id = ${APPLICATION_ID};
     PRAGMA user_version = ${SCHEMA_VERSION};
     COMMIT;
@@ -375,8 +198,8 @@ function validateSchema(database: DatabaseSync) {
     .prepare('PRAGMA table_info(sessions)')
     .all()
     .map((column) => column.name)
-  const runColumns = database
-    .prepare('PRAGMA table_info(runs)')
+  const requestCostColumns = database
+    .prepare('PRAGMA table_info(request_costs)')
     .all()
     .map((column) => column.name)
   const quickCheck = database
@@ -388,8 +211,10 @@ function validateSchema(database: DatabaseSync) {
     quickCheck !== 'ok' ||
     columns.length !== COLUMNS.length ||
     columns.some((column, index) => column !== COLUMNS[index]) ||
-    runColumns.length !== RUN_COLUMNS.length ||
-    runColumns.some((column, index) => column !== RUN_COLUMNS[index])
+    requestCostColumns.length !== REQUEST_COST_COLUMNS.length ||
+    requestCostColumns.some(
+      (column, index) => column !== REQUEST_COST_COLUMNS[index],
+    )
   ) {
     throw new Error('Session index schema is incompatible')
   }
@@ -422,7 +247,7 @@ async function databaseApplicationId(path: string) {
 
 /** JSONL 事实日志的可重建 SQLite 会话目录投影。 */
 export class SessionIndex
-  implements AgentSessionProjection, AgentRunProjection
+  implements AgentSessionProjection, AgentCostProjection
 {
   private database?: DatabaseSync
   private dirty = false
@@ -492,61 +317,13 @@ export class SessionIndex
     return this.listCache
   }
 
-  async listRuns(options: {
-    cursor?: string
-    limit: number
-    status?: RunStatus
-  }): Promise<AgentRunPage> {
-    if (this.closed || !this.database)
-      throw new Error('Session index is unavailable')
-    await this.list()
-    const cursor = options.cursor ? decodeRunCursor(options.cursor) : undefined
-    const clauses: string[] = []
-    const values: (number | string)[] = []
-    if (options.status) {
-      clauses.push('status = ?')
-      values.push(options.status)
-    }
-    if (cursor) {
-      clauses.push('(updated_at < ? OR (updated_at = ? AND run_id < ?))')
-      values.push(cursor.updatedAt, cursor.updatedAt, cursor.runId)
-    }
-    const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''
-    const limit = Math.min(Math.max(options.limit, 1), 100)
-    const rows = this.requireDatabase()
-      .prepare(
-        `SELECT * FROM runs ${where} ORDER BY updated_at DESC, run_id DESC LIMIT ?`,
-      )
-      .all(...values, limit + 1)
-      .map((row) => decodeRunRow(row))
-    const selected = rows.slice(0, limit)
-    const last = selected.at(-1)
-    return {
-      items: selected.map(runInfo),
-      nextCursor:
-        rows.length > selected.length && last
-          ? encodeRunCursor(last.updatedAt, last.runId)
-          : null,
-    }
-  }
-
-  async getRun(runId: string) {
-    if (this.closed || !this.database)
-      throw new Error('Session index is unavailable')
-    await this.list()
-    const row = this.requireDatabase()
-      .prepare('SELECT * FROM runs WHERE run_id = ?')
-      .get(runId)
-    return row ? runInfo(decodeRunRow(row)) : undefined
-  }
-
   async getCostSince(timestamp: number) {
     if (this.closed || !this.database)
       throw new Error('Session index is unavailable')
     await this.list()
     const row = this.requireDatabase()
       .prepare(
-        'SELECT COALESCE(SUM(cost_total), 0) AS cost FROM runs WHERE updated_at >= ?',
+        'SELECT COALESCE(SUM(cost_total), 0) AS cost FROM request_costs WHERE completed_at >= ?',
       )
       .get(timestamp) as { cost?: unknown } | undefined
     return typeof row?.cost === 'number' ? row.cost : 0
@@ -661,7 +438,7 @@ export class SessionIndex
         }),
     )
     const projections: SessionIndexRow[] = []
-    const runProjections = new Map<string, AgentRunSummary[]>()
+    const costProjections = new Map<string, RequestCostProjection[]>()
     for (const item of metadata.values()) {
       const source = await stat(item.path)
       const previous = rows.get(item.id)
@@ -675,7 +452,7 @@ export class SessionIndex
         continue
       }
       projections.push(await this.project(item, previous, source))
-      runProjections.set(item.id, await this.projectRuns(item))
+      costProjections.set(item.id, await this.projectRequestCosts(item))
     }
 
     const database = this.requireDatabase()
@@ -684,8 +461,8 @@ export class SessionIndex
     database.exec('BEGIN IMMEDIATE')
     try {
       for (const projection of projections) this.upsert(upsert, projection)
-      for (const [sessionId, runs] of runProjections) {
-        this.replaceRuns(sessionId, runs)
+      for (const [sessionId, costs] of costProjections) {
+        this.replaceRequestCosts(sessionId, costs)
       }
       for (const id of rows.keys()) {
         if (!metadata.has(id)) remove.run(id)
@@ -711,8 +488,17 @@ export class SessionIndex
       current ? decodeRow(current) : undefined,
       source,
     )
-    this.upsert(this.upsertStatement(this.requireDatabase()), projection)
-    this.replaceRuns(metadata.id, await this.projectRuns(metadata))
+    const costs = await this.projectRequestCosts(metadata)
+    const database = this.requireDatabase()
+    database.exec('BEGIN IMMEDIATE')
+    try {
+      this.upsert(this.upsertStatement(database), projection)
+      this.replaceRequestCosts(metadata.id, costs)
+      database.exec('COMMIT')
+    } catch (error) {
+      database.exec('ROLLBACK')
+      throw error
+    }
     this.metadata.set(metadata.id, {
       ...metadata,
       modifiedAt: projection.sourceMtimeMs,
@@ -867,51 +653,34 @@ export class SessionIndex
     } satisfies SessionIndexRow
   }
 
-  private async projectRuns(metadata: JsonlSessionMetadata) {
+  private async projectRequestCosts(metadata: JsonlSessionMetadata) {
     const session = await this.repository.open(metadata)
     const log = await session.getLog()
     const entries = log.flatMap((item) =>
       item.kind === 'entry' ? [item.entry] : [],
     )
-    return projectRuns(entries, metadata.id, metadataConfig(metadata))
+    return projectRequestCosts(entries, metadata.id)
   }
 
-  private replaceRuns(sessionId: string, runs: AgentRunSummary[]) {
+  private replaceRequestCosts(
+    sessionId: string,
+    costs: RequestCostProjection[],
+  ) {
     const database = this.requireDatabase()
-    database.prepare('DELETE FROM runs WHERE session_id = ?').run(sessionId)
+    database
+      .prepare('DELETE FROM request_costs WHERE session_id = ?')
+      .run(sessionId)
     const statement = database.prepare(`
-      INSERT INTO runs (
-        run_id, session_id, provider_id, model_id, permission, started_at,
-        completed_at, status, error_code, error_message, last_assistant_message_id,
-        input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
-        total_tokens, cost_input, cost_output, cost_cache_read, cost_cache_write,
-        cost_total, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO request_costs (
+        session_id, request_id, completed_at, cost_total
+      ) VALUES (?, ?, ?, ?)
     `)
-    for (const run of runs) {
+    for (const cost of costs) {
       statement.run(
-        run.runId,
-        run.sessionId,
-        run.providerId,
-        run.modelId,
-        run.permission ?? null,
-        run.startedAt,
-        run.completedAt ?? null,
-        run.status,
-        run.errorCode ?? null,
-        run.errorMessage ?? null,
-        run.lastAssistantMessageId ?? null,
-        run.tokenUsage.input,
-        run.tokenUsage.output,
-        run.tokenUsage.cacheRead,
-        run.tokenUsage.cacheWrite,
-        run.tokenUsage.total,
-        run.cost.input,
-        run.cost.output,
-        run.cost.cacheRead,
-        run.cost.cacheWrite,
-        run.cost.total,
-        run.updatedAt,
+        cost.sessionId,
+        cost.requestId,
+        cost.completedAt,
+        cost.costTotal,
       )
     }
   }

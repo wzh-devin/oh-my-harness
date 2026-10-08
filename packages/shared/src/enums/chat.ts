@@ -4,7 +4,6 @@ export const CHAT_ROUTE_KIND = {
   EXPLORE: 'explore',
   LIBRARY: 'library',
   NEW: 'new',
-  RUNS: 'runs',
   THREAD: 'thread',
 } as const
 export type ChatRouteKind =
