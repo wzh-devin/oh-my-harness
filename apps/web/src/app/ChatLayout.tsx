@@ -23,7 +23,11 @@ import {
   selectFileEditor,
   WorkspaceApiError,
 } from '../features/chat/index.ts'
-import { SettingsDialog, SettingsProvider } from '../features/settings/index.ts'
+import {
+  SettingsDialog,
+  SettingsProvider,
+  usePreferences,
+} from '../features/settings/index.ts'
 
 interface ChatLayoutProps {
   activePage: ChatActivePage
@@ -103,13 +107,14 @@ export function ChatLayout({
     section: SETTINGS_SECTION.GENERAL,
   })
   const isThreadPage = activePage.kind === CHAT_ROUTE_KIND.THREAD
+  const { preferences } = usePreferences()
   const activePageId = isThreadPage ? activePage.thread.id : activePage.kind
   const activeWorkspaceId = isThreadPage
     ? activePage.thread.workspaceId
     : undefined
   const sessionPermission = isThreadPage
     ? activePage.thread.permission
-    : TOOL_PERMISSION.WORKSPACE_WRITE
+    : (preferences.defaultPermission ?? TOOL_PERMISSION.WORKSPACE_WRITE)
 
   const handleThreadSelect = useCallback(
     (thread: ChatThread) => {

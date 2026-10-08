@@ -6,6 +6,7 @@ export {
   getFileEditorPreference,
   listWorkspaces,
   openWorkspaceFile,
+  readWorkspaceImage,
   readWorkspaceFile,
   selectFileEditor,
   selectWorkspace,

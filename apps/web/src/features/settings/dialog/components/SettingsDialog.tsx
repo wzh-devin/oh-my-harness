@@ -12,12 +12,19 @@ import {
 } from '@gravity-ui/icons'
 import mcpIcon from '@lobehub/icons-static-svg/icons/mcp.svg'
 import { Button, Modal, ToggleButton, ToggleButtonGroup } from '@heroui/react'
-import { SETTINGS_SECTION, type SettingsSection } from '@oh-my-harness/shared'
+import {
+  APPEARANCE_MODE,
+  MODEL_THINKING_LEVEL,
+  SETTINGS_SECTION,
+  type SettingsSection,
+} from '@oh-my-harness/shared'
 import {
   PERMISSION_OPTIONS,
   type PermissionId,
   usePermissionSettings,
 } from '../../providers/contexts/permission-settings-context.ts'
+import { useModelSettings } from '../../providers/contexts/model-settings-context.ts'
+import { usePreferences } from '../../preferences/index.ts'
 import { ModelsSettingsSection } from '../../models/components/ModelsSettingsSection.tsx'
 import { McpSettingsSection } from '../../mcp/components/index.ts'
 import { SkillsSettingsSection } from '../../skills/components/SkillsSettingsSection.tsx'
@@ -72,12 +79,12 @@ const SETTINGS_SECTIONS = [
 ] as const
 
 const APPEARANCE_OPTIONS = [
-  { id: 'light', label: '浅色', icon: Sun },
-  { id: 'dark', label: '深色', icon: Moon },
-  { id: 'system', label: '跟随系统', icon: Display },
+  { id: APPEARANCE_MODE.LIGHT, label: '浅色', icon: Sun },
+  { id: APPEARANCE_MODE.DARK, label: '深色', icon: Moon },
+  { id: APPEARANCE_MODE.SYSTEM, label: '跟随系统', icon: Display },
 ] as const
 
-/** 展示应用级本地设置；当前选择只保留在页面会话中。 */
+/** 展示应用级设置，并把变更写回服务端偏好文件。 */
 export function SettingsDialog({
   archivedConversations,
   initialSection = SETTINGS_SECTION.GENERAL,
@@ -91,6 +98,8 @@ export function SettingsDialog({
   const [activeSection, setActiveSection] =
     useState<SettingsSection>(initialSection)
   const { permission, setPermission } = usePermissionSettings()
+  const { setThinkingLevel, thinkingLevel } = useModelSettings()
+  const { preferences, savePreferences } = usePreferences()
   const [pluginId, setPluginId] = useState<string>()
   const openPlugin = (id: string) => {
     setPluginId(id)
@@ -100,8 +109,9 @@ export function SettingsDialog({
   const [mcpBusy, setMcpBusy] = useState(false)
   const canLeaveMcp = () =>
     !mcpBusy && (!mcpDirty || window.confirm('放弃尚未保存的设置？'))
-  const [language, setLanguage] = useState('zh-CN')
-  const [appearance, setAppearance] = useState('system')
+  const save = (next: typeof preferences) => {
+    void savePreferences(next)
+  }
 
   return (
     <Modal.Backdrop
@@ -168,7 +178,11 @@ export function SettingsDialog({
                     label="批准策略"
                     options={PERMISSION_OPTIONS}
                     value={permission}
-                    onChange={(value) => setPermission(value as PermissionId)}
+                    onChange={(value) => {
+                      const next = value as PermissionId
+                      setPermission(next)
+                      save({ ...preferences, defaultPermission: next })
+                    }}
                   />
 
                   <SandboxSettings />
@@ -176,8 +190,10 @@ export function SettingsDialog({
                   <SettingsSelect
                     label="语言"
                     options={[{ id: 'zh-CN', label: '中文' }]}
-                    value={language}
-                    onChange={setLanguage}
+                    value={preferences.language}
+                    onChange={(value) =>
+                      save({ ...preferences, language: value })
+                    }
                   />
 
                   <FileEditorSettings />
@@ -190,11 +206,18 @@ export function SettingsDialog({
                       isDetached
                       aria-label="外观"
                       className="mt-4 grid w-full grid-cols-3 gap-3"
-                      selectedKeys={[appearance]}
+                      selectedKeys={[preferences.appearance]}
                       selectionMode="single"
                       onSelectionChange={(keys) => {
                         const selectedKey = [...keys][0]
-                        if (selectedKey) setAppearance(String(selectedKey))
+                        if (selectedKey) {
+                          save({
+                            ...preferences,
+                            appearance: String(
+                              selectedKey,
+                            ) as typeof preferences.appearance,
+                          })
+                        }
                       }}
                     >
                       {APPEARANCE_OPTIONS.map((option) => {
@@ -213,6 +236,114 @@ export function SettingsDialog({
                         )
                       })}
                     </ToggleButtonGroup>
+                  </section>
+
+                  <section className="border-t border-divider py-6">
+                    <h3 className="text-base font-medium text-foreground">
+                      模型可靠性与预算
+                    </h3>
+                    <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                      <label className="flex items-center justify-between gap-3 text-sm text-foreground">
+                        <span>失败时自动重试</span>
+                        <input
+                          checked={preferences.retry.enabled}
+                          type="checkbox"
+                          onChange={(event) =>
+                            save({
+                              ...preferences,
+                              retry: {
+                                ...preferences.retry,
+                                enabled: event.currentTarget.checked,
+                              },
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="flex flex-col gap-2 text-sm text-foreground">
+                        <span>最大重试次数（0–3）</span>
+                        <input
+                          className="h-9 rounded-lg border border-divider bg-background px-3"
+                          max={3}
+                          min={0}
+                          type="number"
+                          value={preferences.retry.maxRetries}
+                          onChange={(event) =>
+                            save({
+                              ...preferences,
+                              retry: {
+                                ...preferences.retry,
+                                maxRetries: Math.min(
+                                  3,
+                                  Math.max(
+                                    0,
+                                    Number(event.currentTarget.value) || 0,
+                                  ),
+                                ),
+                              },
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="flex flex-col gap-2 text-sm text-foreground">
+                        <span>会话预算（USD，可留空）</span>
+                        <input
+                          className="h-9 rounded-lg border border-divider bg-background px-3"
+                          min={0.01}
+                          step="0.01"
+                          type="number"
+                          value={preferences.budget.sessionUsd ?? ''}
+                          onChange={(event) =>
+                            save({
+                              ...preferences,
+                              budget: {
+                                ...preferences.budget,
+                                sessionUsd: event.currentTarget.value
+                                  ? Number(event.currentTarget.value)
+                                  : null,
+                              },
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="flex flex-col gap-2 text-sm text-foreground">
+                        <span>每日预算（USD，可留空）</span>
+                        <input
+                          className="h-9 rounded-lg border border-divider bg-background px-3"
+                          min={0.01}
+                          step="0.01"
+                          type="number"
+                          value={preferences.budget.dailyUsd ?? ''}
+                          onChange={(event) =>
+                            save({
+                              ...preferences,
+                              budget: {
+                                ...preferences.budget,
+                                dailyUsd: event.currentTarget.value
+                                  ? Number(event.currentTarget.value)
+                                  : null,
+                              },
+                            })
+                          }
+                        />
+                      </label>
+                    </div>
+                    <div className="mt-4">
+                      <SettingsSelect
+                        label="默认推理强度"
+                        options={Object.values(MODEL_THINKING_LEVEL).map(
+                          (id) => ({
+                            id,
+                            label: id,
+                          }),
+                        )}
+                        value={thinkingLevel}
+                        onChange={(value) => {
+                          const next = value as typeof thinkingLevel
+                          setThinkingLevel(next)
+                          save({ ...preferences, defaultThinkingLevel: next })
+                        }}
+                      />
+                    </div>
                   </section>
                 </div>
               ) : null}

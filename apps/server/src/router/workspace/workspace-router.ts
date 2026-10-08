@@ -36,6 +36,7 @@ export function createWorkspaceRouter(
   )
   router.delete('/file-editor/default', controller.clearDefaultFileEditor)
   router.get('/:workspaceId/files/content', controller.readFile)
+  router.get('/:workspaceId/files/image', controller.readImage)
   router.post(
     '/:workspaceId/files/open',
     workspaceBodyLimit,

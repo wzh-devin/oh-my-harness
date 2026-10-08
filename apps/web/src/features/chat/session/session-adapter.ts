@@ -53,6 +53,10 @@ const toChatTool = (
     tool.state === SESSION_TOOL_STATE.STOPPING,
   errorText: tool.errorText,
   executionId: tool.executionId,
+  images: tool.images?.map(({ mimeType, src }) => ({
+    alt: `工具返回的图片（${mimeType}）`,
+    src,
+  })),
   input: tool.input,
   kind: tool.kind,
   outcome: tool.outcome,

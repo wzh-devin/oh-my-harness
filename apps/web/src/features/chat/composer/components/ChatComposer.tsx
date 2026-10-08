@@ -27,6 +27,7 @@ import {
   useModelSettings,
   usePermissionSettings,
   useCapabilitySettings,
+  usePreferences,
 } from '../../../settings/index.ts'
 import {
   addComposerContextItem,
@@ -129,6 +130,7 @@ export function ChatComposer({
   const [modelKey, setModelKey] = useState('')
   const [isModelUpdating, setIsModelUpdating] = useState(false)
   const { providers, setThinkingLevel, thinkingLevel } = useModelSettings()
+  const { preferences } = usePreferences()
   const { permission } = usePermissionSettings()
   const { commands, skills } = useCapabilitySettings()
   const mcp = useMcpServers(
@@ -156,10 +158,16 @@ export function ChatComposer({
   const submitPendingRef = useRef(false)
   const modelGroups = getSelectableModelGroups(providers)
   const selectableModels = modelGroups.flatMap((group) => group.models)
+  const preferredModelKey =
+    modelKey ||
+    initialModelKey ||
+    (preferences.defaultModel.providerId && preferences.defaultModel.modelId
+      ? `${preferences.defaultModel.providerId}:${preferences.defaultModel.modelId}`
+      : '')
   const selectedModelKey = resolveModelSelectionKey(
     modelGroups,
-    modelKey || initialModelKey || '',
-    initialModelId,
+    preferredModelKey,
+    preferences.defaultModel.modelId || initialModelId,
   )
   const selectedModel = selectableModels.find(
     (model) => model.key === selectedModelKey,

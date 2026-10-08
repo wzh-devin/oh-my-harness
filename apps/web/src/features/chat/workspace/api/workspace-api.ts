@@ -97,6 +97,40 @@ export const readWorkspaceFile = (
   )
 }
 
+/** 读取工作区内经服务端签名校验的图片，用于消息内联预览。 */
+export const readWorkspaceImage = async (
+  workspaceId: string,
+  path: string,
+  signal?: AbortSignal,
+) => {
+  const query = new URLSearchParams({ path })
+  const response = await fetch(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/files/image?${query}`,
+    {
+      headers: { 'x-oh-my-harness-request': 'workspace-file-preview' },
+      signal,
+    },
+  )
+  if (!response.ok) {
+    const body = (await response.json().catch(() => undefined)) as
+      { code?: string; message?: string } | undefined
+    throw new WorkspaceApiError(
+      body?.message ?? `请求失败（${response.status}）`,
+      body?.code ?? 'FILE_PREVIEW_FAILED',
+      response.status,
+    )
+  }
+  const mimeType = response.headers.get('content-type') ?? ''
+  if (!mimeType.startsWith('image/')) {
+    throw new WorkspaceApiError(
+      '服务端返回的内容不是图片。',
+      'FILE_PREVIEW_UNSUPPORTED',
+      415,
+    )
+  }
+  return { blob: await response.blob(), mimeType }
+}
+
 const FILE_EDITOR_HEADERS = { 'x-oh-my-harness-request': 'file-editor' }
 
 /** 查询运行 oh-my-harness Server 的电脑所使用的默认文件编辑器。 */

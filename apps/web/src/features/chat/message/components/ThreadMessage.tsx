@@ -7,7 +7,10 @@ import {
 import { ChatMessage as ChatMessagePrimitive } from '@agile-avocation/ui-pro/chat-message'
 import { ChatSources } from '@agile-avocation/ui-pro/chat-source'
 import { TextShimmer } from '@agile-avocation/ui-pro/text-shimmer'
-import type { ChatMessage } from '../../types/chat-types.ts'
+import type {
+  ChatMessage,
+  ChatMessageAttachment,
+} from '../../types/chat-types.ts'
 import { ChatAttachmentList } from '../../composer/components/ChatAttachmentList.tsx'
 import { ComposerContextBar } from '../../composer/components/ComposerContextBar.tsx'
 import { MessageTokenUsage } from './MessageTokenUsage.tsx'
@@ -18,9 +21,52 @@ import { MessageTool } from './MessageTool.tsx'
 import { ReasoningPanel } from './ReasoningPanel.tsx'
 import { ToolActivity } from './ToolActivity.tsx'
 
+const SAFE_ATTACHMENT_MIME = /^image\/(?:gif|jpe?g|png|webp)$/iu
+const SAFE_ATTACHMENT_SOURCE =
+  /^(?:\/api\/|blob:|data:image\/(?:gif|jpe?g|png|webp);base64,)/iu
+
+function MessageAttachments({
+  attachments,
+}: {
+  attachments?: readonly ChatMessageAttachment[]
+}) {
+  if (!attachments?.length) return null
+  const images = attachments.filter(
+    (attachment) =>
+      attachment.src &&
+      attachment.mimeType &&
+      SAFE_ATTACHMENT_MIME.test(attachment.mimeType) &&
+      SAFE_ATTACHMENT_SOURCE.test(attachment.src),
+  )
+  const files = attachments.filter((attachment) => !images.includes(attachment))
+  return (
+    <div className="mb-3 flex min-w-0 flex-col gap-2">
+      {images.map((attachment, index) => (
+        <figure
+          className="flex max-w-full flex-col items-start gap-1"
+          key={`${attachment.name}-${index}`}
+        >
+          <img
+            alt={attachment.name}
+            className="max-h-[512px] max-w-full rounded-xl bg-white object-contain p-2"
+            decoding="async"
+            loading="lazy"
+            src={attachment.src}
+          />
+          <figcaption className="max-w-full truncate text-xs text-muted">
+            {attachment.name}
+          </figcaption>
+        </figure>
+      ))}
+      {files.length ? <ChatAttachmentList attachments={files} /> : null}
+    </div>
+  )
+}
+
 interface ThreadMessageProps {
   compact?: boolean
   message: ChatMessage
+  workspaceId?: string | null
   onFeedback?: (
     messageId: string,
     feedback: MessageFeedback | null,
@@ -33,6 +79,7 @@ interface ThreadMessageProps {
 export function ThreadMessage({
   compact,
   message,
+  workspaceId,
   onFeedback,
   onFork,
   onRegenerate,
@@ -79,7 +126,12 @@ export function ThreadMessage({
           src={message.avatar?.src}
         />
         <ChatMessagePrimitive.Body>
-          <ToolActivity activity={message.activity} status={message.status} />
+          <ToolActivity
+            activity={message.activity}
+            status={message.status}
+            workspaceId={workspaceId}
+          />
+          <MessageAttachments attachments={message.attachments} />
           {message.tokenUsage &&
           message.status === CHAT_ASSISTANT_STATUS.COMPLETE ? (
             <MessageTokenUsage
@@ -111,7 +163,11 @@ export function ThreadMessage({
         ) : null}
 
         {message.tools?.map((tool, index) => (
-          <MessageTool key={`${tool.toolName}-${index}`} tool={tool} />
+          <MessageTool
+            key={`${tool.toolName}-${index}`}
+            tool={tool}
+            workspaceId={workspaceId}
+          />
         ))}
 
         {message.status === CHAT_ASSISTANT_STATUS.STREAMING ? (
@@ -130,7 +186,7 @@ export function ThreadMessage({
           <>
             {message.markdown || message.text ? (
               <ChatMessagePrimitive.Content>
-                <MessageMarkdown>
+                <MessageMarkdown workspaceId={workspaceId}>
                   {message.markdown || message.text || ''}
                 </MessageMarkdown>
               </ChatMessagePrimitive.Content>
@@ -155,6 +211,8 @@ export function ThreadMessage({
                 />
               </ChatMessagePrimitive.Media>
             ) : null}
+
+            <MessageAttachments attachments={message.attachments} />
 
             {message.sourceGroup ? (
               <ChatSources defaultExpanded={false}>

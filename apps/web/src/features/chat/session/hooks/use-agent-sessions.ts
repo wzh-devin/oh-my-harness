@@ -19,6 +19,7 @@ import type { ChatSubmitPayload } from '../../composer/index.ts'
 import type {
   ChatMessage,
   ChatMessageActivityPart,
+  ChatMessageImage,
   ChatRuntimeActivity,
   ChatThread,
 } from '../../types/chat-types.ts'
@@ -74,6 +75,46 @@ const toolOutputText = (output: unknown) => {
         : [],
     )
     .join('\n')
+}
+
+const TOOL_IMAGE_MIME_TYPES = new Set([
+  'image/gif',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+])
+const MAX_TOOL_IMAGE_DATA_LENGTH = 5_600_000
+const SAFE_TOOL_IMAGE_DATA = /^[A-Za-z0-9+/]*={0,2}$/u
+
+/** 从工具结束事件提取受控图片，让图片在流式阶段也能立即显示。 */
+const toolOutputImages = (output: unknown): ChatMessageImage[] => {
+  if (!Array.isArray(output)) return []
+  return output.flatMap((part) => {
+    if (!part || typeof part !== 'object' || Array.isArray(part)) return []
+    const value = part as Record<string, unknown>
+    if (
+      value.type !== 'image' ||
+      typeof value.data !== 'string' ||
+      typeof value.mimeType !== 'string'
+    )
+      return []
+    const mimeType = value.mimeType.trim().toLowerCase()
+    const data = value.data.trim()
+    if (
+      !TOOL_IMAGE_MIME_TYPES.has(mimeType) ||
+      !data ||
+      data.length > MAX_TOOL_IMAGE_DATA_LENGTH ||
+      data.length % 4 === 1 ||
+      !SAFE_TOOL_IMAGE_DATA.test(data)
+    )
+      return []
+    return [
+      {
+        alt: `工具返回的图片（${mimeType}）`,
+        src: `data:${mimeType};base64,${data}`,
+      },
+    ]
+  })
 }
 
 const streamingAssistant = (id: string): ChatMessage => ({
@@ -948,7 +989,8 @@ export function useAgentSessions() {
                   ),
                 }))
                 break
-              case AGENT_RUN_EVENT_TYPE.TOOL_END:
+              case AGENT_RUN_EVENT_TYPE.TOOL_END: {
+                const images = toolOutputImages(event.output)
                 setPendingApprovals((current) =>
                   current[sessionId]?.toolCallId === event.toolCallId
                     ? { ...current, [sessionId]: undefined }
@@ -972,6 +1014,7 @@ export function useAgentSessions() {
                         kind: event.kind,
                         background: event.running === true,
                         executionId: event.executionId,
+                        ...(images.length ? { images } : {}),
                         outcome: event.outcome,
                         state: event.running
                           ? SESSION_TOOL_STATE.INPUT_AVAILABLE
@@ -987,6 +1030,7 @@ export function useAgentSessions() {
                   }),
                 }))
                 break
+              }
               case AGENT_RUN_EVENT_TYPE.TOOL_APPROVAL_REQUIRED:
                 setPendingApprovals((current) => ({
                   ...current,

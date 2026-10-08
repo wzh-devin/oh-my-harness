@@ -38,6 +38,7 @@ const LANGUAGE_BY_EXTENSION: Readonly<Record<string, string>> = {
 const UNSAFE_FILE_REFERENCE_PATTERN = /(?:^|\/)\.\.(?:\/|$)|[\0\r\n\t\\]/
 const URI_SCHEME_PATTERN = /^[a-z][a-z\d+.-]*:/i
 const GLOB_FILE_REFERENCE_PATTERN = /[*?[\]{}]/u
+const IMAGE_EXTENSION_PATTERN = /\.(?:gif|jpe?g|png|webp)$/iu
 
 /** 按文件扩展名选择受控的 Shiki 语言，大文件和未知类型保持纯文本。 */
 export const getFilePreviewLanguage = (path: string, size: number) => {
@@ -67,6 +68,26 @@ export const getWorkspaceFileReference = (value: string) => {
 
   return {
     label: path.slice(path.lastIndexOf('.') + 1).toUpperCase(),
+    name: path.slice(path.lastIndexOf('/') + 1),
+    path,
+  }
+}
+
+/** 将安全的工作区图片路径识别为可加载的消息资源引用。 */
+export const getWorkspaceImageReference = (value: string) => {
+  const path = value.trim()
+  if (
+    !path ||
+    path.length > 4096 ||
+    URI_SCHEME_PATTERN.test(path) ||
+    UNSAFE_FILE_REFERENCE_PATTERN.test(path) ||
+    GLOB_FILE_REFERENCE_PATTERN.test(path) ||
+    !IMAGE_EXTENSION_PATTERN.test(path)
+  ) {
+    return undefined
+  }
+
+  return {
     name: path.slice(path.lastIndexOf('/') + 1),
     path,
   }

@@ -1,4 +1,5 @@
 import { SquarePlus } from '@gravity-ui/icons'
+import { History } from 'lucide-react'
 import { CHAT_ROUTE_KIND } from '@oh-my-harness/shared'
 import type { ChatNavItem, ChatSearchMode } from '../types/chat-types.ts'
 
@@ -8,6 +9,12 @@ export const CHAT_NAV_ITEMS: readonly ChatNavItem[] = [
     icon: SquarePlus,
     id: CHAT_ROUTE_KIND.NEW,
     label: '新建对话',
+  },
+  {
+    href: '/runs',
+    icon: History,
+    id: CHAT_ROUTE_KIND.RUNS,
+    label: '运行恢复中心',
   },
 ] as const
 

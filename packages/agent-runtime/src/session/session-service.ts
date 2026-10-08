@@ -190,6 +190,7 @@ export interface AgentSessionRuntimeActivity {
 export interface AgentSessionTool {
   errorText?: string
   executionId?: string
+  images?: AgentSessionToolImage[]
   input: Record<string, unknown>
   kind: ToolActivityKind
   outcome?: import('@oh-my-harness/agent-tools').BashOutcome
@@ -198,6 +199,12 @@ export interface AgentSessionTool {
   toolCallId: string
   toolName: string
   label?: string
+}
+
+/** 工具返回的受控栅格图片；data 仍保留在运行时边界，HTTP DTO 会转换为 data URL。 */
+export interface AgentSessionToolImage {
+  data: string
+  mimeType: string
 }
 
 export type AgentSessionMessagePart =
@@ -410,6 +417,39 @@ function toolResultText(message: ToolResultMessage) {
     .join('')
 }
 
+const TOOL_IMAGE_MIME_TYPES = new Set([
+  'image/gif',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+])
+const MAX_TOOL_IMAGE_BYTES = 4 * 1024 * 1024
+const MAX_TOOL_IMAGES = 4
+const BASE64_IMAGE_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/u
+
+/** 只保留可在浏览器中安全展示的图片块，避免把任意 MCP 内容直接带入页面。 */
+function toolResultImages(message: ToolResultMessage): AgentSessionToolImage[] {
+  const images: AgentSessionToolImage[] = []
+  for (const content of message.content) {
+    if (content.type !== 'image') continue
+    const mimeType = content.mimeType.trim().toLowerCase()
+    const data = content.data.trim()
+    if (
+      !TOOL_IMAGE_MIME_TYPES.has(mimeType) ||
+      !data ||
+      data.length % 4 === 1 ||
+      !BASE64_IMAGE_PATTERN.test(data)
+    ) {
+      continue
+    }
+    const bytes = Buffer.from(data, 'base64')
+    if (!bytes.byteLength || bytes.byteLength > MAX_TOOL_IMAGE_BYTES) continue
+    images.push({ data, mimeType })
+    if (images.length >= MAX_TOOL_IMAGES) break
+  }
+  return images
+}
+
 function safeToolInput(input: Record<string, unknown>) {
   const attachmentId =
     typeof input.attachmentId === 'string' ? input.attachmentId : undefined
@@ -459,6 +499,7 @@ function toSessionTool(
   const execution = executions.get(toolCall.id)
   const output =
     execution?.output ?? (result ? toolResultText(result) : undefined)
+  const images = result ? toolResultImages(result) : []
   const outcome =
     toolCall.name === BUILTIN_TOOL_NAME.BASH
       ? safeBashOutcome(result?.details)
@@ -472,6 +513,7 @@ function toSessionTool(
       ? { errorText: execution?.error ?? output }
       : {}),
     ...(execution ? { executionId: execution.executionId } : {}),
+    ...(images.length ? { images } : {}),
     ...(result?.details &&
     typeof result.details === 'object' &&
     typeof (result.details as { displayName?: unknown }).displayName ===

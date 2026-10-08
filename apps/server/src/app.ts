@@ -23,6 +23,7 @@ import { createJsonlSessionRepository } from './infrastructure/session/jsonl-ses
 import { SessionIndex } from './infrastructure/session/session-index.ts'
 import { FileEditorService } from './infrastructure/workspace/file-editor-service.ts'
 import { SandboxSettingsService } from './infrastructure/settings/sandbox-settings-service.ts'
+import { PreferencesService } from './infrastructure/settings/preferences-service.ts'
 import { WorkspaceStore } from './infrastructure/workspace/workspace-store.ts'
 import { createApiRouter } from './router/index.ts'
 
@@ -60,6 +61,7 @@ export async function createApp(
     options.fileEditors ?? new FileEditorService(dataDirectory)
   const sandboxSettings =
     options.sandboxSettings ?? new SandboxSettingsService(dataDirectory)
+  const preferences = new PreferencesService(dataDirectory)
   await workspaces.list()
   const publicUrl = (
     process.env.OH_MY_HARNESS_PUBLIC_URL ??
@@ -87,6 +89,7 @@ export async function createApp(
     dataDirectory,
     policy: new ToolPolicy(),
     protectedRoots: [dataDirectory],
+    settings: preferences,
   })
   let closed = false
   const skillImports = new SkillImportService(
@@ -115,6 +118,7 @@ export async function createApp(
       dataDirectory,
       fileEditors,
       sandboxSettings,
+      preferences,
       publicUrl,
     ),
   )

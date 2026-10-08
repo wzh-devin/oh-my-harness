@@ -48,7 +48,10 @@ import {
   SANDBOX_MODE,
   TRAJECTORY_STREAM_BLOCK,
   TOOL_EXECUTION_STATE,
+  RUN_RECOVERY_ACTION,
+  RUN_STATUS,
   type AgentOperationKind,
+  type RunRecoveryAction,
   type SandboxMode,
 } from '@oh-my-harness/shared'
 import {
@@ -119,6 +122,11 @@ import {
   type AgentSessionProjection,
   type AgentSessionRepository,
 } from '../session/session-service.ts'
+import type {
+  AgentRunPage,
+  AgentRunProjection,
+  AgentRunSummary,
+} from '../session/run-summary.ts'
 import { SESSION_CUSTOM_TYPE } from '../session/session-custom-type.ts'
 import { projectSessionApprovals } from '../session/session-approval-projection.ts'
 
@@ -129,6 +137,7 @@ interface ActiveOperation {
   events?: ActiveRunEventChannel
   finish(): void
   kind: AgentOperationKind
+  runId?: string
   settled: Promise<void>
   steering?: Map<
     AgentMessage,
@@ -146,7 +155,23 @@ interface AgentRuntimeToolOptions {
   dataDirectory?: string
   policy: ToolPolicy
   protectedRoots?: readonly string[]
+  settings?: AgentRuntimeSettingsProvider
 }
+
+export interface AgentRuntimeSettingsProvider {
+  getRuntimeSettings(): Promise<{
+    budget: { dailyUsd: number | null; sessionUsd: number | null }
+    retry: { enabled: boolean; maxRetries: number; maxRetryDelayMs: number }
+  }>
+}
+
+const isAgentRunProjection = (
+  projection: AgentSessionProjection | undefined,
+): projection is AgentSessionProjection & AgentRunProjection =>
+  !!projection &&
+  typeof (projection as Partial<AgentRunProjection>).listRuns === 'function' &&
+  typeof (projection as Partial<AgentRunProjection>).getRun === 'function' &&
+  typeof (projection as Partial<AgentRunProjection>).getCostSince === 'function'
 
 /** 向每个已连接消费者广播活跃 Run 事件，断开只移除当前订阅。 */
 class ActiveRunEventChannel {
@@ -349,6 +374,7 @@ export class AgentRuntime {
   }
   private readonly models: ModelService
   private readonly sessions: AgentSessionService
+  private readonly runProjection?: AgentRunProjection
   private readonly toolOptions?: AgentRuntimeToolOptions
   private readonly startedHookSessions = new Set<string>()
   private closed = false
@@ -361,6 +387,9 @@ export class AgentRuntime {
   ) {
     this.models = models
     this.sessions = new AgentSessionService(repository, projection)
+    this.runProjection = isAgentRunProjection(projection)
+      ? projection
+      : undefined
     this.toolOptions = toolOptions
     this.executions = toolOptions?.dataDirectory
       ? new ToolExecutionManager(toolOptions.dataDirectory, (snapshot) =>
@@ -392,6 +421,111 @@ export class AgentRuntime {
   async listSessions() {
     this.assertOpen()
     return this.sessions.list()
+  }
+
+  async listRuns(options: {
+    cursor?: string
+    limit: number
+    status?: import('@oh-my-harness/shared').RunStatus
+  }): Promise<AgentRunPage> {
+    this.assertOpen()
+    if (!this.runProjection) return { items: [], nextCursor: null }
+    const page = await this.runProjection.listRuns(options)
+    const activeRunIds = new Map(
+      [...this.active.entries()]
+        .filter(([, operation]) => operation.kind === AGENT_OPERATION_KIND.RUN)
+        .flatMap(([sessionId, operation]) =>
+          operation.runId ? [[sessionId, operation.runId] as const] : [],
+        ),
+    )
+    return {
+      ...page,
+      items: page.items.map((run) =>
+        activeRunIds.get(run.sessionId) === run.runId
+          ? { ...run, status: RUN_STATUS.RUNNING, recoveryAction: undefined }
+          : run,
+      ),
+    }
+  }
+
+  async getRun(runId: string): Promise<AgentRunSummary | undefined> {
+    this.assertOpen()
+    const run = await this.runProjection?.getRun(runId)
+    if (!run) return undefined
+    const active = this.active.get(run.sessionId)
+    return active?.kind === AGENT_OPERATION_KIND.RUN &&
+      active.runId === run.runId
+      ? { ...run, status: RUN_STATUS.RUNNING, recoveryAction: undefined }
+      : run
+  }
+
+  async recoverRun(
+    runId: string,
+    action: RunRecoveryAction,
+    sandboxMode: SandboxMode,
+    sandboxSupported: boolean,
+  ) {
+    this.assertOpen()
+    if (
+      action !== RUN_RECOVERY_ACTION.CONTINUE &&
+      action !== RUN_RECOVERY_ACTION.RETRY
+    ) {
+      throw new AgentRuntimeError(
+        'INVALID_RECOVERY_ACTION',
+        '恢复动作无效。',
+        400,
+      )
+    }
+    const summary = await this.getRun(runId)
+    if (!summary) {
+      throw new AgentRuntimeError('RUN_NOT_FOUND', '运行记录不存在。', 404)
+    }
+    if (summary.status === RUN_STATUS.RUNNING) {
+      throw new AgentRuntimeError('RUN_ALREADY_ACTIVE', '运行仍在执行中。', 409)
+    }
+    if (
+      action === RUN_RECOVERY_ACTION.CONTINUE &&
+      summary.status !== RUN_STATUS.INTERRUPTED
+    ) {
+      throw new AgentRuntimeError(
+        'RUN_RECOVERY_UNAVAILABLE',
+        '该运行不能继续。',
+        409,
+      )
+    }
+    if (
+      action === RUN_RECOVERY_ACTION.RETRY &&
+      summary.status !== RUN_STATUS.FAILED
+    ) {
+      throw new AgentRuntimeError(
+        'RUN_RECOVERY_UNAVAILABLE',
+        '该运行不能重试。',
+        409,
+      )
+    }
+    const permission = isToolPermission(summary.permission)
+      ? summary.permission
+      : TOOL_PERMISSION.WORKSPACE_WRITE
+    if (action === RUN_RECOVERY_ACTION.RETRY) {
+      if (!summary.lastAssistantMessageId) {
+        throw new AgentRuntimeError(
+          'RUN_RECOVERY_UNAVAILABLE',
+          '缺少可重试的助手消息。',
+          409,
+        )
+      }
+      await this.regenerateSession(
+        summary.sessionId,
+        summary.lastAssistantMessageId,
+      )
+    }
+    const run = await this.continue(
+      summary.sessionId,
+      permission,
+      sandboxMode,
+      sandboxSupported,
+    )
+    return { action, run, runId, sessionId: summary.sessionId }
   }
 
   async getSession(id: string) {
@@ -944,6 +1078,12 @@ export class AgentRuntime {
           opened.config.providerId,
           opened.config.modelId,
         )
+      const runtimeSettings = this.toolOptions?.settings
+        ? await this.toolOptions.settings
+            .getRuntimeSettings()
+            .catch(() => undefined)
+        : undefined
+      await this.enforceBudgets(opened.session, runtimeSettings?.budget)
       const budget = contextBudget(model, configuredMaxOutputTokens)
       const thinkingLevel = input?.thinkingLevel ?? 'off'
       if (!getSupportedThinkingLevels(model).includes(thinkingLevel)) {
@@ -1201,6 +1341,7 @@ export class AgentRuntime {
       operation.events = events
       const run = events.subscribe()
       const runId = randomUUID()
+      operation.runId = runId
       const trajectory = new TrajectoryStream((event) => events.push(event))
       operation.trajectory = trajectory
       const publishTrajectory = async (active = true) =>
@@ -1678,7 +1819,14 @@ export class AgentRuntime {
         streamFn: async (streamModel, streamContext, options) => {
           const outputTokens = requestOutputTokens(streamContext, budget)
           streamModel = { ...streamModel, maxTokens: outputTokens }
-          options = { ...options, maxTokens: outputTokens }
+          options = {
+            ...options,
+            maxRetries: runtimeSettings?.retry.enabled
+              ? runtimeSettings.retry.maxRetries
+              : 0,
+            maxRetryDelayMs: runtimeSettings?.retry.maxRetryDelayMs,
+            maxTokens: outputTokens,
+          }
           const header = redactTrajectoryValue({
             config: {
               provider: streamModel.provider,
@@ -1731,6 +1879,9 @@ export class AgentRuntime {
       for (const message of operation.steering?.keys() ?? [])
         agent.steer(message)
       await opened.session.appendCustomEntry(SESSION_CUSTOM_TYPE.RUN_STARTED, {
+        modelId: model.id,
+        permission,
+        providerId: model.provider,
         runId,
         startedAt: Date.now(),
         reason: incoming ? 'prompt' : 'continue',
@@ -1774,6 +1925,32 @@ export class AgentRuntime {
         'AGENT_RUN_SETUP_FAILED',
         'Agent 运行初始化失败。',
         500,
+      )
+    }
+  }
+
+  private async enforceBudgets(
+    session: Awaited<ReturnType<AgentSessionService['open']>>['session'],
+    budget: { dailyUsd: number | null; sessionUsd: number | null } | undefined,
+  ) {
+    if (!budget?.sessionUsd && !budget?.dailyUsd) return
+    const stats = await session.getStats()
+    if (budget.sessionUsd !== null && stats.costTotal >= budget.sessionUsd) {
+      throw new AgentRuntimeError(
+        'SESSION_BUDGET_EXCEEDED',
+        '当前会话已达到成本预算。',
+        409,
+      )
+    }
+    if (budget.dailyUsd === null || !this.runProjection) return
+    const now = new Date()
+    now.setHours(0, 0, 0, 0)
+    const dailyCost = await this.runProjection.getCostSince(now.getTime())
+    if (dailyCost >= budget.dailyUsd) {
+      throw new AgentRuntimeError(
+        'DAILY_BUDGET_EXCEEDED',
+        '今日模型成本已达到预算。',
+        409,
       )
     }
   }
@@ -1825,6 +2002,7 @@ export class AgentRuntime {
         SESSION_CUSTOM_TYPE.LLM_REQUEST_COMPLETED,
         {
           completedAt: Date.now(),
+          runId: options.runId,
           requestEntryId: options.requestState.id,
           ...(options.requestState.firstTokenAt === undefined
             ? {}
@@ -1841,6 +2019,11 @@ export class AgentRuntime {
           usage: {
             cacheRead: message.usage.cacheRead,
             cacheWrite: message.usage.cacheWrite,
+            costCacheRead: message.usage.cost.cacheRead,
+            costCacheWrite: message.usage.cost.cacheWrite,
+            costInput: message.usage.cost.input,
+            costOutput: message.usage.cost.output,
+            costTotal: message.usage.cost.total,
             input: message.usage.input,
             output: message.usage.output,
             total: message.usage.totalTokens,
@@ -2085,6 +2268,12 @@ export class AgentRuntime {
             {
               runId: options.runId,
               completedAt: Date.now(),
+              ...(terminal.type === AGENT_RUN_EVENT_TYPE.ERROR
+                ? {
+                    errorCode: terminal.code,
+                    errorMessage: terminal.message.slice(0, 500),
+                  }
+                : {}),
               status: options.operation.controller.signal.aborted
                 ? 'aborted'
                 : runStatus,

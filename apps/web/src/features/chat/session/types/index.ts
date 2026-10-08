@@ -9,6 +9,7 @@ export type {
   AgentSessionMessagePartVo,
   AgentSessionMessageVo,
   AgentSessionToolVo,
+  AgentSessionToolImageVo,
   AgentSessionVo,
   AgentTodoItemVo,
   PendingToolApprovalVo,

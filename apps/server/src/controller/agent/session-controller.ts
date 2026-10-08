@@ -3,6 +3,7 @@ import type {
   AgentSessionDetail,
   AgentSessionInfo,
   AgentSessionMessagePage,
+  AgentSessionTool,
   AgentTrajectory,
   AgentTrajectoryRecord,
 } from '@oh-my-harness/agent-runtime'
@@ -22,6 +23,7 @@ import type {
   AgentSessionRegenerateDto,
   AgentSessionDto,
   AgentSessionMessagePageDto,
+  AgentSessionToolDto,
   AgentTrajectoryDto,
   AgentTrajectoryRecordDetailDto,
   AgentTrajectorySearchDto,
@@ -225,6 +227,20 @@ function messagePageDto(
   sessionId: string,
   page: AgentSessionMessagePage,
 ): AgentSessionMessagePageDto {
+  const toolDto = (tool: AgentSessionTool): AgentSessionToolDto => {
+    const { images, ...rest } = tool
+    return {
+      ...rest,
+      ...(images?.length
+        ? {
+            images: images.map(({ data, mimeType }) => ({
+              mimeType,
+              src: `data:${mimeType};base64,${data}`,
+            })),
+          }
+        : {}),
+    }
+  }
   return {
     ...page,
     items: page.items.map((message) => ({
@@ -233,6 +249,10 @@ function messagePageDto(
         ...attachment,
         src: `/api/agent/sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(attachment.id)}`,
       })),
+      parts: message.parts?.map((part) =>
+        part.type === 'tool' ? { ...part, tool: toolDto(part.tool) } : part,
+      ),
+      tools: message.tools?.map(toolDto),
     })),
   }
 }

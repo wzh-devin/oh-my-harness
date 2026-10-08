@@ -25,7 +25,9 @@ import type {
   ChatRuntimeActivity,
 } from '../../types/chat-types.ts'
 import { formatContextTokens } from '../../composer/utils/context-usage.ts'
+import { getWorkspaceImageReference } from '../../workspace/index.ts'
 import {
+  getToolFilePresentation,
   getToolGroupLabel,
   getToolActivitySummary,
   groupConsecutiveToolParts,
@@ -38,6 +40,7 @@ import { ReasoningPanel } from './ReasoningPanel.tsx'
 interface ToolActivityProps {
   activity: ChatMessageActivity
   status?: ChatAssistantStatus
+  workspaceId?: string | null
 }
 
 const ACTIVITY_ICONS = {
@@ -46,10 +49,25 @@ const ACTIVITY_ICONS = {
   running: LoaderCircleIcon,
 } as const
 
+const hasInlineImage = (tool: ChatMessageTool, workspaceId?: string | null) =>
+  Boolean(
+    tool.images?.length ||
+    (workspaceId &&
+      getWorkspaceImageReference(getToolFilePresentation(tool)?.path ?? '')),
+  )
+
 /** 折叠展示同一文本区间内的连续工具调用。 */
-function ToolCallGroup({ tools }: { tools: readonly ChatMessageTool[] }) {
+function ToolCallGroup({
+  tools,
+  workspaceId,
+}: {
+  tools: readonly ChatMessageTool[]
+  workspaceId?: string | null
+}) {
   return (
-    <Collapsible defaultOpen={false}>
+    <Collapsible
+      defaultOpen={tools.some((tool) => hasInlineImage(tool, workspaceId))}
+    >
       <CollapsibleTrigger className="group/tool-group-trigger flex max-w-full min-w-0 w-fit items-center gap-2 rounded-md py-1 text-sm text-muted transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">
         <WrenchIcon aria-hidden="true" className="size-4 shrink-0" />
         <span className="min-w-0 truncate">{getToolGroupLabel(tools)}</span>
@@ -64,6 +82,7 @@ function ToolCallGroup({ tools }: { tools: readonly ChatMessageTool[] }) {
             <MessageTool
               key={tool.toolCallId ?? `${tool.toolName}-${index}`}
               tool={tool}
+              workspaceId={workspaceId}
             />
           ))}
         </div>
@@ -111,7 +130,11 @@ function RuntimeActivity({ activity }: { activity: ChatRuntimeActivity }) {
 }
 
 /** 默认折叠连续工具调用，并保留可展开的过程详情。 */
-export function ToolActivity({ activity, status }: ToolActivityProps) {
+export function ToolActivity({
+  activity,
+  status,
+  workspaceId,
+}: ToolActivityProps) {
   const [now, setNow] = useState(() => Date.now())
   const hasEnded = activity.endedAt !== undefined
   const isRunning = isToolActivityRunning(
@@ -163,7 +186,9 @@ export function ToolActivity({ activity, status }: ToolActivityProps) {
   return (
     <Collapsible
       className="group/tool-activity w-full border-b border-divider pb-3"
-      defaultOpen={false}
+      defaultOpen={activity.tools.some((tool) =>
+        hasInlineImage(tool, workspaceId),
+      )}
     >
       <CollapsibleTrigger className="group/trigger flex max-w-full min-w-0 w-fit items-center gap-2 rounded-md py-1 text-sm text-muted transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus">
         <StatusIcon
@@ -204,7 +229,9 @@ export function ToolActivity({ activity, status }: ToolActivityProps) {
             if (part.type === 'text') {
               return (
                 <ChatMessagePrimitive.Content key={`text-${index}`}>
-                  <MessageMarkdown>{part.text}</MessageMarkdown>
+                  <MessageMarkdown workspaceId={workspaceId}>
+                    {part.text}
+                  </MessageMarkdown>
                 </ChatMessagePrimitive.Content>
               )
             }
@@ -221,6 +248,7 @@ export function ToolActivity({ activity, status }: ToolActivityProps) {
                 <ToolCallGroup
                   key={`tool-group-${part.tools[0]?.toolCallId ?? index}`}
                   tools={part.tools}
+                  workspaceId={workspaceId}
                 />
               )
             }
@@ -228,6 +256,7 @@ export function ToolActivity({ activity, status }: ToolActivityProps) {
               <MessageTool
                 key={part.tool.toolCallId ?? `${part.tool.toolName}-${index}`}
                 tool={part.tool}
+                workspaceId={workspaceId}
               />
             )
           })}

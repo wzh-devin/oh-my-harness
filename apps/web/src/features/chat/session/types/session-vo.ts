@@ -100,6 +100,7 @@ export interface AgentSessionRuntimeActivityVo {
 export interface AgentSessionToolVo {
   errorText?: string
   executionId?: string
+  images?: AgentSessionToolImageVo[]
   input: Record<string, unknown>
   kind: ToolActivityKind
   outcome?: BashOutcomeVo
@@ -108,6 +109,11 @@ export interface AgentSessionToolVo {
   toolCallId: string
   toolName: string
   label?: string
+}
+
+export interface AgentSessionToolImageVo {
+  mimeType: string
+  src: string
 }
 
 export interface ToolExecutionVo {

@@ -4,7 +4,7 @@ import type {
   PointerEvent,
   ReactNode,
 } from 'react'
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Check, Copy, Maximize2, Minus, Plus, RotateCcw } from 'lucide-react'
 import { Modal } from '@heroui/react'
 import { CodeBlock } from '@agile-avocation/ui-pro/code-block'
@@ -12,8 +12,10 @@ import { Markdown, markdownVariants } from '@agile-avocation/ui-pro/markdown'
 import {
   FileReferenceIcon,
   getWorkspaceFileReference,
+  getWorkspaceImageReference,
   useChatWorkspace,
 } from '../../workspace/index.ts'
+import { WorkspaceImagePreview } from './WorkspaceImagePreview.tsx'
 
 const markdownSlots = markdownVariants()
 
@@ -317,76 +319,165 @@ function MermaidDiagram({ code, fallback }: MermaidDiagramProps) {
   )
 }
 
-const LOCALIZED_COMPONENTS = {
-  a: function MessageLink({ node: _node, href, ...props }) {
-    const isWebLink = /^(https?:)?\/\//i.test(href ?? '')
-    return (
-      <a
-        {...props}
-        href={href}
-        rel={isWebLink ? 'noopener noreferrer' : undefined}
-        target={isWebLink ? '_blank' : undefined}
-      />
-    )
-  },
-  code: function LocalizedCode({ children, className, node, ...props }) {
-    const { onFileOpen, selectedWorkspaceId } = useChatWorkspace()
-    const isInline =
-      !node?.position?.start.line ||
-      node.position.start.line === node.position.end.line
+const SAFE_IMAGE_SOURCE = /^(?:https?:\/\/|\/)(?!\/)/iu
+const SAFE_DATA_IMAGE_SOURCE = /^data:image\/(?:gif|jpe?g|png|webp);base64,/iu
 
-    if (isInline) {
-      const fileReference = getWorkspaceFileReference(String(children ?? ''))
-      if (fileReference && selectedWorkspaceId && onFileOpen) {
+const isSafeImageSource = (source: string) =>
+  SAFE_IMAGE_SOURCE.test(source) || SAFE_DATA_IMAGE_SOURCE.test(source)
+
+const createLocalizedComponents = (workspaceId?: string) =>
+  ({
+    a: function MessageLink({ node: _node, href, ...props }) {
+      const isWebLink = /^(https?:)?\/\//i.test(href ?? '')
+      const imageReference =
+        workspaceId && href && !href.startsWith('/api/')
+          ? getWorkspaceImageReference(href)
+          : undefined
+      const link = (
+        <a
+          {...props}
+          href={href}
+          rel={isWebLink ? 'noopener noreferrer' : undefined}
+          target={isWebLink ? '_blank' : undefined}
+        />
+      )
+      if (imageReference && workspaceId) {
         return (
-          <button
-            aria-label={`使用本地应用打开 ${fileReference.path}`}
-            className="inline-flex max-w-full min-w-0 cursor-pointer items-center gap-1 rounded px-0.5 align-middle font-sans text-sm text-accent transition-colors hover:bg-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-            title={fileReference.path}
-            type="button"
-            onClick={() => onFileOpen(fileReference.path)}
-          >
-            <FileReferenceIcon label={fileReference.label} />
-            <span className="min-w-0 break-all">{fileReference.name}</span>
-          </button>
+          <WorkspaceImagePreview
+            alt={`工作区图片：${imageReference.name}`}
+            fallback={link}
+            path={imageReference.path}
+            workspaceId={workspaceId}
+          />
+        )
+      }
+      return link
+    },
+    img: function MessageImage({ node: _node, src, alt, ...props }) {
+      const [failed, setFailed] = useState(false)
+      const imageReference =
+        workspaceId && src && !src.startsWith('/api/')
+          ? getWorkspaceImageReference(src)
+          : undefined
+      if (imageReference && workspaceId) {
+        return (
+          <WorkspaceImagePreview
+            alt={alt || `工作区图片：${imageReference.name}`}
+            fallback={
+              <span className="text-sm text-muted">
+                图片无法加载：{imageReference.path}
+              </span>
+            }
+            path={imageReference.path}
+            workspaceId={workspaceId}
+          />
+        )
+      }
+      if (!src || !isSafeImageSource(src) || failed) {
+        return (
+          <span className="text-sm text-muted">{alt || '图片无法加载'}</span>
+        )
+      }
+      return (
+        <img
+          {...props}
+          alt={alt || '消息图片'}
+          className="my-3 max-h-[512px] max-w-full rounded-xl bg-white object-contain p-2"
+          decoding="async"
+          loading="lazy"
+          src={src}
+          onError={() => setFailed(true)}
+        />
+      )
+    },
+    code: function LocalizedCode({ children, className, node, ...props }) {
+      const { onFileOpen, selectedWorkspaceId } = useChatWorkspace()
+      const isInline =
+        !node?.position?.start.line ||
+        node.position.start.line === node.position.end.line
+
+      const imageReference =
+        isInline && workspaceId
+          ? getWorkspaceImageReference(String(children ?? ''))
+          : undefined
+      if (imageReference && workspaceId) {
+        return (
+          <WorkspaceImagePreview
+            alt={`工作区图片：${imageReference.name}`}
+            fallback={
+              <code
+                className={`${markdownSlots.inlineCode()} ${className ?? ''}`.trim()}
+                {...props}
+              >
+                {children}
+              </code>
+            }
+            path={imageReference.path}
+            workspaceId={workspaceId}
+          />
         )
       }
 
-      return (
-        <code
-          className={`${markdownSlots.inlineCode()} ${className ?? ''}`.trim()}
-          {...props}
-        >
-          {children}
-        </code>
+      if (isInline) {
+        const fileReference = getWorkspaceFileReference(String(children ?? ''))
+        if (fileReference && selectedWorkspaceId && onFileOpen) {
+          return (
+            <button
+              aria-label={`使用本地应用打开 ${fileReference.path}`}
+              className="inline-flex max-w-full min-w-0 cursor-pointer items-center gap-1 rounded px-0.5 align-middle font-sans text-sm text-accent transition-colors hover:bg-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+              title={fileReference.path}
+              type="button"
+              onClick={() => onFileOpen(fileReference.path)}
+            >
+              <FileReferenceIcon label={fileReference.label} />
+              <span className="min-w-0 break-all">{fileReference.name}</span>
+            </button>
+          )
+        }
+
+        return (
+          <code
+            className={`${markdownSlots.inlineCode()} ${className ?? ''}`.trim()}
+            {...props}
+          >
+            {children}
+          </code>
+        )
+      }
+
+      const code = String(children ?? '').replace(/\n$/, '')
+      const language = className?.match(/language-(\w+)/)?.[1] ?? 'plaintext'
+      const fallback = (
+        <CodeBlock>
+          <CodeBlock.Header>
+            <span className="text-xs text-muted uppercase">{language}</span>
+            <CodeBlock.CopyButton aria-label="复制代码" code={code} />
+          </CodeBlock.Header>
+          <CodeBlock.Code code={code} language={language} />
+        </CodeBlock>
       )
-    }
 
-    const code = String(children ?? '').replace(/\n$/, '')
-    const language = className?.match(/language-(\w+)/)?.[1] ?? 'plaintext'
-    const fallback = (
-      <CodeBlock>
-        <CodeBlock.Header>
-          <span className="text-xs text-muted uppercase">{language}</span>
-          <CodeBlock.CopyButton aria-label="复制代码" code={code} />
-        </CodeBlock.Header>
-        <CodeBlock.Code code={code} language={language} />
-      </CodeBlock>
-    )
+      if (language.toLowerCase() === 'mermaid') {
+        return <MermaidDiagram code={code} fallback={fallback} />
+      }
 
-    if (language.toLowerCase() === 'mermaid') {
-      return <MermaidDiagram code={code} fallback={fallback} />
-    }
-
-    return fallback
-  },
-} satisfies NonNullable<ComponentProps<typeof Markdown>['components']>
+      return fallback
+    },
+  }) satisfies NonNullable<ComponentProps<typeof Markdown>['components']>
 
 interface MessageMarkdownProps {
   children: string
+  workspaceId?: string | null
 }
 
 /** 渲染消息 Markdown，网页链接在新标签页打开，文件引用沿用本地应用。 */
-export function MessageMarkdown({ children }: MessageMarkdownProps) {
-  return <Markdown components={LOCALIZED_COMPONENTS}>{children}</Markdown>
+export function MessageMarkdown({
+  children,
+  workspaceId,
+}: MessageMarkdownProps) {
+  const components = useMemo(
+    () => createLocalizedComponents(workspaceId ?? undefined),
+    [workspaceId],
+  )
+  return <Markdown components={components}>{children}</Markdown>
 }

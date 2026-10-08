@@ -138,6 +138,7 @@ export interface AgentSessionRuntimeActivityDto {
 export interface AgentSessionToolDto {
   errorText?: string
   executionId?: string
+  images?: AgentSessionToolImageDto[]
   input: Record<string, unknown>
   kind: ToolActivityKind
   outcome?: {
@@ -151,6 +152,11 @@ export interface AgentSessionToolDto {
   toolCallId: string
   toolName: string
   label?: string
+}
+
+export interface AgentSessionToolImageDto {
+  mimeType: string
+  src: string
 }
 
 export type AgentSessionMessagePartDto =

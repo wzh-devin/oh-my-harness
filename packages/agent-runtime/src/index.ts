@@ -3,6 +3,7 @@ export type {
   ToolApprovalEvent,
 } from './execution/tool-presentation.ts'
 export { AgentRuntime } from './runtime/agent-runtime.ts'
+export type { AgentRuntimeSettingsProvider } from './runtime/agent-runtime.ts'
 export { SkillImportService } from './capability/skill-import-service.ts'
 export type {
   SkillImport,
@@ -12,6 +13,8 @@ export { AgentRuntimeError } from './error/agent-runtime-error.ts'
 export { SESSION_CUSTOM_TYPE } from './session/session-custom-type.ts'
 export type { AgentRun, AgentRuntimeEvent } from './execution/runtime-event.ts'
 export type { ContextUsageSnapshot } from './execution/context-usage.ts'
+export { addTokenUsage, emptyTokenUsage } from './execution/token-usage.ts'
+export type { TokenCost, TokenUsage } from './execution/token-usage.ts'
 export {
   projectAgentTrajectory,
   redactTrajectoryValue,
@@ -48,10 +51,19 @@ export type {
   AgentSessionMessage,
   AgentSessionMessagePart,
   AgentSessionTool,
+  AgentSessionToolImage,
   AgentSessionMessagePage,
   AgentSessionProjection,
   AgentSessionRepository,
 } from './session/session-service.ts'
+export type {
+  AgentRunPage,
+  AgentRunProjection,
+  AgentRunSummary,
+  RunRecoveryAction,
+  RunStatus,
+} from './session/run-summary.ts'
+export { RUN_RECOVERY_ACTION, RUN_STATUS } from './session/run-summary.ts'
 export type {
   ApprovalDecision,
   PendingToolApproval,

@@ -21,6 +21,10 @@ const NAV_TITLES: Record<
     subtitle: '开始一段全新的对话',
     title: '新建对话',
   },
+  [CHAT_ROUTE_KIND.RUNS]: {
+    subtitle: '查看失败或中断的模型运行并恢复',
+    title: '运行恢复中心',
+  },
 }
 
 interface ChatNavbarProps {

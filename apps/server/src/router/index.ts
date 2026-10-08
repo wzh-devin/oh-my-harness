@@ -5,6 +5,7 @@ import { Hono } from 'hono'
 import { createAgentRunRouter } from './agent/run-router.ts'
 import { createAgentCapabilityRouter } from './agent/capability-router.ts'
 import { createAgentSessionRouter } from './agent/session-router.ts'
+import { createRunSummaryRouter } from './agent/run-summary-router.ts'
 import { createHealthRouter } from './health/health-router.ts'
 import { createCompletionRouter } from './llm/completion-router.ts'
 import { createOAuthRouter } from './llm/oauth-router.ts'
@@ -12,9 +13,11 @@ import { createProviderRouter } from './llm/provider-router.ts'
 import { createWorkspaceRouter } from './workspace/workspace-router.ts'
 import { createWorkspaceGitRouter } from './workspace/workspace-git-router.ts'
 import { createSandboxSettingsRouter } from './settings/sandbox-settings-router.ts'
+import { createPreferencesRouter } from './settings/preferences-router.ts'
 import type { SandboxSettingsService } from '../infrastructure/settings/sandbox-settings-service.ts'
 import type { FileEditorService } from '../infrastructure/workspace/file-editor-service.ts'
 import type { WorkspaceStore } from '../infrastructure/workspace/workspace-store.ts'
+import type { PreferencesService } from '../infrastructure/settings/preferences-service.ts'
 
 /** 组合 oh-my-harness 的全部 HTTP API 路由。 */
 export function createApiRouter(
@@ -25,6 +28,7 @@ export function createApiRouter(
   dataDirectory: string,
   fileEditors: FileEditorService,
   sandboxSettings: SandboxSettingsService,
+  preferences: PreferencesService,
   publicUrl: string,
 ) {
   const router = new Hono()
@@ -37,6 +41,7 @@ export function createApiRouter(
     '/agent/sessions',
     createAgentRunRouter(runtime, sandboxSettings),
   )
+  router.route('/agent/runs', createRunSummaryRouter(runtime, sandboxSettings))
   router.route(
     '/agent/capabilities',
     createAgentCapabilityRouter(runtime, workspaces),
@@ -49,6 +54,10 @@ export function createApiRouter(
   router.route(
     '/settings/sandbox',
     createSandboxSettingsRouter(sandboxSettings, publicUrl),
+  )
+  router.route(
+    '/settings/preferences',
+    createPreferencesRouter(preferences, publicUrl),
   )
   return router
 }

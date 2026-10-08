@@ -7,6 +7,7 @@ export {
   clearDefaultFileEditor,
   getFileEditorPreference,
   openWorkspaceFile,
+  readWorkspaceImage,
   selectFileEditor,
   setDefaultFileEditor,
   WorkspaceApiError,
@@ -21,6 +22,7 @@ export {
   archiveWorkspaceThreads,
   findWorkspaceByThreadId,
   getWorkspaceFileReference,
+  getWorkspaceImageReference,
   resolveComposerWorkspace,
 } from './data/index.ts'
 export type { ChatWorkspace } from './data/index.ts'

@@ -23,6 +23,34 @@ import {
 import { selectNativeWorkspaceDirectory } from '../../infrastructure/workspace/native-directory-picker.ts'
 
 const MAX_PREVIEW_BYTES = 1024 * 1024
+const MAX_IMAGE_PREVIEW_BYTES = 4 * 1024 * 1024
+
+/** 按文件签名识别消息内允许直接展示的栅格图片，不信任扩展名。 */
+const detectedImageMimeType = (bytes: Uint8Array) => {
+  if (
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  ) {
+    return 'image/png'
+  }
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return 'image/jpeg'
+  }
+  const header = Buffer.from(bytes.subarray(0, 12)).toString('ascii')
+  if (header.startsWith('GIF87a') || header.startsWith('GIF89a')) {
+    return 'image/gif'
+  }
+  if (header.startsWith('RIFF') && header.slice(8, 12) === 'WEBP') {
+    return 'image/webp'
+  }
+  return undefined
+}
 
 /** 为相对当前子目录的文件引用查找至多两个安全匹配，避免误开。 */
 const findWorkspaceFilesBySuffix = async (
@@ -327,6 +355,125 @@ export function createWorkspaceController(
           path,
           size: bytes.value.byteLength,
         } satisfies WorkspaceFileDto)
+      } catch (error) {
+        if (
+          !(error instanceof WorkspaceError) &&
+          error &&
+          typeof error === 'object' &&
+          typeof (error as { code?: unknown }).code === 'string'
+        ) {
+          return fileErrorResponse(context, (error as { code: string }).code)
+        }
+        return workspaceErrorResponse(context, error)
+      }
+    },
+    /** 读取助手消息引用的工作区图片；只返回经过签名校验的栅格内容。 */
+    readImage: async (context: Context) => {
+      context.header('cache-control', 'no-store')
+      context.header('x-content-type-options', 'nosniff')
+      if (
+        context.req.header('x-oh-my-harness-request') !==
+        'workspace-file-preview'
+      ) {
+        return context.json(
+          {
+            code: 'FILE_PREVIEW_FORBIDDEN',
+            message: '文件预览请求无效。',
+          },
+          403,
+        )
+      }
+      const path = context.req.query('path')
+      const workspaceId = context.req.param('workspaceId')
+      if (!workspaceId || !path || path.length > 4096 || path.includes('\0')) {
+        return context.json(
+          { code: 'INVALID_FILE_PREVIEW', message: '文件路径无效。' },
+          400,
+        )
+      }
+
+      try {
+        const workspace = await workspaces.requireAvailable(workspaceId)
+        const environment = await WorkspaceExecutionEnv.create(workspace.path, [
+          dataDirectory,
+        ])
+        let imagePath = path
+        let info = await environment.fileInfo(imagePath)
+        if (!info.ok && info.error.code === 'not_found') {
+          let matches = await findWorkspaceFilesBySuffix(
+            environment,
+            workspace.path,
+            imagePath,
+          )
+          if (!matches.length && imagePath.includes('/')) {
+            matches = await findWorkspaceFilesBySuffix(
+              environment,
+              workspace.path,
+              imagePath.slice(imagePath.lastIndexOf('/') + 1),
+            )
+          }
+          if (matches.length > 1) {
+            return context.json(
+              {
+                code: 'FILE_PREVIEW_AMBIGUOUS',
+                message: '工作区内存在多个匹配图片，请使用更完整的相对路径。',
+              },
+              409,
+            )
+          }
+          if (matches[0]) {
+            imagePath = matches[0]
+            info = await environment.fileInfo(imagePath)
+          }
+        }
+        if (!info.ok) return fileErrorResponse(context, info.error.code)
+        if (info.value.kind !== 'file') {
+          return context.json(
+            {
+              code: 'INVALID_FILE_PREVIEW',
+              message: '只能预览普通文件。',
+            },
+            400,
+          )
+        }
+        if (info.value.size > MAX_IMAGE_PREVIEW_BYTES) {
+          return context.json(
+            {
+              code: 'FILE_PREVIEW_TOO_LARGE',
+              message: '图片超过 4 MiB，无法预览。',
+            },
+            413,
+          )
+        }
+
+        const bytes = await environment.readBinaryFile(imagePath)
+        if (!bytes.ok) return fileErrorResponse(context, bytes.error.code)
+        if (bytes.value.byteLength > MAX_IMAGE_PREVIEW_BYTES) {
+          return context.json(
+            {
+              code: 'FILE_PREVIEW_TOO_LARGE',
+              message: '图片超过 4 MiB，无法预览。',
+            },
+            413,
+          )
+        }
+        const mimeType = detectedImageMimeType(bytes.value)
+        if (!mimeType) {
+          return context.json(
+            {
+              code: 'FILE_PREVIEW_UNSUPPORTED',
+              message: '该文件不是受支持的图片。',
+            },
+            415,
+          )
+        }
+        return context.body(new Uint8Array(bytes.value), 200, {
+          'cache-control': 'private, no-store',
+          'content-disposition': 'inline',
+          'content-length': String(bytes.value.byteLength),
+          'content-type': mimeType,
+          'x-content-type-options': 'nosniff',
+        })
       } catch (error) {
         if (
           !(error instanceof WorkspaceError) &&

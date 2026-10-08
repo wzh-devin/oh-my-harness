@@ -1,4 +1,6 @@
 export { SettingsDialog } from './dialog/index.ts'
+export { PreferencesProvider, usePreferences } from './preferences/index.ts'
+export type { PreferencesVo } from './preferences/index.ts'
 export {
   createInitialModelProviders,
   getSelectableModelGroups,

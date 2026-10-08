@@ -19,6 +19,7 @@ import {
   type AssistantSkill,
   type CapabilityCommand,
 } from '../contexts/capability-settings-context.ts'
+import { usePreferences } from '../../preferences/index.ts'
 
 interface SettingsProviderProps {
   children: ReactNode
@@ -34,12 +35,17 @@ export function SettingsProvider({
   selectedWorkspaceId,
   sessionPermission,
 }: SettingsProviderProps) {
+  const { isLoading: isLoadingPreferences, preferences } = usePreferences()
   const [providers, setProviders] = useState(createInitialModelProviders)
   const [isLoadingProviders, setIsLoadingProviders] = useState(true)
   const [providerError, setProviderError] = useState<string | null>(null)
   const [thinkingLevel, setThinkingLevel] = useState<ModelThinkingLevel>(
-    MODEL_THINKING_LEVEL.OFF,
+    preferences.defaultThinkingLevel ?? MODEL_THINKING_LEVEL.OFF,
   )
+  useEffect(() => {
+    if (!isLoadingPreferences)
+      setThinkingLevel(preferences.defaultThinkingLevel)
+  }, [isLoadingPreferences, preferences.defaultThinkingLevel])
   const [permissionSelection, setPermissionSelection] =
     useState<PermissionSelection>({
       permission: sessionPermission,

@@ -30,7 +30,9 @@ import { ChatPage } from '../pages/chat/index.ts'
 import { ExplorePage } from '../pages/explore/index.ts'
 import { LibraryPage } from '../pages/library/index.ts'
 import { NewChatPage } from '../pages/new-chat/index.ts'
+import { RunRecoveryPage } from '../pages/runs/RunRecoveryPage.tsx'
 import { ChatLayout } from './ChatLayout.tsx'
+import { PreferencesProvider } from '../features/settings/index.ts'
 import { PinnedSummary } from '../features/chat/summary/components/index.ts'
 import { useWorkspaceGit } from '../features/chat/summary/use-workspace-git.ts'
 import { getSummarySections } from '../features/chat/summary/summary-sections.ts'
@@ -384,6 +386,8 @@ export function App() {
         return <ExplorePage onNavigate={navigate} />
       case CHAT_ROUTE_KIND.LIBRARY:
         return <LibraryPage />
+      case CHAT_ROUTE_KIND.RUNS:
+        return <RunRecoveryPage onNavigate={navigate} />
       case CHAT_ROUTE_KIND.THREAD:
         return (
           <ChatPage
@@ -493,66 +497,68 @@ export function App() {
   })()
 
   return (
-    <ChatLayout
-      rightPanelOpen={rightPanelOpen}
-      rightPanelLabel={consoleOpen ? '服务控制台' : '变更侧栏'}
-      onRightPanelClose={closeRightPanel}
-      onRightPanelClosed={() => {
-        const target = consoleTriggerRef.current
-        if (!target) return
-        // 退出动画完成后再恢复焦点，避免面板卸载把焦点重置到 body。
-        requestAnimationFrame(() => {
-          const visible = target.isConnected && !target.closest('[inert]')
-          ;(visible ? target : summaryTriggerRef.current)?.focus({
-            preventScroll: true,
+    <PreferencesProvider>
+      <ChatLayout
+        rightPanelOpen={rightPanelOpen}
+        rightPanelLabel={consoleOpen ? '服务控制台' : '变更侧栏'}
+        onRightPanelClose={closeRightPanel}
+        onRightPanelClosed={() => {
+          const target = consoleTriggerRef.current
+          if (!target) return
+          // 退出动画完成后再恢复焦点，避免面板卸载把焦点重置到 body。
+          requestAnimationFrame(() => {
+            const visible = target.isConnected && !target.closest('[inert]')
+            ;(visible ? target : summaryTriggerRef.current)?.focus({
+              preventScroll: true,
+            })
+            consoleTriggerRef.current = null
           })
-          consoleTriggerRef.current = null
-        })
-      }}
-      rightPanelContent={
-        consoleOpen && consoleExecution ? (
-          <ToolExecutionConsole
-            key={consoleExecution.executionId}
-            execution={consoleExecution}
-            controller={executions}
-            onClose={closeRightPanel}
-          />
-        ) : reviewOpen && selectedThread?.workspaceId ? (
-          <Suspense
-            fallback={
-              <div className="p-4 text-sm text-muted" role="status">
-                正在加载变更视图…
-              </div>
-            }
-          >
-            <GitReviewPanel
-              key={selectedThread.id}
-              workspaceId={selectedThread.workspaceId}
-              workspaceLabel={workspaceLabel}
-              git={git}
-              onClose={closeReview}
+        }}
+        rightPanelContent={
+          consoleOpen && consoleExecution ? (
+            <ToolExecutionConsole
+              key={consoleExecution.executionId}
+              execution={consoleExecution}
+              controller={executions}
+              onClose={closeRightPanel}
             />
-          </Suspense>
-        ) : null
-      }
-      activePage={activePage}
-      archivedThreads={archivedThreads}
-      isWorkspaceLoading={isWorkspaceLoading}
-      selectedWorkspaceId={selectedWorkspaceId}
-      threads={activeThreads}
-      workspaces={visibleWorkspaces}
-      onNavigate={navigate}
-      onArchivedConversationDelete={handleArchivedDelete}
-      onArchivedConversationsClear={handleArchivedClear}
-      onThreadArchive={setSessionArchived}
-      onThreadRename={renameSession}
-      workspaceError={workspaceError}
-      onWorkspaceAdd={addWorkspace}
-      onWorkspaceArchiveAll={handleWorkspaceArchiveAll}
-      onWorkspaceDelete={handleWorkspaceDelete}
-      onWorkspaceSelect={setSelectedWorkspaceId}
-    >
-      {page}
-    </ChatLayout>
+          ) : reviewOpen && selectedThread?.workspaceId ? (
+            <Suspense
+              fallback={
+                <div className="p-4 text-sm text-muted" role="status">
+                  正在加载变更视图…
+                </div>
+              }
+            >
+              <GitReviewPanel
+                key={selectedThread.id}
+                workspaceId={selectedThread.workspaceId}
+                workspaceLabel={workspaceLabel}
+                git={git}
+                onClose={closeReview}
+              />
+            </Suspense>
+          ) : null
+        }
+        activePage={activePage}
+        archivedThreads={archivedThreads}
+        isWorkspaceLoading={isWorkspaceLoading}
+        selectedWorkspaceId={selectedWorkspaceId}
+        threads={activeThreads}
+        workspaces={visibleWorkspaces}
+        onNavigate={navigate}
+        onArchivedConversationDelete={handleArchivedDelete}
+        onArchivedConversationsClear={handleArchivedClear}
+        onThreadArchive={setSessionArchived}
+        onThreadRename={renameSession}
+        workspaceError={workspaceError}
+        onWorkspaceAdd={addWorkspace}
+        onWorkspaceArchiveAll={handleWorkspaceArchiveAll}
+        onWorkspaceDelete={handleWorkspaceDelete}
+        onWorkspaceSelect={setSelectedWorkspaceId}
+      >
+        {page}
+      </ChatLayout>
+    </PreferencesProvider>
   )
 }

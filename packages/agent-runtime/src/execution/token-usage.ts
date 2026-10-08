@@ -3,6 +3,15 @@ import type { Usage } from '@earendil-works/pi-ai'
 export interface TokenUsage {
   cacheRead: number
   cacheWrite: number
+  cost: TokenCost
+  input: number
+  output: number
+  total: number
+}
+
+export interface TokenCost {
+  cacheRead: number
+  cacheWrite: number
   input: number
   output: number
   total: number
@@ -11,6 +20,7 @@ export interface TokenUsage {
 export const emptyTokenUsage = (): TokenUsage => ({
   cacheRead: 0,
   cacheWrite: 0,
+  cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0, total: 0 },
   input: 0,
   output: 0,
   total: 0,
@@ -23,4 +33,9 @@ export const addTokenUsage = (total: TokenUsage, usage: Usage): void => {
   total.input += usage.input
   total.output += usage.output
   total.total += usage.totalTokens
+  total.cost.cacheRead += usage.cost.cacheRead
+  total.cost.cacheWrite += usage.cost.cacheWrite
+  total.cost.input += usage.cost.input
+  total.cost.output += usage.cost.output
+  total.cost.total += usage.cost.total
 }

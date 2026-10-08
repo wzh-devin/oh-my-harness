@@ -198,6 +198,7 @@ export function ChatPage({
                       <ThreadMessage
                         compact={compact}
                         message={message}
+                        workspaceId={thread.workspaceId}
                         onFeedback={onFeedback}
                         onFork={onForkMessage}
                         onRegenerate={onRegenerateMessage}

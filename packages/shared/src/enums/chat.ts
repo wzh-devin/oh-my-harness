@@ -4,6 +4,7 @@ export const CHAT_ROUTE_KIND = {
   EXPLORE: 'explore',
   LIBRARY: 'library',
   NEW: 'new',
+  RUNS: 'runs',
   THREAD: 'thread',
 } as const
 export type ChatRouteKind =
@@ -68,3 +69,11 @@ export const SETTINGS_SECTION = {
 } as const
 export type SettingsSection =
   (typeof SETTINGS_SECTION)[keyof typeof SETTINGS_SECTION]
+
+export const APPEARANCE_MODE = {
+  DARK: 'dark',
+  LIGHT: 'light',
+  SYSTEM: 'system',
+} as const
+export type AppearanceMode =
+  (typeof APPEARANCE_MODE)[keyof typeof APPEARANCE_MODE]
